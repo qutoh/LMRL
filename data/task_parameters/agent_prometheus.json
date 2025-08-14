@@ -1,0 +1,4 @@
+{
+	"PROMETHEUS_DETERMINE_TOOL_USE": { "task_prompt_key": "task_prompt_prometheus_tool_use", "source_agent": "PROMETHEUS", "default_adjustment": -0.1, "player_takeover_enabled": true, "player_takeover_notification": "Prometheus requires input! Decide which tools to activate." },
+	"PEG_VALIDATE_FEATURE_TOOLS": { "task_prompt_key": "task_prompt_peg_validate_feature_tools", "source_agent": "PROMETHEUS", "model_override": "uncensored-phi-3-mini-4k-geminified", "affects_global_context_limit": false }
+}

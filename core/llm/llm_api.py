@@ -4,7 +4,7 @@ import lmstudio as lms
 import google.generativeai as genai
 import uuid
 from datetime import datetime
-from ..common.config_loader import config
+from core.common.config_loader import config
 from ..common.utils import log_message, get_text_from_messages
 from ..common.localization import loc
 from ..common import file_io
@@ -25,9 +25,10 @@ def _prepare_messages_for_llm(
 
     if task_prompt_key:
         task_content = loc(task_prompt_key, **(task_prompt_kwargs or {}))
-        if task_content.startswith("LOC_KEY_NOT_FOUND:") or not task_content.strip():
-            log_message('debug',
-                        f"[LLM_API WARNING] Localization returned empty or missing content for prompt key: '{task_prompt_key}'. The task-specific prompt will be omitted.")
+        # If there are no other user messages, this task content IS the user message.
+        # Otherwise, append it as a new instruction.
+        if not final_messages or not any(msg.get('role') == 'user' for msg in final_messages):
+            final_messages.append({"role": "user", "content": task_content})
         else:
             final_messages.append({"role": "user", "content": task_content})
 
@@ -59,20 +60,15 @@ def execute_task(engine, agent_or_character: dict, task_key: str, messages: list
             "task_prompt_kwargs": task_prompt_kwargs, "persona": persona, "messages": messages
         }
 
-        # ASYNC MODE (Main Game Engine)
         if engine.render_queue and engine.player_interface:
             player_response = engine.player_interface.handle_task_takeover(**handler_kwargs)
-        # SYNC MODE (Pre-game Atlas Engine)
         elif engine.ui_manager:
             player_response = engine.ui_manager.get_player_task_input(**handler_kwargs)
 
-        # Check for a non-empty, non-whitespace response.
-        # An empty string or None from the UI indicates the player cancelled or passed their turn.
-        if player_response and player_response.strip():
+        if player_response is not None:
             log_message('debug', f"[PLAYER TAKEOVER] Task '{task_key}' intercepted. Using player response.")
             return player_response
         else:
-            # This branch is now correctly hit when the player cancels or submits empty input.
             log_message('debug', f"[PLAYER TAKEOVER] Player cancelled or passed. Passing task '{task_key}' to LLM.")
 
     if task_params.get("is_failure_handler"):
