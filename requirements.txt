@@ -1,0 +1,25 @@
+windows-toasts
+scipy
+# LLM & API Libraries
+google-generativeai
+lmstudio
+tcod
+numpy
+torch
+
+# Vector Database and Embeddings
+lancedb
+sentence-transformers
+pyarrow
+
+# Tokenization Utility
+tiktoken
+
+keyboard
+
+# Clipboard Utility
+pyperclip
+
+# Testing Framework
+pytest
+pytest-mock
