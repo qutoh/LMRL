@@ -1,0 +1,3 @@
+{
+    "task_prompt_calibration_keyword_choice": "Read the following short narrative. Based on the situation described, choose the most logical or interesting direction to proceed from the available options.\n\n### Situation:\n{user_message_content}\n\n### Available Directions:\n{child_locations_list}\n\nRespond with ONLY the single direction you choose."
+}

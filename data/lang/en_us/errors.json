@@ -1,0 +1,13 @@
+{
+    "error_json_not_found": "FATAL ERROR: Configuration file not found at {path}",
+    "error_json_decode": "FATAL ERROR: Could not parse JSON file at {path}. Error: {e}",
+    "error_leads_empty": "Error: The 'leads.json' file is empty or missing.",
+    "error_gemini_config": "--- GEMINI CONFIGURATION ERROR ---\n{e}",
+    "error_lmstudio_api": "--- LMSTUDIO API ERROR --- \nError: {e}",
+    "error_unexpected": "--- UNEXPECTED ERROR --- \nError: {e}",
+    "error_memory_init": "FATAL ERROR: Could not initialize the vector memory system. Error: {e}",
+    "error_log_ideation_write": "[ERROR] Could not write to ideation log: {e}",
+    "error_gen_features_json_missing": "[GENERATION ERROR] `data/features.json` not found or invalid. Cannot generate map.",
+    "error_no_characters_found": "FATAL ERROR: No characters found in {run_path}",
+    "error_run_rename_fail": "Could not rename run directory. Saving to original path. Error: {error}"
+}

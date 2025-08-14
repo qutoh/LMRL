@@ -1,0 +1,6 @@
+{
+    "task_prompt_mnemosyne": "Summarize the following text into a single, brief paragraph (1-3 sentences) capturing only the essential action or information.",
+    "task_prompt_summarizer_main": "Summarize the events of a story so far. You will be given a block of text, which may include a previous summary followed by new dialogue. Create a new, single, comprehensive summary in the past tense.",
+    "task_prompt_summarizer_meta": "Re-summarize the provided summary, condensing it significantly while preserving only the most absolutely critical plot points.",
+    "task_prompt_summarizer_savename": "Invent a short, evocative, and filesystem-friendly title for the story text. The title must be 1-4 words and cannot contain special characters. Previous failed attempts: {previous_attempts}"
+}

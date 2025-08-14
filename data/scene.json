@@ -1,0 +1,44 @@
+[
+    {
+        "name": "Mended Lute Tavern",
+        "scene_prompt": "A large group of adventurers gathers in the common room of the 'Mended Lute' tavern, assessing each other. The air is thick with the smell of stale ale and pipe smoke.",
+        "load_dms": [],
+        "load_npcs": [
+            "Silas the Merchant"
+        ],
+        "load_players": []
+    },
+    {
+        "name": "Whispering Woods",
+        "scene_prompt": "The party finds themselves at the edge of the Whispering Woods, a place shunned by locals. The trees loom tall and ancient, their branches intertwining to block out the sun. A faint, mournful whisper echoes from within.",
+        "load_dms": [
+            "Tactician"
+        ],
+        "load_npcs": [],
+        "load_leads": []
+    },
+    {
+        "name": "Desert Outpost",
+        "scene_prompt": "Dust billows around a dilapidated outpost baking under the harsh desert sun. The wind whistles through cracked windows, and the only signs of life are a few buzzards circling high above.",
+        "load_dms": [
+            "Gamemaster"
+        ],
+        "load_npcs": [],
+        "load_leads": [
+            "Brother Theron, the Cleric"
+        ]
+    },
+    {
+        "name": "Forgotten Crypt",
+        "scene_prompt": "Cold, damp air fills the forgotten crypt as the adventurers descend. Coffins line the walls, some ajar, and the unsettling stillness is broken only by the drip of unseen water.",
+        "load_dms": [
+            "Tactician"
+        ],
+        "load_npcs": [
+            "Captain Eva Rostova"
+        ],
+        "load_leads": [
+            "Evelyn, the Shadow"
+        ]
+    }
+]

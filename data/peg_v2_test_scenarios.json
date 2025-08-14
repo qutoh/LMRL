@@ -1,0 +1,41 @@
+[
+  {
+    "name": "Scenario 1: Crowded Fortress",
+    "mock_llm_calls": {
+      "PEG_V2_GET_AREA_NAMES": "Barracks; Armory; Captain's Quarters; Mess Hall; Courtyard; Stables",
+      "PEG_V2_RANK_AREAS": "Courtyard; Mess Hall; Barracks; Stables; Armory; Captain's Quarters",
+      "PEG_V2_DEFINE_AREA_DATA": {
+        "Courtyard": { "description": "A muddy central courtyard, open to the sky.", "type": "GENERIC_CONTAINER", "size_tier": "large" },
+        "Mess Hall": { "description": "A large hall with long wooden tables for dining.", "type": "GENERIC_CONTAINER", "size_tier": "large" },
+        "Barracks": { "description": "Rows of bunks for the fortress garrison.", "type": "GENERIC_CONTAINER", "size_tier": "medium" },
+        "Stables": { "description": "Stalls for horses, smelling of hay and manure.", "type": "GENERIC_CONTAINER", "size_tier": "medium" },
+        "Armory": { "description": "Racks of weapons and stands of armor line the walls.", "type": "GENERIC_CONTAINER", "size_tier": "small" },
+        "Captain's Quarters": { "description": "A private, spartan room for the fort's commander.", "type": "GENERIC_CONTAINER", "size_tier": "small" }
+      }
+    }
+  },
+  {
+    "name": "Scenario 2: Sprawling Cave",
+    "mock_llm_calls": {
+      "PEG_V2_GET_AREA_NAMES": "The Great Cavern; Fungus Forest; Underground River; Chasm",
+      "PEG_V2_RANK_AREAS": "The Great Cavern; Chasm; Fungus Forest; Underground River",
+      "PEG_V2_DEFINE_AREA_DATA": {
+        "The Great Cavern": { "description": "A vast central cave with high ceilings and many passages.", "type": "GENERIC_CONTAINER", "size_tier": "large" },
+        "Chasm": { "description": "A seemingly bottomless rift in the cavern floor.", "type": "SOLID_BARRIER", "size_tier": "large" },
+        "Fungus Forest": { "description": "A dense thicket of glowing mushrooms.", "type": "GENERIC_CONTAINER", "size_tier": "medium" },
+        "Underground River": { "description": "A swift-flowing subterranean river.", "type": "GENERIC_PATH", "size_tier": "small" }
+      }
+    }
+  },
+  {
+    "name": "Scenario 3: Algorithm Stress Test",
+    "mock_llm_calls": {
+      "PEG_V2_GET_AREA_NAMES": "Main Chamber; Side Passage",
+      "PEG_V2_RANK_AREAS": "Main Chamber; Side Passage",
+      "PEG_V2_DEFINE_AREA_DATA": {
+        "Main Chamber": { "description": "A large, empty chamber for testing.", "type": "GENERIC_CONTAINER", "size_tier": "large" },
+        "Side Passage": { "description": "A narrow passage for testing.", "type": "GENERIC_PATH", "size_tier": "small" }
+      }
+    }
+  }
+]

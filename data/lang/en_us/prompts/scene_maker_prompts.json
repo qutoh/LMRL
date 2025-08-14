@@ -1,0 +1,3 @@
+{
+    "task_prompt_scene_maker": "World Theme: {world_theme}\n\nLocation Name: {location_name}\nLocation Type: {location_type}\nDescription: {location_description}\n\nBased on the world theme and location details above, create a compelling scene prompt to start a story. The prompt should be a single, detailed paragraph."
+}

@@ -1,0 +1,120 @@
+{
+	"Complex_Creative_JSON": {
+		"representative_task": "DIRECTOR_COMMAND_VALIDATION",
+		"description": "Handles tasks requiring deep narrative context, logical decision-making, and the generation of creative free-form text within a JSON structure.",
+		"calibrate_sampling_params": true,
+		"members": [
+			"DIRECTOR_CREATE_NPC_JSON_FROM_PROCGEN",
+			"DIRECTOR_GET_COMMAND",
+			"GET_CHARACTER_PLACEMENT",
+			"PEG_CREATE_FEATURE_JSON",
+			"PEG_V3_GET_INITIAL_FEATURES_JSON",
+			"WORLDGEN_CREATE_LOCATION_JSON"
+		]
+	},
+	"Narrative_JSON_Extraction": {
+		"representative_task": "MOVEMENT_PARSE_VALIDATION",
+		"description": "Reads and interprets natural language prose to extract structured information into a JSON object.",
+		"calibrate_sampling_params": false,
+		"members": [
+			"POSITION_PARSE_MOVEMENT"
+		]
+	},
+	"Formatting_JSON_Repair": {
+		"representative_task": "MOVEMENT_FIX_VALIDATION",
+		"description": "Handles low-level, non-creative formatting tasks, primarily fixing broken or incomplete text and forcing it into a valid JSON structure.",
+		"calibrate_sampling_params": false,
+		"members": [
+			"CH_FIX_ATLAS",
+			"CH_FIX_DIRECTOR",
+			"CH_FIX_NPC_JSON_FROM_PROCGEN",
+			"CH_FIX_PEG_JSON",
+			"CH_FIX_PEG_V3_JSON",
+			"POSITION_FIX_MOVEMENT_JSON"
+		]
+	},
+	"Logical_JSON_Estimation": {
+		"representative_task": "TEMPORAL_ESTIMATION_VALIDATION",
+		"description": "Makes a reasonable, logical estimation from a narrative context and returns it as a value within a JSON.",
+		"calibrate_sampling_params": false,
+		"members": [
+			"ESTIMATE_ACTION_DURATION"
+		]
+	},
+	"Rule_Based_JSON_Classification": {
+		"representative_task": null,
+		"description": "Handles pure classification where the model is given a single piece of data and a clear menu of options to categorize into a JSON.",
+		"calibrate_sampling_params": false,
+		"members": []
+	},
+	"Narrative_Keyword_Extraction": {
+		"representative_task": "CREATIVE_KEYWORD_CHOICE_VALIDATION",
+		"description": "Interprets a block of narrative prose to extract a single, constrained piece of information in a keyword format.",
+		"calibrate_sampling_params": true,
+		"members": [
+			"CALIBRATION_CHOOSE_KEYWORD_FROM_NARRATIVE",
+			"DIRECTOR_CAST_LEAD_FOR_ROLE",
+			"DIRECTOR_CHOOSE_DMS_FOR_SCENE",
+			"DIRECTOR_CHOOSE_NEXT_ACTOR",
+			"PEG_V3_CHOOSE_PARENT",
+			"POSITION_GET_MOVEMENT_KEYWORD",
+			"RESOLVE_CHARACTER_DESCRIPTION",
+			"WORLDGEN_CHOOSE_NAVIGATION_TARGET",
+			"WORLDGEN_DECIDE_ACTION"
+		]
+	},
+	"Logical_Keyword_Choice": {
+		"representative_task": "LOGICAL_KEYWORD_VALIDATION",
+		"description": "Handles simple, logical, non-narrative decisions that result in a single keyword output (e.g., YES/NO).",
+		"calibrate_sampling_params": false,
+		"members": [
+			"DIRECTOR_CONFIRM_NPC_SAVE",
+			"WORLDGEN_ANALYZE_SCENE_FIT"
+		]
+	},
+	"Creative_Prose_Generation": {
+		"representative_task": null,
+		"description": "Generates free-form creative text (prose). This group is not calibrated as its output is subjective.",
+		"members": [
+			"DIRECTOR_CREATE_INSTR_FROM_DESC",
+			"DIRECTOR_CREATE_INSTR_FROM_ROLE",
+			"DIRECTOR_CREATE_LEAD_DESC_FROM_ROLE",
+			"DIRECTOR_CREATE_LEAD_DESC_FROM_SCENE",
+			"DIRECTOR_CREATE_LEAD_INSTR_FROM_ROLE",
+			"DIRECTOR_CREATE_LEAD_INSTR_FROM_SCENE",
+			"DIRECTOR_CREATE_LEAD_NAME_FROM_ROLE",
+			"DIRECTOR_CREATE_LEAD_NAME_FROM_SCENE",
+			"DIRECTOR_DEFINE_LEAD_ROLES_FOR_SCENE",
+			"DIRECTOR_GET_DM_ANNOTATION",
+			"DIRECTOR_TUNE_DM_INSTRUCTIONS",
+			"GENERATE_NEW_SCENE",
+			"LEAD_CREATE_DESC",
+			"LEAD_CREATE_INSTR",
+			"LEAD_CREATE_NAME",
+			"NPC_CREATE_DESC_FROM_CONTEXT",
+			"NPC_CREATE_DESC_FROM_PROCGEN",
+			"NPC_CREATE_INSTR_FROM_CONTEXT",
+			"NPC_CREATE_INSTR_FROM_PROCGEN",
+			"NPC_CREATE_NAME_FROM_PROCGEN",
+			"PEG_V3_GET_NARRATIVE_SEED",
+			"PROCGEN_GENERATE_NARRATIVE_BEAT",
+			"WORLDGEN_CREATE_LOCATION_DESC",
+			"WORLDGEN_CREATE_LOCATION_NAME",
+			"WORLDGEN_CREATE_LOCATION_TYPE",
+			"WORLDGEN_CREATE_THEME",
+			"WORLDGEN_NAME_WORLD",
+			"WORLDGEN_SUGGEST_NEW_LOCATION",
+			"WORLDGEN_SUGGEST_PARENT_LOCATION"
+		]
+	},
+	"Narrative_Summarization": {
+		"representative_task": null,
+		"description": "Summarizes text. This group is not calibrated as its output is subjective.",
+		"members": [
+			"GET_SAVE_NAME",
+			"SUMMARIZE_MAIN_STORY",
+			"SUMMARIZE_META_STORY",
+			"SUMMARIZE_TURN_FOR_MEMORY"
+		]
+	}
+}

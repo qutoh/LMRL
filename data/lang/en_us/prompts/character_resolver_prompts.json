@@ -1,0 +1,3 @@
+{
+    "task_prompt_character_resolver": "Match the generic description to a specific character from the provided list. Choose the single best fit. Respond with ONLY the name of the character or `NONE`."
+}

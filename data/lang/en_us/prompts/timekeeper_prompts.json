@@ -1,0 +1,3 @@
+{
+    "task_prompt_timekeeper": "Estimate how long the action described in the user message took. Your response MUST be a single, valid JSON object. You can use any combination of the following keys:\n- `duration_in_hours`\n- `duration_in_minutes`\n- `duration_in_seconds`\n\n### EXAMPLE 1 ###\nUser Message: `The party makes camp for the night and rests until dawn.`\nYour Response:\n```json\n{{\n  \"duration_in_hours\": 8\n}}\n```\n\n### EXAMPLE 2 ###\nUser Message: `Evelyn quickly glances around the room, then picks the lock on the chest.`\nYour Response:\n```json\n{{\n  \"duration_in_minutes\": 1,\n  \"duration_in_seconds\": 30\n}}\n```"
+}

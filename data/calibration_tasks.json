@@ -1,0 +1,141 @@
+{
+    "single_tasks": [
+        {
+            "calibration_id": "DIRECTOR_COMMAND_VALIDATION",
+            "target_task_key": "DIRECTOR_GET_COMMAND",
+            "target_task_prompt_key": "task_prompt_director_main",
+            "prompt_args": {
+                "character_name": "Evelyn, the Shadow",
+                "character_instructions": "You are a cunning rogue. Your goal is to acquire wealth and secrets.",
+                "conversation_str": "Here is a summary of the story so far:\nThe party entered a forgotten crypt, bypassing a rusty gate. Inside, they found a sarcophagus which Evelyn, the Shadow, skillfully opened, revealing a strange, pulsing gemstone.\n\n--- RECENT DIALOGUE ---\n- Narrator: A low grinding sound echoes from the far end of the chamber as a stone door begins to slide open.\n- Brother Theron: By the light! What new evil approaches?\n- Evelyn, the Shadow: I pocket the gemstone while no one is looking. This could be valuable.",
+                "casting_list_str": "- **Captain Eva Rostova**: The grim, no-nonsense captain of the city guard."
+            },
+            "semantic_exemplar": "{\"action\": \"UPDATE\", \"new_instructions\": \"You are a cunning rogue who now possesses a strange gemstone. Your goal is to discover its secrets while still acquiring wealth.\"}",
+            "creative_fields": ["new_instructions"],
+            "validation": { 
+                "type": "json", 
+                "temperature_reward_factor": 0.15,
+                "mutually_exclusive_actions": ["UPDATE", "REMOVE", "LOAD"], 
+                "rules": [
+                    { "check": "has_key", "key": "action" },
+                    { "check": "key_value_in", "key": "action", "values": ["UPDATE", "REMOVE", "LOAD"] },
+                    { "check": "key_requires_key", "if_key": "action", "if_value": "UPDATE", "then_key": "new_instructions" },
+                    { "check": "key_requires_key", "if_key": "action", "if_value": "LOAD", "then_key": "target_name" }
+                ]
+            }
+        },
+        {
+            "calibration_id": "PROMETHEUS_TOOL_USE_VALIDATION",
+            "target_task_key": "PROMETHEUS_DETERMINE_TOOL_USE",
+            "target_task_prompt_key": "task_prompt_prometheus_tool_use",
+            "prompt_args": {
+                "character_list": "Evelyn, the Shadow; Silas the Merchant",
+                "recent_events": "Narrator: The ceiling groans and with a final crack, collapses in a shower of stone and dust. When the air clears, Silas the Merchant is nowhere to be seen, buried under tons of rock."
+            },
+            "validation": {
+                "type": "key_value_checklist",
+                "temperature_reward_factor": 0.05,
+                "expected_pairs": {
+                    "summarize_for_memory": [true, false],
+                    "remove_character": true
+                }
+            }
+        },
+        {
+            "calibration_id": "MOVEMENT_PARSE_VALIDATION",
+            "target_task_key": "POSITION_PARSE_MOVEMENT",
+            "target_task_prompt_key": "task_prompt_position_manager",
+            "prompt_args": { "target_list": "'Brother Theron', 'Hooded Figure'", "user_message_content": "Evelyn casually detached herself from the conversation with Brother Theron. With a practiced ease, she wove through the throng of patrons and slid into the seat opposite the Hooded Figure." },
+            "semantic_exemplar": "{\"action\": \"MOVE\", \"mover\": \"Evelyn\", \"target\": \"Hooded Figure\", \"relation\": \"NEXT_TO\"}",
+            "creative_fields": [],
+            "validation": { "type": "json", "rules": [ { "check": "has_key", "key": "action" }, { "check": "has_key", "key": "mover" }, { "check": "has_key", "key": "target" }, { "check": "has_key", "key": "relation" } ]}
+        },
+        {
+            "calibration_id": "MOVEMENT_FIX_VALIDATION",
+            "target_task_key": "POSITION_FIX_MOVEMENT_JSON",
+            "target_task_prompt_key": "task_prompt_command_handler_fix_movement",
+            "prompt_args": { "target_list": "'Hooded Figure', 'The Bar'", "raw_text": "Sure, Evelyn moves. She goes to the Hooded Figure. `{'action': 'MOVE', 'mover': 'Evelyn' 'target': 'Hooded Figure'}`" },
+            "semantic_exemplar": "{\"action\": \"MOVE\", \"mover\": \"Evelyn\", \"target\": \"Hooded Figure\", \"relation\": \"NEXT_TO\"}",
+            "creative_fields": [],
+            "validation": { "type": "json", "rules": [ { "check": "has_key", "key": "action" }, { "check": "has_key", "key": "mover" }, { "check": "has_key", "key": "target" }, { "check": "has_key", "key": "relation" } ]}
+        },
+        {
+            "calibration_id": "MOVEMENT_KEYWORD_VALIDATION",
+            "target_task_key": "POSITION_GET_MOVEMENT_KEYWORD",
+            "target_task_prompt_key": "task_prompt_get_movement_keyword",
+            "prompt_args": { "target_list": "'Brother Theron', 'Hooded Figure'", "raw_text": "Evelyn wove through the throng of patrons and slid into the seat opposite the stranger." },
+            "validation": { "type": "keyword", "expected_prefix": "MOVE:", "expected_substrings": ["Hooded Figure", "figure", "stranger"] }
+        },
+        {
+            "calibration_id": "TEMPORAL_ESTIMATION_VALIDATION",
+            "target_task_key": "ESTIMATE_ACTION_DURATION",
+            "target_task_prompt_key": "task_prompt_timekeeper",
+            "prompt_args": { "user_message_content": "Evelyn quickly glances around the room before slipping the note into her pocket." },
+            "semantic_exemplar": "{\"duration_in_seconds\": 5}",
+            "creative_fields": ["duration_in_seconds"],
+            "validation": { "type": "json", "rules": [ { "check": "has_key", "key": "duration_in_seconds" } ]}
+        },
+        {
+            "calibration_id": "LOGICAL_KEYWORD_VALIDATION",
+            "target_task_key": "DIRECTOR_CHECK_NPC_SURVIVAL",
+            "target_task_prompt_key": "task_prompt_director_npc_survival",
+            "prompt_args": { "context": "The party spoke briefly with Silas the Merchant to buy some rope, then descended into the crypt, leaving him at the entrance.", "npc_name": "Silas the Merchant", "npc_description": "A portly, jovial merchant." },
+            "validation": { "type": "exact_keyword", "valid_keywords": ["YES", "NO"] }
+        }
+    ],
+    "sequence_tasks": [
+        {
+            "calibration_id": "CREATIVE_KEYWORD_CHOICE_VALIDATION",
+            "target_task_key": "CALIBRATION_CHOOSE_KEYWORD_FROM_NARRATIVE",
+            "target_task_prompt_key": "task_prompt_calibration_keyword_choice",
+            "validation": { "type": "sequence", "temperature_reward_factor": 0.2 },
+            "steps": [
+                {
+                    "user_message_content": "You stand at a crossroads in a misty forest. The path splits in all four cardinal directions. To the north is a carnival, the sound of laughing children and, oddly, gunshots are heard. To the east is a dilapidated hut with a sign 'Warning: Radiation Hazard. Keep out.' on its boarded-up door. The south is where you came from, you remember it well. And to the west is just a boring clearing, nothing is happening there at all.",
+                    "prompt_args": { 
+                        "world_theme": "A test world of choices.",
+                        "breadcrumb_trail": "Misty Forest (Crossroads)",
+                        "child_locations_list": "NORTH, EAST, SOUTH, WEST" 
+                    },
+                    "valid_options": [ "NORTH", "EAST", "SOUTH", "WEST" ]
+                },
+                {
+                    "user_message_content": "The path leads to the edge of a chasm spanned by a rope bridge. To the north across the bridge is a carnival, the sound of laughing children and, oddly, gunshots are heard. To the east along the chasm is a dilapidated hut with a sign 'Warning: Radiation Hazard. Keep out.' on its boarded-up door. The south is where you came from, you remember it well. And to the west is just a boring clearing, nothing is happening there at all.",
+                    "prompt_args": {
+                        "world_theme": "A test world of choices.",
+                        "breadcrumb_trail": "Misty Forest (Chasm Edge)",
+                        "child_locations_list": "NORTH, EAST, SOUTH, WEST" 
+                    },
+                    "valid_options": [ "NORTH", "EAST", "SOUTH", "WEST" ]
+                },
+                {
+                    "user_message_content": "You arrive at a clearing with a single, ancient oak tree at its center. Paths lead away from the clearing in all directions. To the north is a carnival, the sound of laughing children and, oddly, gunshots are heard. To the east is a dilapidated hut with a sign 'Warning: Radiation Hazard. Keep out.' on its boarded-up door. The south is where you came from, you remember it well. And to the west is just a boring clearing, nothing is happening there at all.",
+                    "prompt_args": {
+                        "world_theme": "A test world of choices.",
+                        "breadcrumb_trail": "Misty Forest (Ancient Oak)",
+                        "child_locations_list": "NORTH, EAST, SOUTH, WEST"
+                    },
+                    "valid_options": [ "NORTH", "EAST", "SOUTH", "WEST" ]
+                },
+                {
+                    "user_message_content": "The path ends at the foot of a steep, vine-covered cliff face. It appears you can attempt to climb it, or follow the base of the cliff. To the north at the top of the cliff is a carnival, the sound of laughing children and, oddly, gunshots are heard. To the east is a dilapidated hut with a sign 'Warning: Radiation Hazard. Keep out.' on its boarded-up door. The south is where you came from, you remember it well. And to the west is just a boring clearing, nothing is happening there at all.",
+                    "prompt_args": {
+                        "world_theme": "A test world of choices.",
+                        "breadcrumb_trail": "Misty Forest (Cliff Face)",
+                        "child_locations_list": "NORTH, EAST, SOUTH, WEST"
+                    },
+                    "valid_options": [ "NORTH", "EAST", "SOUTH", "WEST" ]
+                },
+                {
+                    "user_message_content": "You find a moss-covered stone circle. The air hums with faint energy. There are clearings in the trees in every direction. To the north is a carnival, the sound of laughing children and, oddly, gunshots are heard. To the east is a dilapidated hut with a sign 'Warning: Radiation Hazard. Keep out.' on its boarded-up door. The south is where you came from, you remember it well. And to the west is just a boring clearing, nothing is happening there at all.",
+                    "prompt_args": {
+                        "world_theme": "A test world of choices.",
+                        "breadcrumb_trail": "Misty Forest (Stone Circle)",
+                        "child_locations_list": "NORTH, EAST, SOUTH, WEST" 
+                    },
+                    "valid_options": [ "NORTH", "EAST", "SOUTH", "WEST" ]
+                }
+            ]
+        }
+    ]
+}
