@@ -83,7 +83,7 @@ class UIManager:
             AppState.SCENE_SELECTION: "[UP/DOWN] Navigate Scenes | [ENTER] Start | [ESC] Back",
             AppState.AWAITING_THEME_INPUT: "[ENTER] Submit Theme | [ESC] Cancel | [CTRL+V] Paste",
             AppState.AWAITING_SCENE_INPUT: "[ENTER] Submit Scene | [ESC] Cancel | [CTRL+V] Paste",
-            "PLAYER_TAKEOVER": "[TAB] Switch Panel | [Mouse Wheel/Arrows] Scroll | [ENTER] Submit | [ESC] Cancel",
+            "PLAYER_TAKEOVER": "[ENTER] Submit Response | [ESC] Cancel/Let AI Handle It | [CTRL+V] Paste",
             "PROMETHEUS_TAKEOVER": "[UP/DOWN] Select Tool | [LEFT/RIGHT] Toggle | [ENTER] Submit | [ESC] Cancel",
             AppState.GAME_RUNNING: "[F8] Flag Response | [F9] Player Takeover | [F10/ESC] Save & Exit",
             "IN_GAME_INPUT": "[ENTER] Submit Action | [ESC] Skip Action | [CTRL+V] Paste",
@@ -94,6 +94,7 @@ class UIManager:
         self.help_bar = HelpBar(help_texts=self.help_texts)
 
     def _send_player_notification(self, task_key: str):
+        """Sends a toast notification for a player takeover event."""
         if not self.toaster: return
         try:
             task_params = config.task_parameters.get(task_key, {})
@@ -102,12 +103,14 @@ class UIManager:
             toast.text_fields = [message]
             self.toaster.show_toast(toast)
         except Exception as e:
+            # Fail silently if notifications don't work
             print(f"[UI NOTIFICATION ERROR] {e}")
 
     def _get_default_token_limit(self) -> int:
         return config.settings.get("DEFAULT_INPUT_TOKEN_LIMIT", 4096)
 
     def _process_logic(self):
+        """The main state machine for the UI. Determines which view to show or action to take."""
         if self.active_view is None:
             self.special_mode_active = None
             if self.app_state == AppState.WORLD_SELECTION:
@@ -118,30 +121,34 @@ class UIManager:
                 )
             elif self.app_state == AppState.SETTINGS:
                 def on_settings_back():
-                    self.app_state = AppState.WORLD_SELECTION;
-                    self.active_view = None
+                    self.app_state = AppState.WORLD_SELECTION; self.active_view = None
 
                 self.active_view = SettingsView(on_back=on_settings_back, console_height=self.root_console.height)
+
             elif self.app_state == AppState.AWAITING_THEME_INPUT:
                 user_prompt = "Enter a theme for the new world (or leave blank for a generated one)."
-                handler = TextInputHandler(prompt=user_prompt, width=self.root_console.width - 2, height=10,
-                                           prefix="> ", max_tokens=self._get_default_token_limit())
+                handler = TextInputHandler(prompt=user_prompt, width=self.root_console.width - 2, prefix="> ",
+                                           max_tokens=self._get_default_token_limit())
                 self.active_view = TextInputView(handler=handler, on_submit=self.callbacks.handle_theme_submission)
+
             elif self.app_state == AppState.AWAITING_SCENE_INPUT:
                 user_prompt = "Write an opening scene to begin the story (or leave blank for a generated one)."
-                handler = TextInputHandler(prompt=user_prompt, width=self.root_console.width - 2, height=10,
-                                           prefix="> ", max_tokens=self._get_default_token_limit())
+                handler = TextInputHandler(prompt=user_prompt, width=self.root_console.width - 2, prefix="> ",
+                                           max_tokens=self._get_default_token_limit())
                 self.active_view = TextInputView(handler=handler, on_submit=self.callbacks.on_new_scene_submit)
+
             elif self.app_state == AppState.LOAD_OR_NEW:
                 self.active_view = LoadOrNewView(on_choice=self.callbacks.on_load_new_choice,
                                                  console_width=self.root_console.width,
                                                  console_height=self.root_console.height)
+
             elif self.app_state == AppState.LOAD_GAME_SELECTION:
                 saved_runs = file_io.get_saved_runs_for_world(self.selected_world_name)
                 self.active_view = SaveSelectionView(saves=saved_runs, on_choice=self.callbacks.on_save_selected,
                                                      on_back=lambda: self.callbacks.on_load_new_choice("BACK"),
                                                      console_width=self.root_console.width,
                                                      console_height=self.root_console.height)
+
             elif self.app_state == AppState.SCENE_SELECTION:
                 self.active_view = SceneSelectionView(scenes=ui_data_provider.get_available_scenes(),
                                                       anachronisms=ui_data_provider.get_anachronisms(
@@ -181,6 +188,7 @@ class UIManager:
             self.active_view = None
 
     def get_player_task_input(self, **kwargs):
+        """Synchronously gets player input for a task, blocking the calling engine."""
         self.sync_input_active = True
         self.sync_input_result = None
         original_view = self.active_view
@@ -195,6 +203,7 @@ class UIManager:
             "PROMETHEUS_DETERMINE_TOOL_USE": player_input_handlers.create_prometheus_menu_view,
             "DIRECTOR_CAST_REPLACEMENT": None,
         }
+
         creation_func = handler_map.get(task_key, player_input_handlers.create_default_takeover_view)
 
         if creation_func:
@@ -209,20 +218,18 @@ class UIManager:
             self._render()
             for event in tcod.event.get():
                 converted_event = self.context.convert_event(event)
+                if self.active_view:
+                    self.active_view.handle_event(converted_event)
                 if isinstance(converted_event, tcod.event.Quit):
                     self.app_state = AppState.EXITING
                     self.sync_input_active = False
                     self.sync_input_result = None
-                    break
-
-                self._handle_global_events(converted_event)
-                if self.active_view:
-                    self.active_view.handle_event(converted_event)
 
         self.active_view = original_view
-        return self.sync_input_result if self.sync_input_result is not None else ""
+        return self.sync_input_result if self.sync_input_result is not None else None
 
     def _handle_game_loading(self):
+        """Checks if models are ready and then starts the engine process."""
         self.active_view = None
         if self.model_manager.models_loaded.is_set():
             if not self.scene_prompt:
@@ -245,6 +252,7 @@ class UIManager:
             self.app_state = AppState.GAME_RUNNING
 
     def _handle_game_updates(self):
+        """Processes messages from the engine process queue to update the game view."""
         if self.active_view is None:
             game_log_box = DynamicTextBox(title="Game Log", text="", x=0, y=self.root_console.height - 10,
                                           max_width=self.root_console.width, max_height=9)
@@ -268,55 +276,84 @@ class UIManager:
                     elif msg_type == 'PLAYER_TASK_TAKEOVER_REQUEST':
                         def on_submit(text):
                             self.input_queue.put(text)
-                            self.active_view = GameView(self.event_log,
-                                                        self.active_view.game_log_box)  # Restore game view
+                            game_log_box = DynamicTextBox(title="Game Log", text="", x=0,
+                                                          y=self.root_console.height - 10,
+                                                          max_width=self.root_console.width, max_height=9)
+                            self.active_view = GameView(self.event_log, game_log_box)
 
                         player_input_handlers.create_default_takeover_view(self, on_submit, **message[1])
                     elif msg_type == 'PROMETHEUS_MENU_REQUEST':
                         def on_submit(choices):
                             self.input_queue.put(choices)
-                            self.active_view = GameView(self.event_log, self.active_view.game_log_box)
+                            game_log_box = DynamicTextBox(title="Game Log", text="", x=0,
+                                                          y=self.root_console.height - 10,
+                                                          max_width=self.root_console.width, max_height=9)
+                            self.active_view = GameView(self.event_log, game_log_box)
 
                         player_input_handlers.create_prometheus_menu_view(self, on_submit, **message[1])
+
                 else:
                     if isinstance(self.active_view, GameView): self.active_view.update_state(message)
             except Exception:
                 pass
 
     def _create_in_game_input_view(self, message: tuple):
-        prompt, max_tokens, initial_text = message[1], message[2], message[3]
+        """Creates the TextInputView for in-game player actions."""
+        prompt, max_tokens = message[1], message[2] if len(message) > 2 else self._get_default_token_limit()
+        initial_text = message[3] if len(message) > 3 else ""
 
         def on_submit(text):
             self.input_queue.put(text)
-            self.active_view = GameView(self.event_log, self.active_view.game_log_box)
+            game_log_box = DynamicTextBox(title="Game Log", text="", x=0, y=self.root_console.height - 10,
+                                          max_width=self.root_console.width, max_height=9)
+            self.active_view = GameView(self.event_log, game_log_box)
 
-        handler = TextInputHandler(prompt=prompt, width=self.root_console.width - 2, height=10, prefix="> ",
-                                   max_tokens=max_tokens, initial_text=initial_text)
+        handler = TextInputHandler(prompt=prompt, width=self.root_console.width - 2, prefix="> ", max_tokens=max_tokens,
+                                   initial_text=initial_text)
         self.active_view = TextInputView(handler=handler, on_submit=on_submit)
 
     def _create_in_game_menu_view(self, message: tuple):
-        title, options = message[1], message[2]
+        """Creates the MenuView for in-game player choices."""
+        title, options = message[1], message[2] if len(message) > 2 else []
 
         def on_submit(choice: str | None):
             self.input_queue.put(choice)
-            self.active_view = GameView(self.event_log, self.active_view.game_log_box)
+            game_log_box = DynamicTextBox(title="Game Log", text="", x=0, y=self.root_console.height - 10,
+                                          max_width=self.root_console.width, max_height=9)
+            self.active_view = GameView(self.event_log, game_log_box)
 
-        self.active_view = MenuView(title=title, options=options, on_choice=on_submit,
-                                    console_width=self.root_console.width, console_height=self.root_console.height)
+        self.active_view = MenuView(
+            title=title,
+            options=options,
+            on_choice=on_submit,
+            console_width=self.root_console.width,
+            console_height=self.root_console.height
+        )
 
     def _update_help_context(self):
+        """Determines the correct context key for the help bar based on the current UI state."""
         context_key = self.app_state
+
         if isinstance(self.active_view, TextInputView):
-            context_key = "PLAYER_TAKEOVER"
+            if self.app_state == AppState.GAME_RUNNING:
+                if "Your turn" in self.active_view.handler.prompt:
+                    context_key = "IN_GAME_INPUT"
+                else:
+                    context_key = "PLAYER_TAKEOVER"
+            elif self.app_state in [AppState.AWAITING_THEME_INPUT, AppState.AWAITING_SCENE_INPUT]:
+                context_key = self.app_state
+
         elif isinstance(self.active_view, PrometheusView):
             context_key = "PROMETHEUS_TAKEOVER"
         elif isinstance(self.active_view, MenuView):
             context_key = "IN_GAME_MENU"
         elif isinstance(self.active_view, SettingsView) and self.active_view.is_editing:
             context_key = "SETTINGS_EDIT"
+
         self.help_bar.set_context(context_key)
 
     def _render(self):
+        """Clears the console and renders the current view or status message."""
         self.root_console.clear()
         if self.active_view:
             self.active_view.render(self.root_console)
@@ -345,14 +382,17 @@ class UIManager:
                 for prim in self.active_view.sdl_primitives:
                     if prim['type'] == 'line':
                         color[...] = prim['color']
-                        self.context.renderer.line(x=np.array([prim['start'][0], prim['end'][0]]),
-                                                   y=np.array([prim['start'][1], prim['end'][1]]))
+                        self.context.renderer.line(
+                            x=np.array([prim['start'][0], prim['end'][0]]),
+                            y=np.array([prim['start'][1], prim['end'][1]])
+                        )
             self.active_view.sdl_primitives.clear()
 
     def _sync_text_input_state(self):
-        is_text_view = isinstance(self.active_view, TextInputView) or \
+        is_text_view = (isinstance(self.active_view, TextInputView)) or \
                        (isinstance(self.active_view,
                                    SettingsView) and self.active_view.is_editing and self.active_view.edit_handler is not None)
+
         if is_text_view and not self.text_input_active:
             if self.context.sdl_window: self.context.sdl_window.start_text_input()
             self.text_input_active = True
@@ -360,23 +400,8 @@ class UIManager:
             if self.context.sdl_window: self.context.sdl_window.stop_text_input()
             self.text_input_active = False
 
-    def _handle_global_events(self, event: tcod.event.Event):
-        """Handle events that apply across most states, like focus switching."""
-        if isinstance(event, tcod.event.KeyDown):
-            if event.sym == tcod.event.KeySym.TAB:
-                if self.active_view and hasattr(self.active_view, 'cycle_focus'):
-                    self.active_view.cycle_focus(1 if not event.mod & tcod.event.Modifier.SHIFT else -1)
-
-        elif isinstance(event, tcod.event.MouseMotion):
-            if self.active_view and hasattr(self.active_view, 'focusable_widgets'):
-                for widget in self.active_view.focusable_widgets:
-                    ax, ay = widget.get_absolute_pos() if hasattr(widget, 'get_absolute_pos') else (widget.x, widget.y)
-                    if ax <= event.tile.x < ax + widget.width and ay <= event.tile.y < ay + widget.height:
-                        if not widget.is_focused:
-                            self.active_view.set_focus_by_widget(widget)
-                        break
-
     def run(self):
+        """The main application loop."""
         while self.app_state != AppState.EXITING:
             if not self.sync_input_active:
                 self._process_logic()
@@ -386,46 +411,58 @@ class UIManager:
             self._render()
 
             if self.app_state == AppState.SHUTTING_DOWN:
-                if self.engine_proc and self.engine_proc.is_alive(): self.engine_proc.join(timeout=5.0)
+                if self.engine_proc and self.engine_proc.is_alive():
+                    self.engine_proc.join(timeout=5.0)
                 self.app_state = AppState.EXITING
                 continue
 
             for event in tcod.event.get():
                 converted_event = self.context.convert_event(event)
 
-                if isinstance(converted_event, tcod.event.Quit): self.app_state = AppState.EXITING; break
-
-                self._handle_global_events(converted_event)
-
                 if self.active_view: self.active_view.handle_event(converted_event)
+
+                if isinstance(converted_event, tcod.event.Quit): self.app_state = AppState.EXITING; break
 
                 if isinstance(converted_event, tcod.event.KeyDown):
                     if self.special_mode_active == "PEG_V3_TEST":
-                        key, phase = converted_event.sym, self.special_modes.current_peg_phase
+                        key = converted_event.sym
+                        phase = self.special_modes.current_peg_phase
+
                         if key in (tcod.event.KeySym.LEFT, tcod.event.KeySym.RIGHT, tcod.event.KeySym.ESCAPE):
                             current_app_state = self.app_state
                             self.special_modes.stop_peg_patches()
                             if key == tcod.event.KeySym.LEFT:
                                 self.special_modes.peg_v3_scenario_index = (
-                                                                                       self.special_modes.peg_v3_scenario_index - 1) % len(
+                                                                                   self.special_modes.peg_v3_scenario_index - 1) % len(
                                     self.special_modes.peg_v3_scenarios)
                             elif key == tcod.event.KeySym.RIGHT:
                                 self.special_modes.peg_v3_scenario_index = (
-                                                                                       self.special_modes.peg_v3_scenario_index + 1) % len(
+                                                                                   self.special_modes.peg_v3_scenario_index + 1) % len(
                                     self.special_modes.peg_v3_scenarios)
                             elif key == tcod.event.KeySym.ESCAPE:
-                                self.app_state = AppState.WORLD_SELECTION; self.active_view = None; continue
-                            self.app_state = current_app_state;
-                            self.active_view = None;
+                                self.app_state = AppState.WORLD_SELECTION
+                                self.active_view = None
+                                continue
+
+                            self.app_state = current_app_state
+                            self.active_view = None
                             continue
+
                         if phase in ('DONE', 'FINAL') and key in (tcod.event.KeySym.RETURN, tcod.event.KeySym.KP_ENTER):
                             self.active_view = None
-                        elif key in (tcod.event.KeySym.RETURN, tcod.event.KeySym.KP_ENTER, tcod.event.KeySym.SPACE):
+                        elif phase == 'INITIAL_PLACEMENT' and key in (tcod.event.KeySym.RETURN,
+                                                                      tcod.event.KeySym.KP_ENTER):
+                            self.special_modes.advance_peg_test_step(key)
+                        elif phase in ('SUBFEATURE_STEP', 'INTERIOR_PLACEMENT_STEP') and key in (
+                                tcod.event.KeySym.RETURN, tcod.event.KeySym.KP_ENTER, tcod.event.KeySym.SPACE):
+                            self.special_modes.advance_peg_test_step(key)
+                        elif phase in ('PRE_JITTER', 'PRE_INTERIOR_PLACEMENT', 'PRE_CONNECT',
+                                       'POST_CONNECT') and key in (tcod.event.KeySym.SPACE, tcod.event.KeySym.RETURN,
+                                                                   tcod.event.KeySym.KP_ENTER):
                             self.special_modes.advance_peg_test_step(key)
 
                     if self.input_queue:
-                        if converted_event.sym in (tcod.event.KeySym.F10, tcod.event.KeySym.ESCAPE) and not isinstance(
-                            self.active_view, (TextInputView, MenuView, PrometheusView)):
+                        if converted_event.sym in (tcod.event.KeySym.F10, tcod.event.KeySym.ESCAPE):
                             self.input_queue.put('__INTERRUPT_SAVE__')
                         elif converted_event.sym == tcod.event.KeySym.F9:
                             self.input_queue.put('__INTERRUPT_PLAYER__')
