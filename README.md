@@ -1,12 +1,12 @@
 Shamelessly vibe-coded with Gemini. It apologizes for its error.
 ### 1. Function
-An LLM-driven narrative generation engine with a terminal-based user interface (TUI) and separate TCOD window. At its core, the application creates dynamic, interactive stories by simulating a cast of AI-controlled characters within a procedurally generated world. Key to its philosophy is the use of unreliable narrators with limited scope on the game - the NPCs are only given the shared context of the story and none of the internal world of the other characters. This naturally (hopefully) creates conflict with other characters that may have competing and secret goals and ambitions, though unfortunately it often just spills this out into the shared context like it's a book.
+An LLM-driven setting-agnostic narrative generation engine with a terminal-based monitor and separate TCOD window. At its core, the application creates dynamic, interactive stories by simulating a cast of AI-controlled characters within a procedurally generated world. A key design philosophy is the use of unreliable narrators with limited scope on the game - the NPCs are only given the shared context of the story and none of the internal world of the other characters. This naturally (hopefully) creates conflict with other characters that may have competing and secret goals and ambitions, though unfortunately it often just spills this out into the shared context like it's a book, and sometimes it's pretty dumb yeah.
 
 The user can observe the AI-driven story, or at any point, take control of a character to participate directly when it comes to their turn.
 
 <img width="1919" height="1038" alt="Image" src="https://github.com/user-attachments/assets/182d741e-67df-48cd-ab20-a9c84ca5d4b8" /><img width="1549" height="958" alt="image" src="https://github.com/user-attachments/assets/43b67266-704f-4eeb-a2e0-42fb803c4e40" /><img width="1713" height="1045" alt="image" src="https://github.com/user-attachments/assets/4dbaa97c-bb4b-4e77-b612-d18aa43b6d48" />
 
-The system is designed to be highly configurable, managing everything from world creation and character personalities to tile information and level features. Whether or not it does anything to the game is a crapshoot.
+The system is designed to be highly configurable, managing everything from world creation and character personalities to tile information and level features. Whether or not that does anything to the game is a crapshoot, Gemini likes to randomly drop functions and I'm too damn tired and fogged from RA to do a systematic review.
 
 ### 2. Key Features
 
@@ -40,3 +40,6 @@ In practice many are not capable of the json prompts needed and frequently go to
 * Make sure JIT model loading is enabled if you need to save VRAM between worldgen and gameplay, otherwise load the model(s) you expect it to need in the Developer menu on the left (need to switch to 'Power User' or 'Developer' with the tabs on the bottom to see) This setting is located at the top left next to 'Status: Running' in Settings.
 * pip install -r requirements.txt in the root folder with main.py in a command prompt.
 * run main.py. A short wait is normal before the main menu appears with the TCOD window. Keep both windows open - this is necessary because Python still lives in the 13th century for threading. Worldgen will not be possible until models say they are loaded in the console window.
+* 
+### 7. Porting
+It shouldn't be too much work to move it over to your toaster running gentoo or whatever. Really the only thing especially windows-oriented is the notification library.
