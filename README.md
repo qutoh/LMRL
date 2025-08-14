@@ -2,7 +2,7 @@ Shamelessly vibe-coded with Gemini. It apologizes for its error.
 ### 1. Function
 An LLM-driven setting-agnostic narrative generation engine with a terminal-based monitor and separate TCOD window. At its core, the application creates dynamic, interactive stories by simulating a cast of AI-controlled characters within a procedurally generated world. A key design philosophy is the use of unreliable narrators with limited scope on the game - the NPCs are only given the shared context of the story and none of the internal world of the other characters. This naturally (hopefully) creates conflict with other characters that may have competing and secret goals and ambitions, though unfortunately it often just spills this out into the shared context like it's a book, and sometimes it's pretty dumb yeah.
 
-The user can at any point, take control of a character to participate directly when it comes to their turn.
+The user can take control of a character to participate directly when it comes to their turn.
 
 <img width="1919" height="1038" alt="Image" src="https://github.com/user-attachments/assets/182d741e-67df-48cd-ab20-a9c84ca5d4b8" /><img width="1549" height="958" alt="image" src="https://github.com/user-attachments/assets/43b67266-704f-4eeb-a2e0-42fb803c4e40" /><img width="1713" height="1045" alt="image" src="https://github.com/user-attachments/assets/4dbaa97c-bb4b-4e77-b612-d18aa43b6d48" />
 
