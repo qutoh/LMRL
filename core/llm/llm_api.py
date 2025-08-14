@@ -18,36 +18,22 @@ def _prepare_messages_for_llm(
         task_prompt_kwargs: dict | None
 ) -> list[dict]:
     """
-    Assembles the final list of messages to be sent to the LLM, separating logic
-    for task-based calls versus conversational calls.
+    Assembles the final list of messages to be sent to the LLM.
     """
     system_message = {"role": "system", "content": persona}
     final_messages = list(messages)
 
-    # --- Task-Based Prompt Logic ---
     if task_prompt_key:
         task_content = loc(task_prompt_key, **(task_prompt_kwargs or {}))
         if task_content.startswith("LOC_KEY_NOT_FOUND:") or not task_content.strip():
             log_message('debug',
-                        f"[LLM_API WARNING] Localization key '{task_prompt_key}' not found or empty. Task instruction will be missing.")
-            # If the task fails to load and there's no other history, the prompt is invalid.
-            # We add the fallback here to prevent an empty prompt, but the root cause is a missing loc key.
-            if not any(msg.get('role') == 'user' for msg in final_messages):
-                log_message('debug',
-                            "[LLM_API WARNING] Task prompt failed and no user messages exist. Adding generic fallback.")
-                final_messages.append({"role": "user", "content": "What do you do next?"})
+                        f"[LLM_API WARNING] Localization returned empty or missing content for prompt key: '{task_prompt_key}'. The task-specific prompt will be omitted.")
         else:
-            # For a task, the instruction is the final user message.
             final_messages.append({"role": "user", "content": task_content})
 
-    # --- Conversational Prompt Logic ---
-    else:
-        # If there is NO task key, this is a conversational turn.
-        # The fallback is only appropriate here if the conversation history is empty.
-        if not any(msg.get('role') == 'user' for msg in final_messages):
-            log_message('debug',
-                        "[LLM_API WARNING] No user messages in conversational prompt. Adding generic fallback.")
-            final_messages.append({"role": "user", "content": "What do you do next?"})
+    if not any(msg.get('role') == 'user' for msg in final_messages):
+        log_message('debug', "[LLM_API WARNING] No user messages in final prompt. Adding generic fallback.")
+        final_messages.append({"role": "user", "content": "What do you do next?"})
 
     return [system_message] + final_messages
 
@@ -157,6 +143,7 @@ def execute_task(engine, agent_or_character: dict, task_key: str, messages: list
         engine.last_interaction_log = {"log_id": log_id, "log_path": log_path}
 
     return raw_response
+
 
 
 def get_model_context_length(model_identifier):
