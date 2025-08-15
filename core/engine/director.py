@@ -62,14 +62,14 @@ class DirectorManager:
 
         if log_key:  # Ensure log_key was set before trying to use it
             log_args = {'lead_name' if role_type == 'lead' else 'npc_name': removed_char_name}
-            utils.log_message('debug', loc(log_key, **log_args))
+            utils.log_message('game', loc(log_key, **log_args))
 
     def establish_initial_cast(self, scene_prompt: str, location_summary: str):
         """
         Dynamically determines lead roles, casts them from files or creates new ones,
         and then selects and tunes appropriate DMs for the scene.
         """
-        utils.log_message('debug', "[DIRECTOR] Establishing initial cast for the scene.")
+        utils.log_message('game', "[DIRECTOR] The director is establishing an initial cast for the scene.")
 
         # --- Lead Character Management (Role-Based) ---
         npcs = [c for c in self.engine.characters if c.get('role_type') == 'npc']
@@ -84,7 +84,7 @@ class DirectorManager:
                                  task_prompt_kwargs=roles_kwargs)
         needed_roles = [role.strip() for role in roles_str.split(';') if role.strip()]
 
-        utils.log_message('debug', f"[DIRECTOR] Defined lead roles needed: {needed_roles}")
+        utils.log_message('game', f"[DIRECTOR] The director has defined the lead roles needed: {needed_roles}")
 
         available_leads = [c for c in config.casting_leads if not roster_manager.find_character(self.engine, c['name'])]
 
@@ -99,7 +99,7 @@ class DirectorManager:
                 if chosen_name and 'none' not in chosen_name.lower():
                     if lead_to_load := roster_manager.find_character_in_list(chosen_name, available_leads):
                         roster_manager.decorate_and_add_character(self.engine, lead_to_load, 'lead')
-                        utils.log_message('debug',
+                        utils.log_message('game',
                                           f"[DIRECTOR] Cast '{lead_to_load['name']}' for the role of '{role}'.")
                         available_leads = [c for c in available_leads if c['name'] != lead_to_load['name']]
                         continue

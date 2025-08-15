@@ -52,7 +52,7 @@ def execute_task(engine, agent_or_character: dict, task_key: str, messages: list
 
     task_params = config.task_parameters.get(task_key, {})
 
-    if task_params.get("player_takeover_enabled"):
+    if task_params.get("player_takeover_enabled") is True:
         player_response = None
         persona = agent_or_character.get('persona') or agent_or_character.get('instructions', '')
         handler_kwargs = {

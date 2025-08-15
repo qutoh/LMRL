@@ -2,6 +2,7 @@
 
 import re
 import tiktoken
+import json
 from datetime import datetime, timedelta
 from .config_loader import config
 from .localization import loc
@@ -22,18 +23,30 @@ class _Logger:
     def log(self, level, message, **kwargs):
         """Prints to console and pushes 'game' level messages to the UI queue."""
         log_level_setting = config.settings.get('LOG_LEVEL', 'debug')
-        if LOG_HIERARCHY.get(level, 99) <= LOG_HIERARCHY.get(log_level_setting, 2):
-            if log_level_setting == 'story' and level == 'story':
-                print(message, end=" ", **kwargs)
-            elif log_level_setting == 'game' and level == 'game':
-                print(message, **kwargs)
-            elif log_level_setting not in ['story', 'game']:
-                print(message, **kwargs)
+        setting_val = LOG_HIERARCHY.get(log_level_setting, 2)
+
+        # Always send 'game' logs to the UI widget
         if level == 'game' and self.render_queue:
             try:
                 self.render_queue.put_nowait(('GAME_LOG_UPDATE', message))
             except Exception:
                 pass
+
+        # Determine if the message should be printed to the console
+        should_print = False
+        if level == 'story':
+            # Story messages print on all active log levels, as they are the core narrative.
+            should_print = True
+        elif LOG_HIERARCHY.get(level, 99) <= setting_val:
+            # Other messages (game, debug, full) follow the hierarchy.
+            should_print = True
+
+        if should_print:
+            # Use special formatting for story messages for readability.
+            if level == 'story':
+                print(message, end=" ", **kwargs)
+            else:
+                print(message, **kwargs)
 
 
 _logger_instance = _Logger()

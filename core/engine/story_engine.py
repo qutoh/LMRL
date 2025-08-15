@@ -17,6 +17,7 @@ from core.common.game_state import GameState
 from core.components.summary_manager import SummaryManager
 from .prometheus_manager import PrometheusManager
 from core.common.annotation_manager import AnnotationManager
+from core.components.item_manager import ItemManager
 
 
 class StoryEngine:
@@ -72,6 +73,7 @@ class StoryEngine:
         self.summary_manager = SummaryManager(self)
         self.prometheus_manager = PrometheusManager(self)
         self.annotation_manager = AnnotationManager(self)
+        self.item_manager = ItemManager(self)
         self.config = config
 
         if world_name:
