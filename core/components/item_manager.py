@@ -89,7 +89,10 @@ class ItemManager:
         # Check for existing outfit to short-circuit Director call
         for name, outfit_data in character['equipment']['outfits'].items():
             if sorted(outfit_data.get('items', [])) == current_equipped_names:
-                character['physical_description'] = outfit_data['description']
+                if character['physical_description'] != outfit_data['description']:
+                    character['physical_description'] = outfit_data['description']
+                    utils.log_message('game',
+                                f"{character['name']}'s appearance changes to: {character['physical_description']}")
                 utils.log_message('debug',
                                   f"[EQUIPMENT] Matched existing outfit '{name}' for {character['name']}. Short-circuiting Director call.")
                 return
@@ -106,6 +109,7 @@ class ItemManager:
                                                 task_prompt_kwargs=update_desc_kwargs)
         if new_physical_description:
             character['physical_description'] = new_physical_description.strip()
+            utils.log_message('game', f"{character['name']}'s appearance changes to: {character['physical_description']}")
             new_outfit_name = f"OUTFIT_{len(character['equipment']['outfits'])}"
             character['equipment']['outfits'][new_outfit_name] = {
                 "items": current_equipped_names,

@@ -2,7 +2,7 @@
     "MAP_WIDTH": 160,
     "MAP_HEIGHT": 106,
     "ADAPTIVE_RESOLUTION_MODE": false,
-    "LOG_LEVEL": "full",
+    "LOG_LEVEL": "game",
     "DEFAULT_INPUT_TOKEN_LIMIT": 4096,
     "ENABLE_REWRITE_STAGE": false,
         "ENABLE_PAPER_DOLL_MODE": false,

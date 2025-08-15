@@ -165,6 +165,9 @@ def decorate_and_add_character(engine, character_data, role_type):
         char['equipment'] = {"equipped": [], "removed": [], "outfits": {}}
 
     add_character(engine, char)
+    utils.log_message('game', f"{char.get('name', 'A new character')} has joined the story.")
+    if phys_desc := char.get('physical_description'):
+        utils.log_message('game', f"-> {phys_desc}")
     utils.log_message('debug', loc('system_roster_loaded', role_type=role_type.upper(), char_name=char['name'],
                                    model_name=char.get('model')))
 
@@ -362,6 +365,7 @@ def promote_npc_to_lead(engine, npc_name):
             char_to_promote['role_type'] = 'lead'
             char_to_promote['is_essential'] = True
             char_to_promote['is_director_managed'] = True
+
             utils.log_message('debug', loc('system_director_lead_promote', npc_name=npc_name,
                                            character_name='(N/A)'))  # Context may vary
             return char_to_promote

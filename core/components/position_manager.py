@@ -137,8 +137,8 @@ def place_character_contextually(engine, game_state: GameState, character: dict,
                 x1, y1, w, h = [int(c) for c in bounds]
                 if pos := _find_walkable_tile_in_area(game_state, x1, y1, x1 + w, y1 + h):
                     entity.x, entity.y = pos
-                    utils.log_message('debug',
-                                      f"[PEG Placement] Placed '{entity.name}' in '{chosen_narrative_tag}' at {pos}.")
+                    utils.log_message('game',
+                                      f"[POSITION] Placed '{entity.name}' in '{chosen_narrative_tag}' at {pos}.")
                     placed_successfully = True
 
     # --- Robust Fallback ---
@@ -262,5 +262,5 @@ def process_movement_intent(engine, game_state: GameState, character_name: str, 
             final_pos_x, final_pos_y = path[-1]
             mover_entity.x, mover_entity.y = final_pos_x, final_pos_y
             mover_entity.movement_remaining = current_speed_feet
-            utils.log_message('debug',
+            utils.log_message('game',
                               f"[POSITION] Moved '{mover_entity.name}' to ({mover_entity.x}, {mover_entity.y}) in '{target_name}'. {mover_entity.movement_remaining}ft remaining.")

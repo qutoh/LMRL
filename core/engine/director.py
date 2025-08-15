@@ -220,7 +220,16 @@ class DirectorManager:
 
         roster_changed = False
         if action == "UPDATE":
-            if roster_manager.update_character_instructions(character, command.get("new_instructions", "")):
+            new_instructions = command.get("new_instructions", "")
+            if new_instructions and new_instructions != character.get('instructions'):
+                # The Director can also update the core description along with instructions
+                new_description = command.get("new_description")
+                if new_description and new_description != character.get('description'):
+                    character['description'] = new_description
+                    # NEW: Log the updated core description
+                    utils.log_message('game', f"{character['name']} is now described as: {new_description}")
+
+                character['instructions'] = new_instructions
                 utils.log_message('debug', loc('log_director_rewrites', character_name=character['name']))
                 roster_changed = True
         elif action == "LOAD":
