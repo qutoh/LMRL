@@ -8,7 +8,7 @@
   "PROMETHEUS_DETERMINE_TOOL_USE": {
     "task_prompt_key": "task_prompt_prometheus_tool_use",
     "source_agent": "PROMETHEUS",
-    "player_takeover_enabled": true,
+    "player_takeover_enabled": false,
     "player_takeover_notification": "Prometheus requires input! Decide which tools to activate."
   }
 }
