@@ -48,11 +48,10 @@ def _create_npc_from_generation_sentence_stepwise(engine, char_data: dict) -> di
                                 task_prompt_kwargs=instr_kwargs) or "Behave as described."
 
     phys_desc_kwargs = {"new_name": npc_name, "new_description": description}
-    # Use the correct prompt based on paper doll mode for the fallback as well
+
     if config.settings.get("ENABLE_PAPER_DOLL_MODE"):
         phys_desc_task = 'DIRECTOR_CREATE_BASE_PHYS_DESC_FROM_PROFILE'
     else:
-        # Use a generic prompt that asks for gear, DIRECTOR_CREATE_LEAD_PHYS_DESC_FROM_ROLE is suitable
         phys_desc_task = 'DIRECTOR_CREATE_LEAD_PHYS_DESC_FROM_ROLE'
         phys_desc_kwargs['role_archetype'] = description  # Use general description as the role hint
         phys_desc_kwargs['scene_prompt'] = context_sentence
@@ -246,26 +245,6 @@ def _create_lead_from_role_and_scene_stepwise(engine, director_agent, scene_prom
             "physical_description": physical_description.strip()}
 
 
-def create_temporary_npc(engine, creator_dm, npc_name, dialogue_log):
-    """Creates a new temporary NPC, now using the robust one-shot/fallback pattern."""
-    log_message('debug', loc('system_npc_create_attempt', npc_name=npc_name))
-    recent_dialogue = "\n".join([f"{entry['speaker']}: {entry['content']}" for entry in dialogue_log[-15:]])
-
-    director_agent = config.agents['DIRECTOR']
-    kwargs = {"context_sentence": recent_dialogue, "npc_name": npc_name}
-    new_npc = _create_character_one_shot(engine, director_agent, 'DIRECTOR_CREATE_FULL_NPC_PROFILE', kwargs)
-
-    if not new_npc:
-        new_npc = _create_temporary_npc_stepwise(engine, director_agent, npc_name, recent_dialogue)
-
-    if new_npc:
-        new_npc = _initialize_character_equipment(engine, new_npc, recent_dialogue)
-        log_message('debug', loc('system_npc_create_success', npc_name=npc_name))
-        log_message('full', loc('system_npc_created_full', npc_details=new_npc))
-
-    return new_npc
-
-
 def _create_temporary_npc_stepwise(engine, director_agent, npc_name, context) -> dict | None:
     """Fallback for creating a temporary NPC when the one-shot method fails."""
     utils.log_message('debug', f"[DIRECTOR] Stepwise fallback for temporary NPC '{npc_name}'.")
@@ -292,39 +271,79 @@ def _create_temporary_npc_stepwise(engine, director_agent, npc_name, context) ->
             "physical_description": physical_description}
 
 
+def create_temporary_npc(engine, creator_dm, npc_name, dialogue_log):
+    """Creates a new temporary NPC, now using the robust one-shot/fallback pattern."""
+    log_message('debug', loc('system_npc_create_attempt', npc_name=npc_name))
+    recent_dialogue = "\n".join([f"{entry['speaker']}: {entry['content']}" for entry in dialogue_log[-15:]])
+
+    director_agent = config.agents['DIRECTOR']
+    kwargs = {"context_sentence": recent_dialogue, "npc_name": npc_name}
+    new_npc = _create_character_one_shot(engine, director_agent, 'DIRECTOR_CREATE_FULL_NPC_PROFILE', kwargs)
+
+    if not new_npc:
+        new_npc = _create_temporary_npc_stepwise(engine, director_agent, npc_name, recent_dialogue)
+
+    if new_npc:
+        new_npc = _initialize_character_equipment(engine, new_npc, recent_dialogue)
+        log_message('debug', loc('system_npc_create_success', npc_name=new_npc['name']))
+        log_message('full', loc('system_npc_created_full', npc_details=new_npc))
+
+    return new_npc
+
+
 def create_lead_stepwise(engine, dialogue_log):
     """Creates a new lead character for player takeover through a robust, step-by-step process."""
     log_message('debug', loc('system_director_create_start'))
     director_agent = config.agents['DIRECTOR']
     context_str = "\n".join([f"{entry['speaker']}: {entry['content']}" for entry in dialogue_log[-15:]])
-    base_context = loc('prompt_npc_context', recent_dialogue=context_str)
 
-    new_name = file_io.get_random_name()
-    log_message('debug', loc('system_director_create_name_ok', new_name=new_name))
+    # Since this is player-driven, we use a generic role/description.
+    role_archetype = "A new adventurer joining the story."
 
-    desc_kwargs = {"context": base_context, "new_name": new_name}
-    new_description = execute_task(engine, director_agent, 'LEAD_CREATE_DESC', [],
-                                   task_prompt_kwargs=desc_kwargs) or "An adventurer."
-    log_message('debug', loc('system_director_create_desc_ok', new_name=new_name))
+    # Use the robust one-shot/fallback mechanism
+    new_lead = create_lead_from_role_and_scene(engine, director_agent, context_str, role_archetype)
 
-    instr_kwargs = {"new_name": new_name, "new_description": new_description}
-    new_instructions = execute_task(engine, director_agent, 'LEAD_CREATE_INSTR', [],
-                                    task_prompt_kwargs=instr_kwargs) or "Behave as described."
-    log_message('debug', loc('system_director_create_instr_ok', new_name=new_name))
-
-    phys_desc_kwargs = {"new_name": new_name, "new_description": new_description}
-    phys_desc_task = 'DIRECTOR_CREATE_BASE_PHYS_DESC_FROM_PROFILE' if config.settings.get(
-        "ENABLE_PAPER_DOLL_MODE") else 'DIRECTOR_CREATE_LEAD_PHYS_DESC_FROM_ROLE'
-    if not config.settings.get("ENABLE_PAPER_DOLL_MODE"):
-        phys_desc_kwargs['equipment_instruction'] = loc('prompt_substring_paper_doll_off')
-        phys_desc_kwargs['role_archetype'] = new_description
-        phys_desc_kwargs['scene_prompt'] = context_str
-
-    physical_description = execute_task(engine, director_agent, phys_desc_task, [],
-                                        task_prompt_kwargs=phys_desc_kwargs) or "An unremarkable individual."
-
-    new_lead = {"name": new_name, "description": new_description, "instructions": new_instructions,
-                "physical_description": physical_description}
-
-    new_lead = _initialize_character_equipment(engine, new_lead, context_str)
     return new_lead
+
+
+
+def create_lead_from_scene_context(engine, director_agent, scene_prompt: str) -> dict | None:
+    """DEPRECATED: Creates a new lead character via a robust, step-by-step process using the starting scene."""
+    log_message('debug', "[DIRECTOR] Creating a new lead character suitable for the scene.")
+
+    name_kwargs = {"scene_prompt": scene_prompt}
+    new_name = execute_task(engine, director_agent, 'DIRECTOR_CREATE_LEAD_NAME_FROM_SCENE', [],
+                            task_prompt_kwargs=name_kwargs)
+    if not new_name or not new_name.strip(): new_name = file_io.get_random_name()
+    new_name = new_name.strip()
+
+    desc_kwargs = {"scene_prompt": scene_prompt, "new_name": new_name}
+    new_description = execute_task(engine, director_agent, 'DIRECTOR_CREATE_LEAD_DESC_FROM_SCENE', [],
+                                   task_prompt_kwargs=desc_kwargs)
+    if not new_description: return None
+    new_description = new_description.strip()
+
+    instr_kwargs = {"scene_prompt": scene_prompt, "new_name": new_name, "new_description": new_description}
+    new_instructions = execute_task(engine, director_agent, 'DIRECTOR_CREATE_LEAD_INSTR_FROM_SCENE', [],
+                                    task_prompt_kwargs=instr_kwargs)
+    if not new_instructions: return None
+    new_instructions = new_instructions.strip()
+
+    return {"name": new_name, "description": new_description, "instructions": new_instructions}
+
+
+def create_instructions_from_description(engine, director_agent, npc_name: str, description: str,
+                                         location_context: dict = None) -> str | None:
+    """Generates only the instructions for a character based on their name and description."""
+    instr_kwargs = {
+        "npc_name": npc_name, "description": description,
+        "world_theme": location_context.get('world_theme', ''),
+        "scene_prompt": location_context.get('scene_prompt', ''),
+        "location_description": location_context.get('location_description', '')
+    }
+    instructions = execute_task(engine, director_agent, 'DIRECTOR_CREATE_INSTR_FROM_DESC', [],
+                                task_prompt_kwargs=instr_kwargs)
+    if not instructions:
+        log_message('debug', loc('system_npc_create_fail_instr'))
+        return None
+    return instructions.strip()
