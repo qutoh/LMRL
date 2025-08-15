@@ -43,7 +43,10 @@ class SetupManager:
             self.engine.render_queue.put(self.game_state)
             if self.engine.dialogue_log:
                 log_key = 'log_story_resumes' if self.engine.load_path else 'log_story_start'
-                utils.log_message('story', loc(log_key, scene_prompt=self.engine.dialogue_log[0]['content']))
+                # The detailed game log is now the primary source of startup info, so we simplify this.
+                if self.engine.load_path:
+                    utils.log_message('game', loc(log_key))
+
         return success
 
     def _determine_context_limit(self):
@@ -174,6 +177,24 @@ class SetupManager:
 
             # TODO: Collect action descriptions if place_character_contextually is modified to return them.
             action_intro = ""
+
+        # Build a descriptive summary of the entire generated level for the player.
+        level_description_sentences = []
+        if generation_state and generation_state.placed_features:
+            if generation_state.narrative_log:
+                level_description_sentences.append(generation_state.narrative_log)
+            for tag, feature in sorted(generation_state.placed_features.items()):
+                desc = feature.get('description')
+                if desc:
+                    level_description_sentences.append(desc)
+
+        full_level_context = " ".join(level_description_sentences)
+        formatted_level_context = utils.format_text_with_paragraph_breaks(full_level_context, 3)
+        formatted_world_theme = utils.format_text_with_paragraph_breaks(self.engine.world_theme, 3)
+        formatted_scene_prompt = utils.format_text_with_paragraph_breaks(scene_prompt, 3)
+
+        log_header = f"---\n**WORLD:** {self.engine.world_name}\n\n**THEME:** {formatted_world_theme}\n\n**SCENE:** {formatted_scene_prompt}\n---"
+        utils.log_message('game', f"{log_header}\n\n{formatted_level_context}\n---")
 
         narrative_intro = generation_state.narrative_log if generation_state and generation_state.narrative_log else ""
         enhanced_prompt = f"{narrative_intro}\n\n{scene_prompt} {action_intro}".strip()
