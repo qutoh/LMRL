@@ -9,6 +9,23 @@ from ..common import file_io
 from ..common import command_parser
 
 
+def _prepare_physical_description_task(base_kwargs: dict, role_hint: str, scene_context: str) -> tuple[str, dict]:
+    """
+    Determines the correct task key and arguments for generating a physical description
+    based on the ENABLE_PAPER_DOLL_MODE setting.
+    """
+    kwargs = base_kwargs.copy()
+    if config.settings.get("ENABLE_PAPER_DOLL_MODE"):
+        task_key = 'DIRECTOR_CREATE_BASE_PHYS_DESC_FROM_PROFILE'
+    else:
+        task_key = 'DIRECTOR_CREATE_LEAD_PHYS_DESC_FROM_ROLE'
+        # Ensure the necessary keys are present for the non-paper-doll task
+        kwargs['role_archetype'] = role_hint
+        kwargs['scene_prompt'] = scene_context
+        kwargs['equipment_instruction'] = loc('prompt_substring_paper_doll_off')
+    return task_key, kwargs
+
+
 def _create_character_one_shot(engine, agent, task_key, task_kwargs) -> dict | None:
     """Primary Method: Attempts to generate all descriptive fields in one LLM call."""
     # Dynamically inject the correct equipment instruction based on settings
@@ -47,18 +64,15 @@ def _create_npc_from_generation_sentence_stepwise(engine, char_data: dict) -> di
     instructions = execute_task(engine, creator_agent, 'NPC_CREATE_INSTR_FROM_PROCGEN', [],
                                 task_prompt_kwargs=instr_kwargs) or "Behave as described."
 
-    phys_desc_kwargs = {"new_name": npc_name, "new_description": description}
-
-    if config.settings.get("ENABLE_PAPER_DOLL_MODE"):
-        phys_desc_task = 'DIRECTOR_CREATE_BASE_PHYS_DESC_FROM_PROFILE'
-    else:
-        phys_desc_task = 'DIRECTOR_CREATE_LEAD_PHYS_DESC_FROM_ROLE'
-        phys_desc_kwargs['role_archetype'] = description  # Use general description as the role hint
-        phys_desc_kwargs['scene_prompt'] = context_sentence
-        phys_desc_kwargs['equipment_instruction'] = loc('prompt_substring_paper_doll_off')
+    base_phys_desc_kwargs = {"new_name": npc_name, "new_description": description}
+    phys_desc_task, final_phys_desc_kwargs = _prepare_physical_description_task(
+        base_kwargs=base_phys_desc_kwargs,
+        role_hint=description,
+        scene_context=context_sentence
+    )
 
     physical_description = execute_task(engine, creator_agent, phys_desc_task, [],
-                                        task_prompt_kwargs=phys_desc_kwargs) or "An unremarkable individual."
+                                        task_prompt_kwargs=final_phys_desc_kwargs) or "An unremarkable individual."
 
     return {"name": npc_name, "description": description, "instructions": instructions,
             "physical_description": physical_description}
@@ -231,16 +245,15 @@ def _create_lead_from_role_and_scene_stepwise(engine, director_agent, scene_prom
     if not new_instructions: return None
     new_instructions = new_instructions.strip()
 
-    phys_desc_kwargs = {"new_name": new_name, "new_description": new_description, "role_archetype": role_archetype,
-                        "scene_prompt": scene_prompt}
-    if config.settings.get("ENABLE_PAPER_DOLL_MODE"):
-        phys_desc_task = 'DIRECTOR_CREATE_BASE_PHYS_DESC_FROM_PROFILE'
-    else:
-        phys_desc_task = 'DIRECTOR_CREATE_LEAD_PHYS_DESC_FROM_ROLE'
-        phys_desc_kwargs['equipment_instruction'] = loc('prompt_substring_paper_doll_off')
+    base_phys_desc_kwargs = {"new_name": new_name, "new_description": new_description}
+    phys_desc_task, final_phys_desc_kwargs = _prepare_physical_description_task(
+        base_kwargs=base_phys_desc_kwargs,
+        role_hint=role_archetype,
+        scene_context=scene_prompt
+    )
 
     physical_description = execute_task(engine, director_agent, phys_desc_task, [],
-                                        task_prompt_kwargs=phys_desc_kwargs) or "An unremarkable individual."
+                                        task_prompt_kwargs=final_phys_desc_kwargs) or "An unremarkable individual."
 
     return {"name": new_name, "description": new_description, "instructions": new_instructions,
             "physical_description": physical_description.strip()}
@@ -257,16 +270,15 @@ def _create_temporary_npc_stepwise(engine, director_agent, npc_name, context) ->
     instructions = execute_task(engine, director_agent, 'NPC_CREATE_INSTR_FROM_CONTEXT', [],
                                 task_prompt_kwargs=instr_kwargs) or "Behave as described."
 
-    phys_desc_kwargs = {"new_name": npc_name, "new_description": description}
-    phys_desc_task = 'DIRECTOR_CREATE_BASE_PHYS_DESC_FROM_PROFILE' if config.settings.get(
-        "ENABLE_PAPER_DOLL_MODE") else 'DIRECTOR_CREATE_LEAD_PHYS_DESC_FROM_ROLE'
-    if not config.settings.get("ENABLE_PAPER_DOLL_MODE"):
-        phys_desc_kwargs['equipment_instruction'] = loc('prompt_substring_paper_doll_off')
-        phys_desc_kwargs['role_archetype'] = description
-        phys_desc_kwargs['scene_prompt'] = context
+    base_phys_desc_kwargs = {"new_name": npc_name, "new_description": description}
+    phys_desc_task, final_phys_desc_kwargs = _prepare_physical_description_task(
+        base_kwargs=base_phys_desc_kwargs,
+        role_hint=description,
+        scene_context=context
+    )
 
     physical_description = execute_task(engine, director_agent, phys_desc_task, [],
-                                        task_prompt_kwargs=phys_desc_kwargs) or "An unremarkable individual."
+                                        task_prompt_kwargs=final_phys_desc_kwargs) or "An unremarkable individual."
 
     return {"name": npc_name, "description": description, "instructions": instructions,
             "physical_description": physical_description}
