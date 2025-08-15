@@ -47,5 +47,4 @@ In practice many are not capable of the json prompts needed and frequently go to
 ### 7. Porting
 It shouldn't be too much work to move it over to your toaster running gentoo or whatever. Really the only thing especially windows-oriented is the notification library.
 ### 8. Future
-The prompts and general token economy could be vastly improved. Gemini is stupidly wordy and adds redundant shit I didn't ask for everywhere. Fuck this shit.
-Right now working on an equipment system that hashes outfits to provide real descriptions of characters. They can't see each other so it only really matters to remind characters they have a sword or already have a hat or something. 
+More things working poorly!
