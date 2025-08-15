@@ -32,14 +32,17 @@ The system is designed to be highly configurable, managing everything from world
 ### 5. Requirements
 In theory, the game can run using any LLM that can handle the lengths of the prompts. I am developing on a 2080 Super 8gb with a 2060 12gb card in the second slot, and it does alright - a 12gb llama model with 22b parameters is handling everything in my personal run folder, I've only kept the second smaller model going during development to make sure nothing breaks when Gemini decides to eat shit.
 
+You want an SSD. You just do. It's time. I am not responsible for crashed heads from model loading thrashing your drives.
+
 In practice many are not capable of the json prompts needed and frequently go to fallback methods, even when calibrated. I will soon be working on being able to disable subsystems gracefully to reduce the time required to getting to see the different characters interact, if nothing else but to speed past worldgen when I want to work on this part of the game.
 
 ### 6. Installation/Running
 * Install LMStudio and install/copy a model over so that it's available for use.
 * Change settings.json, agents.json, and the task_parameters files to use it. Don't worry about agents or tasks that don't have a model specified, these can safely be left blank.
-* Make sure JIT model loading is enabled if you need to save VRAM between worldgen and gameplay, otherwise load the model(s) you expect it to need in the Developer menu on the left (need to switch to 'Power User' or 'Developer' with the tabs on the bottom to see) This setting is located at the top left next to 'Status: Running' in Settings.
+* Parameters overridden by the game for the curious are temperature, top_k (set to 0 to disable), system context, and top_p. All other settings are adjustable in lmstudio.
+* Make sure Just in Time (JIT) model loading is enabled if you want to run headless (not open LM Studio directly) or need to save VRAM between worldgen and gameplay. Otherwise load the model(s) you expect it to need in the Developer menu on the left (need to switch to 'Power User' or 'Developer' with the tabs on the bottom to see) The JIT setting is located at the top left next to 'Status: Running' in Settings. Keep in mind JIT will take more time to load between gamestates, it's really better to load them up directly unless you need it.
 * pip install -r requirements.txt in the root folder with main.py in a command prompt.
 * run main.py. A short wait is normal before the main menu appears with the TCOD window. Keep both windows open - this is necessary because Python still lives in the 13th century for threading. Worldgen will not be possible until models say they are loaded in the console window.
-* 
+* OPTIONAL but not really I haven't touched temperatures since I implemented it and Gemini is really dumb about setting sensible defaults: If you want things to work well, run Calibration from the main menu.
 ### 7. Porting
 It shouldn't be too much work to move it over to your toaster running gentoo or whatever. Really the only thing especially windows-oriented is the notification library.
