@@ -227,6 +227,12 @@ class PlayerInterface:
         """
         task_key = kwargs.get("task_key")
 
+        # --- Redundant safety check to prevent deadlocks ---
+        task_params = config.task_parameters.get(task_key, {})
+        if not task_params.get("player_takeover_enabled"):
+            utils.log_message('debug', f"[PLAYER] handle_task_takeover called for disabled task '{task_key}'. Ignoring.")
+            return None
+
         # --- Task-to-Handler Mapping ---
         if task_key == "PROMETHEUS_DETERMINE_TOOL_USE":
             return self._handle_prometheus_menu_takeover(**kwargs)

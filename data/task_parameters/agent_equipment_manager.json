@@ -1,4 +1,8 @@
 {
+    "EQUIPMENT_GENERATE_GEAR_FROM_PROFILE": {
+        "task_prompt_key": "task_prompt_equipment_generate_gear_from_profile",
+        "source_agent": "EQUIPMENT_MANAGER"
+    },
     "EQUIPMENT_GENERATE_INITIAL": {
         "task_prompt_key": "task_prompt_equipment_generate_initial",
         "source_agent": "EQUIPMENT_MANAGER"

@@ -11,7 +11,6 @@ def create_default_takeover_view(ui_manager, on_submit, **handler_kwargs):
     """Creates a standard text input view for a player task takeover, now with full context."""
     task_key = handler_kwargs.get("task_key")
     agent_name = handler_kwargs.get("agent_name")
-    persona = handler_kwargs.get("persona")
     messages = handler_kwargs.get("messages", [])
     task_prompt_kwargs = handler_kwargs.get("task_prompt_kwargs", {})
 
@@ -21,29 +20,26 @@ def create_default_takeover_view(ui_manager, on_submit, **handler_kwargs):
     task_instruction = loc(task_prompt_key,
                            **(task_prompt_kwargs or {})) if task_prompt_key else f"Perform task: {task_key}"
 
-    # Assemble the full context string, similar to what the LLM would receive
-    message_history_text = get_text_from_messages(messages)
-    full_context_text = (
-        f"--- AGENT ---\n{agent_name}\n\n"
-        f"--- PERSONA / INSTRUCTIONS ---\n{persona}\n\n"
-        f"--- MESSAGE HISTORY ---\n{message_history_text}"
+    # Assemble the full context string to be used as the prompt/frame title.
+    # textwrap will handle making it fit.
+    message_history_text = get_text_from_messages(messages[-5:])  # Last 5 messages for brevity
+
+    full_prompt_for_player = (
+        f"PLAYER TAKEOVER: {task_key}\n\n"
+        f"TASK: {task_instruction}\n\n"
+        f"ACTING AS: {agent_name}\n"
+        f"--------------------\n"
+        f"RECENT HISTORY:\n{message_history_text}"
     )
 
-    # The prompt for the text handler is just the AI's task-specific instruction
-    handler_prompt = f"Your Response (as {agent_name})"
-
-    # Calculate height for the input handler
-    console_height = ui_manager.root_console.height
-    input_height = (console_height - 4) // 3
-
     handler = TextInputHandler(
-        prompt=handler_prompt,
+        prompt=full_prompt_for_player,
         width=ui_manager.root_console.width - 4,
-        height=input_height,
         prefix="> ",
         max_tokens=ui_manager._get_default_token_limit()
     )
-    ui_manager.active_view = TextInputView(handler=handler, on_submit=on_submit, context_text=full_context_text)
+    # The call to TextInputView is now correct, without the bad argument.
+    ui_manager.active_view = TextInputView(handler=handler, on_submit=on_submit)
 
 
 def create_prometheus_menu_view(ui_manager, on_submit, **handler_kwargs):

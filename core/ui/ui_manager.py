@@ -22,6 +22,7 @@ from ..engine.story_engine import StoryEngine
 from ..engine.setup_manager import SetupManager
 from ..common import file_io
 from ..common.config_loader import config
+from ..common import utils
 
 from ..common.game_state import GameState
 from .views import WorldSelectionView, GameView, SceneSelectionView, TextInputView, LoadOrNewView, SaveSelectionView, \
@@ -206,6 +207,14 @@ class UIManager:
 
     def get_player_task_input(self, **kwargs):
         """Synchronously gets player input for a task, blocking the calling engine."""
+        task_key = kwargs.get("task_key")
+
+        # --- Redundant safety check to prevent deadlocks ---
+        task_params = config.task_parameters.get(task_key, {})
+        if not task_params.get("player_takeover_enabled"):
+            utils.log_message('debug', f"[UI] get_player_task_input called for disabled task '{task_key}'. Ignoring.")
+            return None
+
         self.sync_input_active = True
         self.sync_input_result = None
         original_view = self.active_view
@@ -213,8 +222,6 @@ class UIManager:
         def on_submit(result):
             self.sync_input_result = result
             self.sync_input_active = False
-
-        task_key = kwargs.get("task_key")
 
         handler_map = {
             "PROMETHEUS_DETERMINE_TOOL_USE": player_input_handlers.create_prometheus_menu_view,
