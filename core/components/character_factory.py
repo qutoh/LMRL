@@ -133,7 +133,8 @@ def _initialize_character_equipment(engine, character_data: dict, scene_context:
 
         if final_phys_desc:
             character_data['physical_description'] = final_phys_desc.strip()
-            character_data['equipment']['outfits']['STARTING_GEAR'] = {
+            # Standardize the first real outfit name to OUTFIT_0 for consistency.
+            character_data['equipment']['outfits']['OUTFIT_0'] = {
                 "items": sorted([item['name'] for item in starting_items]),
                 "description": final_phys_desc.strip()
             }

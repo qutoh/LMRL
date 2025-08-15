@@ -4,6 +4,7 @@ import random
 import re
 import tcod
 import numpy as np
+import math
 from ..llm import llm_api
 from ..common.config_loader import config
 from ..common.game_state import GameState
@@ -33,48 +34,76 @@ def get_narrative_location_for_position(x: int, y: int, generation_state) -> str
 def get_local_context_for_character(engine, game_state: GameState, character_name: str) -> str:
     """
     Generates a string describing the character's current location, adjacent locations,
-    and any other characters present in those locations.
+    and any other characters present in those locations, with enhanced descriptions.
     """
     entity = game_state.get_entity(character_name)
     if not entity or not engine.generation_state or not engine.layout_graph:
         return ""
 
+    # --- 1. Determine Character's Location and Nearby Features ---
     current_feature_tag = get_narrative_location_for_position(entity.x, entity.y, engine.generation_state)
-    if not current_feature_tag:
-        return ""
-
-    # Find adjacent features from the layout graph
-    adjacent_tags = set()
-    for parent, child, _ in engine.layout_graph.edges:
-        if parent == current_feature_tag:
-            adjacent_tags.add(child)
-        elif child == current_feature_tag:
-            adjacent_tags.add(parent)
-
-    features_to_scan = {current_feature_tag} | adjacent_tags
+    nearby_tags = set()
     context_lines = []
 
-    for tag in features_to_scan:
+    if current_feature_tag:
+        # Character is inside a feature. Find adjacent features.
+        current_feature_data = engine.generation_state.placed_features.get(current_feature_tag, {})
+        feature_name = current_feature_data.get('name', current_feature_tag)
+        context_lines.append(f"You are in **{feature_name}**.")
+
+        for parent, child, _ in engine.layout_graph.edges:
+            if parent == current_feature_tag:
+                nearby_tags.add(child)
+            elif child == current_feature_tag:
+                nearby_tags.add(parent)
+    else:
+        # Character is in an open area. Find the closest features.
+        context_lines.append("You are standing in an open area.")
+        all_features = engine.generation_state.placed_features
+        if all_features:
+            features_with_dist = []
+            for tag, details in all_features.items():
+                if bounds := details.get('bounding_box'):
+                    x1, y1, w, h = [int(c) for c in bounds]
+                    center_x, center_y = x1 + w / 2, y1 + h / 2
+                    distance = math.dist((entity.x, entity.y), (center_x, center_y))
+                    features_with_dist.append((distance, tag))
+
+            # Get the 4 closest features
+            features_with_dist.sort()
+            for _, tag in features_with_dist[:4]:
+                nearby_tags.add(tag)
+
+    # --- 2. Build Combined Description of Nearby Features ---
+    descriptive_sentences = []
+    for tag in sorted(list(nearby_tags)):
         feature_data = engine.generation_state.placed_features.get(tag)
         if not feature_data: continue
 
         feature_name = feature_data.get('name', tag)
-        feature_desc = feature_data.get('description', 'an area')
-        prefix = "You are in" if tag == current_feature_tag else "Nearby is"
-        line = f"- {prefix} **{feature_name}**: {feature_desc}"
+        feature_desc = feature_data.get('description', '')
+        if feature_desc:
+            descriptive_sentences.append(f"Nearby is the {feature_name}: {feature_desc}")
 
-        # Find entities within this feature's bounding box
-        occupants = []
-        if bounds := feature_data.get('bounding_box'):
-            x1, y1, w, h = [int(c) for c in bounds]
-            x2, y2 = x1 + w, y1 + h
-            for other_entity in game_state.entities:
-                if other_entity.name != character_name and x1 <= other_entity.x < x2 and y1 <= other_entity.y < y2:
-                    occupants.append(other_entity.name)
+    if descriptive_sentences:
+        full_description = " ".join(descriptive_sentences)
+        context_lines.append(utils.format_text_with_paragraph_breaks(full_description, sentences_per_paragraph=3))
 
-        if occupants:
-            line += f" (Occupants: {', '.join(occupants)})"
-        context_lines.append(line)
+    # --- 3. Scan for Nearby Occupants ---
+    occupants_found = []
+    features_to_scan = {current_feature_tag} | nearby_tags
+    other_entities = [e for e in game_state.entities if e.name != character_name]
+
+    for other_entity in other_entities:
+        occupant_loc_tag = get_narrative_location_for_position(other_entity.x, other_entity.y,
+                                                              engine.generation_state)
+        if occupant_loc_tag and occupant_loc_tag in features_to_scan:
+            loc_data = engine.generation_state.placed_features.get(occupant_loc_tag, {})
+            loc_name = loc_data.get('name', occupant_loc_tag)
+            occupants_found.append(f"{other_entity.name} (in {loc_name})")
+
+    if occupants_found:
+        context_lines.append(f"\nYou can see: {', '.join(occupants_found)}.")
 
     return "\n".join(context_lines)
 

@@ -2,7 +2,7 @@
   "PEG_VALIDATE_FEATURE_TOOLS": {
     "task_prompt_key": "task_prompt_peg_validate_feature_tools",
     "source_agent": "PROMETHEUS",
-    "model_override": "uncensored-phi-3-mini-4k-geminified",
+    "model_override": "phi-3-mini-4k-instruct",
     "affects_global_context_limit": false
   },
   "PROMETHEUS_DETERMINE_TOOL_USE": {

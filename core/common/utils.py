@@ -10,6 +10,31 @@ from .localization import loc
 LOG_HIERARCHY = {'game': 0, 'story': 1, 'debug': 2, 'full': 3}
 
 
+def format_text_with_paragraph_breaks(text: str, sentences_per_paragraph: int = 3) -> str:
+    """
+    Formats a block of text by inserting paragraph breaks every N sentences.
+    Also ensures that literal '\\n' from JSON are converted to newlines.
+    """
+    if not text or not isinstance(text, str):
+        return ""
+
+    # First, replace literal '\n' with actual newlines
+    processed_text = text.replace('\\n', '\n')
+
+    # Split into sentences using a regex that looks for punctuation followed by space
+    sentences = re.split(r'(?<=[.?!])\s+', processed_text)
+    if not sentences:
+        return processed_text
+
+    formatted_parts = []
+    for i in range(0, len(sentences), sentences_per_paragraph):
+        paragraph = ' '.join(sentences[i:i + sentences_per_paragraph]).strip()
+        if paragraph:
+            formatted_parts.append(paragraph)
+
+    return "\n\n".join(formatted_parts)
+
+
 class _Logger:
     """A simple logger service that can be configured to push UI updates."""
 
@@ -164,13 +189,15 @@ class PromptBuilder:
 
     def add_world_theme(self):
         if self.engine.world_theme:
-            theme_text = f"--- WORLD THEME ---\n{self.engine.world_theme}"
+            formatted_theme = format_text_with_paragraph_breaks(self.engine.world_theme)
+            theme_text = f"--- WORLD THEME ---\n{formatted_theme}"
             self.message_channels.append([{"role": "user", "content": theme_text}])
         return self
 
     def add_summary(self, summaries):
         if summaries:
-            summary_text = loc('prompt_summary_context') + summaries[-1]
+            formatted_summary = format_text_with_paragraph_breaks(summaries[-1])
+            summary_text = loc('prompt_summary_context') + formatted_summary
             self.message_channels.append([{"role": "user", "content": summary_text}])
         return self
 
