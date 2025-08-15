@@ -1,0 +1,43 @@
+{
+    "DEFAULT_FLOOR": {
+        "description": "A basic, walkable floor surface.",
+        "movement_cost": 1.0,
+        "is_transparent": true,
+        "materials": ["ROCK"],
+        "pass_methods": ["GROUND", "FLYING"],
+        "colors": [[100, 100, 100]],
+        "characters": ["."]
+    },
+    "DEFAULT_WALL": {
+        "description": "An impassable barrier.",
+        "movement_cost": 1.0,
+        "is_transparent": false,
+        "materials": ["ROCK"],
+        "pass_methods": ["PASS_WALL", "PHASING"],
+        "colors": [[150, 150, 150]],
+        "characters": ["#"]
+    },
+    "DEFAULT_DOOR": {
+        "description": "A standard door or portal.",
+        "movement_cost": 1.0,
+        "is_transparent": false,
+        "materials": ["WOOD", "METAL"],
+        "pass_methods": ["GROUND", "FLYING", "PHASING"],
+        "colors": [[200, 150, 50]],
+        "characters": ["+"]
+    },
+    "WATER": {
+        "description": "Shimmering water, difficult to traverse.",
+        "movement_cost": 2.0,
+        "is_transparent": true,
+        "materials": ["LIQUID"],
+        "pass_methods": ["SWIM", "FLYING", "PHASING"],
+        "colors": [
+            [50, 50, 180],
+            [60, 60, 190],
+            [70, 70, 200],
+            [60, 60, 190]
+        ],
+        "characters": ["≈", "~"]
+    }
+}
