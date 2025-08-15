@@ -9,6 +9,7 @@ from .text_input_view import TextInputView
 from .settings_view import SettingsView
 from .menu_view import MenuView
 from .prometheus_view import PrometheusView
+from .character_generation_test_view import CharacterGenerationTestView
 
 __all__ = [
     "WorldSelectionView",
@@ -19,5 +20,6 @@ __all__ = [
     "TextInputView",
     "SettingsView",
     "MenuView",
-    "PrometheusView"
+    "PrometheusView",
+    "CharacterGenerationTestView"
 ]

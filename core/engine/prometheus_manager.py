@@ -1,6 +1,7 @@
 # /core/prometheus_manager.py
 
 import re
+import json
 from core.common.config_loader import config
 from core.llm.llm_api import execute_task
 from core.common import file_io, utils
@@ -66,8 +67,100 @@ class PrometheusManager:
             "summarize_for_memory": "_call_summarize_for_memory",
             "remove_character": "_call_remove_character",
             "new_character": "_call_create_character",
-            "select_next_actor": "_call_select_next_actor"
+            "select_next_actor": "_call_select_next_actor",
+            "modify_equipment": "_call_modify_equipment"
         }
+
+    def _call_modify_equipment(self, dialogue_entry: dict, **kwargs):
+        """Orchestrates the entire equipment modification and description update flow."""
+        character = roster_manager.find_character(self.engine, dialogue_entry['speaker'])
+        if not character or 'equipment' not in character:
+            return
+
+        equipment_agent = config.agents['EQUIPMENT_MANAGER']
+        equipped_items = character['equipment'].get('equipped', [])
+        equipped_str = ", ".join([item['name'] for item in equipped_items]) if equipped_items else "None"
+
+        mod_kwargs = {"recent_events": dialogue_entry.get('content', ''), "equipped_items_list": equipped_str}
+        response = execute_task(self.engine, equipment_agent, 'EQUIPMENT_MODIFY', [], task_prompt_kwargs=mod_kwargs)
+
+        items_to_add_names = [name.strip() for name in
+                              re.findall(r'ADD:\s*(.*?)(?:;|\n|$)', response, re.IGNORECASE)]
+        items_to_remove_names = [name.strip() for name in
+                                 re.findall(r'REMOVE:\s*(.*?)(?:;|\n|$)', response, re.IGNORECASE)]
+
+        if not items_to_add_names and not items_to_remove_names:
+            return
+
+        equipment_changed = False
+        final_added_names = []
+        final_removed_names = []
+
+        for name in items_to_remove_names:
+            item_found = next((item for item in equipped_items if item['name'].lower() == name.lower()), None)
+            if item_found:
+                character['equipment']['equipped'].remove(item_found)
+                character['equipment']['removed'].append(item_found)
+                final_removed_names.append(item_found['name'])
+                equipment_changed = True
+                utils.log_message('debug', f"[EQUIPMENT] Removed '{item_found['name']}' from {character['name']}.")
+            else:
+                items_to_add_names.append(f"{name} (Lost)")
+
+        if items_to_add_names:
+            desc_kwargs = {"item_names_list": "; ".join(items_to_add_names),
+                           "context": dialogue_entry.get('content', '')}
+            raw_desc_response = execute_task(self.engine, equipment_agent, 'EQUIPMENT_DESCRIBE_ITEMS', [],
+                                             task_prompt_kwargs=desc_kwargs)
+            json_str = utils.clean_json_from_llm(raw_desc_response)
+            if json_str:
+                try:
+                    new_item_data = json.loads(json_str)
+                    for item_name, item_details in new_item_data.items():
+                        if "(Lost)" in item_name:
+                            clean_name = item_name.replace("(Lost)", "").strip()
+                            character['equipment']['removed'].append({"name": clean_name, **item_details})
+                            utils.log_message('debug',
+                                              f"[EQUIPMENT] Created and added missed item '{clean_name}' to removed list for {character['name']}.")
+                        else:
+                            character['equipment']['equipped'].append({"name": item_name, **item_details})
+                            final_added_names.append(item_name)
+                    equipment_changed = True
+                except json.JSONDecodeError:
+                    pass
+
+        if not equipment_changed:
+            return
+
+        current_equipped_names = sorted([item['name'] for item in character['equipment']['equipped']])
+
+        # OUTFIT SHORT-CIRCUIT
+        for name, outfit_data in character['equipment']['outfits'].items():
+            if sorted(outfit_data.get('items', [])) == current_equipped_names:
+                character['physical_description'] = outfit_data['description']
+                utils.log_message('debug',
+                                  f"[EQUIPMENT] Matched existing outfit '{name}' for {character['name']}. Short-circuiting Director call.")
+                return
+
+        # If no match was found, generate a new description and save the outfit
+        director_agent = config.agents['DIRECTOR']
+        update_desc_kwargs = {
+            "original_description": character.get('physical_description', ''),
+            "items_added": ", ".join(final_added_names) or "None",
+            "items_removed": ", ".join(final_removed_names) or "None"
+        }
+        new_physical_description = execute_task(self.engine, director_agent,
+                                                'DIRECTOR_UPDATE_PHYSICAL_DESCRIPTION', [],
+                                                task_prompt_kwargs=update_desc_kwargs)
+        if new_physical_description:
+            character['physical_description'] = new_physical_description.strip()
+            new_outfit_name = f"OUTFIT_{len(character['equipment']['outfits'])}"
+            character['equipment']['outfits'][new_outfit_name] = {
+                "items": current_equipped_names,
+                "description": character['physical_description']
+            }
+            utils.log_message('debug',
+                              f"[DIRECTOR] Updated physical description for {character['name']} and saved new outfit '{new_outfit_name}'.")
 
     def _call_handle_refusal(self, dialogue_entry: dict, original_messages: list, **kwargs) -> dict:
         """Dispatches to the utility task that handles re-prompting after a refusal."""
@@ -80,8 +173,6 @@ class PrometheusManager:
         new_prose = utility_tasks.reprompt_after_refusal(self.engine, original_actor, 'GENERIC_TURN', original_messages)
 
         if new_prose:
-            # Re-analyze the NEW prose to see what should happen next.
-            # This avoids a recursive loop by not re-analyzing if the second attempt also fails.
             new_dialogue_entry = {'speaker': original_actor['name'], 'content': new_prose}
             next_actor_name = self.analyze_and_dispatch(new_prose, new_dialogue_entry, kwargs.get('unacted_roles', []),
                                                         original_messages, is_reprompt=True)
@@ -195,11 +286,19 @@ class PrometheusManager:
         if not recent_prose:
             return None
 
-        non_dm_chars = [c['name'] for c in roster_manager.get_all_characters(self.engine) if c.get('role_type') != 'dm']
+        non_dm_chars = [c['name'] for c in roster_manager.get_all_characters(self.engine) if
+                        c.get('role_type') != 'dm']
         char_list_str = "; ".join(non_dm_chars)
         next_actor_name = None
 
         prompt_kwargs = {"recent_events": recent_prose, "character_list": char_list_str}
+
+        character = roster_manager.find_character(self.engine, dialogue_entry['speaker'])
+        if character and 'equipment' in character:
+            equipped_str = ", ".join([item['name'] for item in character['equipment']['equipped']])
+            prompt_kwargs["current_equipment"] = equipped_str if equipped_str else "None"
+        else:
+            prompt_kwargs["current_equipment"] = "None"
 
         raw_response = execute_task(
             self.engine, self.prometheus_agent, 'PROMETHEUS_DETERMINE_TOOL_USE', [],
@@ -209,7 +308,6 @@ class PrometheusManager:
         valid_tool_names = list(self.tool_dispatch_table.keys())
         tool_decisions, _, _ = parse_and_log_tool_decisions(raw_response, valid_tool_names, context=recent_prose)
 
-        # --- Self-Correction for Prometheus Refusal ---
         if not tool_decisions and not is_reprompt:
             utils.log_message('debug', "[PROMETHEUS] Returned no valid tools. Assuming refusal and re-prompting.")
             self.engine.annotation_manager.annotate_last_log_as_failure("PROMETHEUS_REFUSAL",
@@ -231,7 +329,6 @@ class PrometheusManager:
 
         utils.log_message('debug', f"[PROMETHEUS RESPONSE]\n{raw_response}\n")
 
-        # High-priority short-circuit for character refusal
         if tool_decisions.get('is_refusal') and not is_reprompt:
             return self._call_handle_refusal(dialogue_entry, original_messages, unacted_roles=unacted_roles)
 

@@ -1,4 +1,19 @@
 {
+  "CH_FIX_INITIAL_EQUIPMENT_JSON": {
+    "task_prompt_key": "task_prompt_ch_fix_initial_equipment_json",
+    "source_agent": "COMMAND_HANDLER",
+    "is_failure_handler": true
+  },
+  "CH_FIX_FULL_LEAD_JSON": {
+    "task_prompt_key": "task_prompt_ch_fix_full_lead_json",
+    "source_agent": "COMMAND_HANDLER",
+    "is_failure_handler": true
+  },
+  "CH_FIX_FULL_CHAR_JSON": {
+    "task_prompt_key": "task_prompt_ch_fix_full_char_json",
+    "source_agent": "COMMAND_HANDLER",
+    "is_failure_handler": true
+  },
   "CH_FIX_ATLAS": {
     "task_prompt_key": "task_prompt_ch_fix_atlas",
     "source_agent": "COMMAND_HANDLER",

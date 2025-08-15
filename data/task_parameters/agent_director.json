@@ -1,4 +1,8 @@
 {
+	"DIRECTOR_CREATE_FULL_LEAD_PROFILE_FROM_ROLE": { "task_prompt_key": "task_prompt_director_create_full_lead_profile_from_role", "source_agent": "DIRECTOR" },
+    "DIRECTOR_CREATE_LEAD_PHYS_DESC_FROM_ROLE": { "task_prompt_key": "task_prompt_director_create_lead_phys_desc_from_role", "source_agent": "DIRECTOR" },
+	"DIRECTOR_CREATE_FULL_NPC_PROFILE": { "task_prompt_key": "task_prompt_director_create_full_npc_profile", "source_agent": "DIRECTOR" },
+    "DIRECTOR_UPDATE_PHYSICAL_DESCRIPTION": { "task_prompt_key": "task_prompt_director_update_physical_description", "source_agent": "DIRECTOR" },
 	"DIRECTOR_CREATE_NPC_JSON_FROM_PROCGEN": { "task_prompt_key": "task_prompt_director_create_npc_json_from_procgen", "source_agent": "DIRECTOR" },
 	"DIRECTOR_IDENTIFY_NEW_CHARACTER": { "task_prompt_key": "task_prompt_director_identify_new_character", "source_agent": "DIRECTOR", "default_adjustment": -0.1, "player_takeover_enabled": true, "player_takeover_notification": "Help the Director identify a new character." },
 	"DIRECTOR_CHOOSE_CHARACTER_TO_REMOVE": { "task_prompt_key": "task_prompt_director_choose_character_to_remove", "source_agent": "DIRECTOR", "default_adjustment": -0.15 },

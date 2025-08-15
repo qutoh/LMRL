@@ -14,6 +14,12 @@
         "model": "",
         "persona": "You are Hercules, a generic, logical problem-solving engine. Your purpose is to analyze a given context and select the single best option from a provided list based on the instructions."
     },
+      "EQUIPMENT_MANAGER": {
+        "name": "Equipment Manager",
+        "model": "uncensored-phi-3-mini-4k-geminified",
+        "persona": "You are a meticulous and logical quartermaster. Your purpose is to accurately track and describe a character's inventory and appearance based on narrative events. You respond only with structured data (JSON or semicolon-separated lists) as requested.",
+        "affects_global_context_limit": false
+    },
     "DIRECTOR": {
         "name": "The Director",
         "model": "",

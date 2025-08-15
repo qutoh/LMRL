@@ -18,7 +18,8 @@ class WorldSelectionView(View):
             "Build new...",
             "Settings",
             "Calibrate Task Temperatures",
-            "PEG V3 Iterative Test"
+            "PEG V3 Iterative Test",
+            "Character Generation Test"
         ]
         self.menu_options = menu_items
 
@@ -29,6 +30,7 @@ class WorldSelectionView(View):
             elif item == "Settings": button.fg = (200, 200, 200)
             elif item == "Calibrate Task Temperatures": button.fg = (150, 200, 255)
             elif item == "PEG V3 Iterative Test": button.fg = (200, 255, 150)
+            elif item == "Character Generation Test": button.fg = (255, 150, 200)
             self.container.add_child(button)
 
         self.menu_frame = Frame(self.container, title="Select a World")

@@ -5,22 +5,26 @@ import time
 import json
 import random
 import re
+import copy
 from collections import defaultdict
 from unittest.mock import patch
 import tcod
 from datetime import datetime
+from queue import Queue
 
 from ..llm.calibration_manager import CalibrationManager
+from ..llm.llm_api import execute_task
 from ..common.game_state import GameState, GenerationState, MapArtist
 from ..worldgen.map_architect import MapArchitect
 from ..worldgen.map_architect_v2 import MapArchitectV2
 from ..worldgen.map_architect_v3 import MapArchitectV3
-from ..common import file_io, utils
+from ..common import file_io, utils, command_parser
 from ..common.config_loader import config
 from .app_states import AppState
 from .ui_framework import DynamicTextBox
 from .views.game_view import GameView
-from ..components import game_functions
+from .views.character_generation_test_view import CharacterGenerationTestView
+from ..components import game_functions, character_factory
 
 
 class SpecialModeManager:
@@ -37,6 +41,7 @@ class SpecialModeManager:
             ("Archway", "GENERIC_PORTAL"), ("Window", "GENERIC_PORTAL"),
             ("Storage Closet", "GENERIC_CONTAINER"), ("Support Pillar", "SOLID_BARRIER")
         ]
+        # PEG Test attributes
         self.peg_test_generator = None
         self.current_peg_phase = 'INIT'
         self.active_patchers = []
@@ -44,6 +49,173 @@ class SpecialModeManager:
         self.last_peg_state = None
         self.last_path_tracer = []
         self.original_find_path = None
+
+        # Character Generation Test attributes
+        self.char_gen_context = None
+        self.char_gen_thread = None
+        self.char_gen_queue = None
+        self.char_gen_stop_event = None
+        self.generated_characters = []
+
+    def start_character_generation_test(self, context: str):
+        """Initializes and kicks off the character generation test."""
+        self.char_gen_context = context
+        self.char_gen_queue = Queue()
+        self.char_gen_stop_event = threading.Event()
+        self.generated_characters = []
+
+        self.char_gen_thread = threading.Thread(target=self._run_char_gen_loop, daemon=True)
+        self.char_gen_thread.start()
+
+        self.ui_manager.active_view = CharacterGenerationTestView(
+            context_text=context,
+            console_width=self.ui_manager.root_console.width,
+            console_height=self.ui_manager.root_console.height
+        )
+        self.ui_manager.special_mode_active = "CHAR_GEN_TEST"
+
+    def _generate_initial_equipment_stepwise_for_test(self, equipment_agent, physical_description: str) -> list[dict]:
+        """A copy of the stepwise fallback for use in the isolated test environment."""
+        utils.log_message('debug', "[CHAR_GEN_TEST] JSON generation failed, using stepwise fallback.")
+        names_kwargs = {"physical_description": physical_description}
+        names_response = execute_task(self.ui_manager.atlas_engine, equipment_agent,
+                                      'EQUIPMENT_GET_ITEM_NAMES_FROM_DESC', [], task_prompt_kwargs=names_kwargs)
+
+        item_names = [name.strip() for name in names_response.split(';') if name.strip()]
+        if not item_names:
+            return []
+
+        desc_kwargs = {"item_names_list": "; ".join(item_names), "context": physical_description}
+        raw_desc_response = execute_task(self.ui_manager.atlas_engine, equipment_agent, 'EQUIPMENT_DESCRIBE_ITEMS', [],
+                                         task_prompt_kwargs=desc_kwargs)
+
+        command = command_parser.parse_structured_command(
+            self.ui_manager.atlas_engine, raw_desc_response, equipment_agent.get('name'),
+            fallback_task_key='CH_FIX_INITIAL_EQUIPMENT_JSON'
+        )
+
+        final_items = []
+        if command:
+            for name, details in command.items():
+                if isinstance(details, dict) and 'description' in details:
+                    final_items.append({"name": name, "description": details["description"]})
+        return final_items
+
+    def _run_char_gen_loop(self):
+        """The target function for the character generation thread."""
+        director_agent = config.agents['DIRECTOR']
+        equipment_agent = config.agents['EQUIPMENT_MANAGER']
+        generic_role = "A compelling character suitable for the scene."
+
+        while not self.char_gen_stop_event.is_set():
+            initial_char = character_factory.create_lead_from_role_and_scene(
+                self.ui_manager.atlas_engine, director_agent,
+                self.char_gen_context, generic_role
+            )
+            if not initial_char:
+                time.sleep(1)
+                continue
+
+            self.char_gen_queue.put(copy.deepcopy(initial_char))
+            utils.log_message('debug', f"[CHAR_GEN_TEST] Generated initial character: {initial_char.get('name')}")
+            time.sleep(1)
+
+            if not initial_char.get('equipment', {}).get('equipped'):
+                continue
+
+            utils.log_message('debug', f"[CHAR_GEN_TEST] Starting REMOVAL phase for {initial_char['name']}.")
+            char_state = copy.deepcopy(initial_char)
+            items_to_remove = list(char_state['equipment']['equipped'])
+
+            for item_to_remove in items_to_remove:
+                if self.char_gen_stop_event.is_set(): return
+                char_state['equipment']['equipped'].remove(item_to_remove)
+                char_state['equipment']['removed'].append(item_to_remove)
+                utils.log_message('debug', f"  - Removing: {item_to_remove['name']}")
+
+                current_equipped_names = sorted([item['name'] for item in char_state['equipment']['equipped']])
+
+                # OUTFIT SHORT-CIRCUIT
+                matched_outfit = next((outfit for outfit in char_state['equipment']['outfits'].values() if
+                                       sorted(outfit.get('items', [])) == current_equipped_names), None)
+                if matched_outfit:
+                    char_state['physical_description'] = matched_outfit['description']
+                    utils.log_message('debug', f"  - Matched existing outfit. Short-circuiting.")
+                else:
+                    update_desc_kwargs = {"original_description": char_state.get('physical_description', ''),
+                                          "items_added": "None", "items_removed": item_to_remove['name']}
+                    new_desc = execute_task(self.ui_manager.atlas_engine, director_agent,
+                                            'DIRECTOR_UPDATE_PHYSICAL_DESCRIPTION', [],
+                                            task_prompt_kwargs=update_desc_kwargs)
+                    if new_desc: char_state['physical_description'] = new_desc.strip()
+
+                    outfit_name = f"OUTFIT_{len(char_state['equipment']['outfits'])}"
+                    char_state['equipment']['outfits'][outfit_name] = {"items": current_equipped_names,
+                                                                       "description": char_state[
+                                                                           'physical_description']}
+                    utils.log_message('debug', f"  - Saved new outfit: {outfit_name}")
+
+                self.char_gen_queue.put(copy.deepcopy(char_state))
+                time.sleep(1)
+
+            utils.log_message('debug', f"[CHAR_GEN_TEST] Starting ADDITION phase for {initial_char['name']}.")
+            items_to_add_back = list(char_state['equipment']['removed'])
+            items_to_add_back.sort(key=lambda x: x['name'])
+
+            for item_to_add in items_to_add_back:
+                if self.char_gen_stop_event.is_set(): return
+                char_state['equipment']['removed'].remove(item_to_add)
+                char_state['equipment']['equipped'].append(item_to_add)
+                utils.log_message('debug', f"  - Adding back: {item_to_add['name']}")
+
+                current_equipped_names = sorted([item['name'] for item in char_state['equipment']['equipped']])
+
+                # OUTFIT SHORT-CIRCUIT
+                matched_outfit_data = next((data for name, data in char_state['equipment']['outfits'].items() if
+                                            sorted(data.get('items', [])) == current_equipped_names), None)
+                if matched_outfit_data:
+                    char_state['physical_description'] = matched_outfit_data['description']
+                    utils.log_message('debug', f"  - Matched existing outfit. Short-circuiting.")
+                else:
+                    utils.log_message('debug', "[CHAR_GEN_TEST_WARNING] Outfit hashing failed on re-add.")
+                    update_desc_kwargs = {"original_description": char_state.get('physical_description', ''),
+                                          "items_added": item_to_add['name'], "items_removed": "None"}
+                    new_desc = execute_task(self.ui_manager.atlas_engine, director_agent,
+                                            'DIRECTOR_UPDATE_PHYSICAL_DESCRIPTION', [],
+                                            task_prompt_kwargs=update_desc_kwargs)
+                    if new_desc: char_state['physical_description'] = new_desc.strip()
+
+                self.char_gen_queue.put(copy.deepcopy(char_state))
+                time.sleep(1)
+
+            utils.log_message('debug',
+                              f"[CHAR_GEN_TEST] Cycle for {initial_char['name']} complete. Waiting before next character.")
+            time.sleep(3)
+
+    def handle_character_generation_updates(self):
+        """Checks the queue for newly generated characters and updates the view."""
+        if self.char_gen_queue and not self.char_gen_queue.empty():
+            new_char = self.char_gen_queue.get()
+            self.generated_characters.insert(0, new_char)  # Add to the top of the list
+            if isinstance(self.ui_manager.active_view, CharacterGenerationTestView):
+                self.ui_manager.active_view.update_characters(self.generated_characters)
+
+    def stop_character_generation_test(self):
+        """Stops the generation thread and resets state."""
+        if self.char_gen_stop_event:
+            self.char_gen_stop_event.set()
+        if self.char_gen_thread and self.char_gen_thread.is_alive():
+            self.char_gen_thread.join(timeout=2.0)
+
+        self.char_gen_context = None
+        self.char_gen_thread = None
+        self.char_gen_queue = None
+        self.char_gen_stop_event = None
+        self.generated_characters = []
+
+        self.ui_manager.app_state = AppState.WORLD_SELECTION
+        self.ui_manager.active_view = None
+        self.ui_manager.special_mode_active = None
 
     def start_calibration(self):
         """Initializes and kicks off the calibration process."""
@@ -156,7 +328,7 @@ class SpecialModeManager:
 
             for i in range(len(path) - 1):
                 start_tx, start_ty = path[i]
-                end_tx, end_ty = path[i+1]
+                end_tx, end_ty = path[i + 1]
 
                 start_px = start_tx * tile_w + tile_w // 2
                 start_py = start_ty * tile_h + tile_h // 2
@@ -170,7 +342,8 @@ class SpecialModeManager:
         """Starts and tracks manual mock patches for the PEG test modes."""
         self.stop_peg_patches()
         # Patch LLM calls
-        llm_patcher = patch('core.worldgen.v3_components.v3_llm.execute_task', side_effect=self._mock_execute_task_for_peg)
+        llm_patcher = patch('core.worldgen.v3_components.v3_llm.execute_task',
+                            side_effect=self._mock_execute_task_for_peg)
         llm_patcher.start()
         self.active_patchers.append(llm_patcher)
 

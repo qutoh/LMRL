@@ -167,6 +167,17 @@ class PromptBuilder:
             self.message_channels.append([{"role": "user", "content": context_text}])
         return self
 
+    def add_physical_context(self):
+        """Adds the character's physical description and equipment to the prompt."""
+        if phys_desc := self.character.get('physical_description'):
+            context_text = f"--- YOUR APPEARANCE & GEAR ---\n{phys_desc}\n"
+            if equipment := self.character.get('equipment', {}).get('equipped'):
+                item_lines = [f"- {item['name']}: {item['description']}" for item in equipment]
+                context_text += "You are carrying/wearing:\n" + "\n".join(item_lines)
+
+            self.message_channels.append([{"role": "user", "content": context_text.strip()}])
+        return self
+
     def add_long_term_memory(self, memories: list[dict]):
         if memories:
             formatted_lines = [

@@ -6,7 +6,6 @@ from ..common import utils
 from ..common import file_io
 from ..common.game_state import Entity
 from ..common.localization import loc
-from ..common.utils import log_message
 from ..llm.llm_api import execute_task
 from . import character_factory
 
@@ -159,6 +158,11 @@ def decorate_and_add_character(engine, character_data, role_type):
 
     char['temperature'] = char.get('temperature', default_temp)
     char['scaling_factor'] = char.get('scaling_factor', default_scale)
+
+    if 'physical_description' not in char:
+        char['physical_description'] = "No specific description available."
+    if 'equipment' not in char:
+        char['equipment'] = {"equipped": [], "removed": [], "outfits": {}}
 
     add_character(engine, char)
     utils.log_message('debug', loc('system_roster_loaded', role_type=role_type.upper(), char_name=char['name'],

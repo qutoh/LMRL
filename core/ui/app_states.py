@@ -17,3 +17,4 @@ class AppState(Enum):
     EXITING = auto()
     CALIBRATING = auto()
     PEG_V3_TEST = auto()
+    CHARACTER_GENERATION_TEST = auto()

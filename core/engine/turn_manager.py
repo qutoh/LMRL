@@ -49,8 +49,12 @@ class TurnManager:
         memories = self.engine.memory_manager.retrieve_memories(self.engine.dialogue_log, self.engine.summaries)
         local_context_str = position_manager.get_local_context_for_character(self.engine, self.game_state,
                                                                              current_actor['name'])
-        builder = utils.PromptBuilder(self.engine, current_actor).add_world_theme().add_summary(
-            self.engine.summaries).add_local_context(local_context_str)
+        builder = utils.PromptBuilder(self.engine, current_actor) \
+            .add_world_theme() \
+            .add_summary(self.engine.summaries) \
+            .add_local_context(local_context_str) \
+            .add_physical_context()
+
         if memories: builder.add_long_term_memory(memories)
         builder.add_dialogue_log(self.engine.dialogue_log)
         messages = builder.build()

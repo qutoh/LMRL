@@ -42,5 +42,6 @@
     "DIRECTOR_CONFIRMATION_REQUIRED": true,
     "EMBEDDING_MODEL_NAME": "all-MiniLM-L6-v2",
     "VECTOR_DB_PATH": "data/long_term_memory",
-    "MEMORY_RETRIEVAL_COUNT": 5
+    "MEMORY_RETRIEVAL_COUNT": 5,
+    "GEMINI_API_KEY": "AIzaSyCTiGllDv5u5-nohCadGTCI4qfoiHYhjzU"
 }

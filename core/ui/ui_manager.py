@@ -22,13 +22,12 @@ from ..engine.story_engine import StoryEngine
 from ..engine.setup_manager import SetupManager
 from ..common import file_io
 from ..common.config_loader import config
-from ..common.localization import loc
+
 from ..common.game_state import GameState
 from .views import WorldSelectionView, GameView, SceneSelectionView, TextInputView, LoadOrNewView, SaveSelectionView, \
     SettingsView, MenuView, PrometheusView
 from .input_handler import TextInputHandler
 from ..llm.model_manager import ModelManager
-from ..common.utils import get_text_from_messages
 
 
 def engine_process(render_queue: Queue, input_queue: Queue, load_path: str, world_name: str,
@@ -89,6 +88,7 @@ class UIManager:
             "IN_GAME_INPUT": "[ENTER] Submit Action | [ESC] Skip Action | [CTRL+V] Paste",
             "IN_GAME_MENU": "[UP/DOWN] Navigate | [ENTER] Select | [ESC] Cancel",
             AppState.PEG_V3_TEST: "[ENTER] Next Step | [SPACE] Fast-Forward | [LEFT/RIGHT] Change Scenario | [ESC] Back",
+            AppState.CHARACTER_GENERATION_TEST: "[ESC] Stop Test & Return to Menu",
             AppState.SHUTTING_DOWN: "Shutting down, please wait..."
         }
         self.help_bar = HelpBar(help_texts=self.help_texts)
@@ -121,7 +121,8 @@ class UIManager:
                 )
             elif self.app_state == AppState.SETTINGS:
                 def on_settings_back():
-                    self.app_state = AppState.WORLD_SELECTION; self.active_view = None
+                    self.app_state = AppState.WORLD_SELECTION
+                    self.active_view = None
 
                 self.active_view = SettingsView(on_back=on_settings_back, console_height=self.root_console.height)
 
@@ -160,6 +161,19 @@ class UIManager:
                                                       console_width=self.root_console.width,
                                                       console_height=self.root_console.height)
 
+            elif self.app_state == AppState.CHARACTER_GENERATION_TEST:
+                def on_context_submit(context: str):
+                    self.active_view = None
+                    if context:
+                        self.special_modes.start_character_generation_test(context)
+                    else:
+                        self.app_state = AppState.WORLD_SELECTION
+
+                user_prompt = "Enter a scene context for character generation."
+                handler = TextInputHandler(prompt=user_prompt, width=self.root_console.width - 2, prefix="> ",
+                                           max_tokens=self._get_default_token_limit())
+                self.active_view = TextInputView(handler=handler, on_submit=on_context_submit)
+
         if self.app_state == AppState.WORLD_CREATING:
             if not self.model_manager.models_loaded.is_set(): return
             self.active_view = None
@@ -180,6 +194,9 @@ class UIManager:
                 self.active_view = None
                 self.special_modes.run_peg_v3_test()
             self.special_mode_active = "PEG_V3_TEST"
+        elif self.app_state == AppState.CHARACTER_GENERATION_TEST:
+            if self.special_mode_active == "CHAR_GEN_TEST":
+                self.special_modes.handle_character_generation_updates()
         elif self.app_state == AppState.LOADING_GAME:
             self._handle_game_loading()
         elif self.app_state == AppState.GAME_RUNNING:
@@ -460,6 +477,11 @@ class UIManager:
                                        'POST_CONNECT') and key in (tcod.event.KeySym.SPACE, tcod.event.KeySym.RETURN,
                                                                    tcod.event.KeySym.KP_ENTER):
                             self.special_modes.advance_peg_test_step(key)
+
+                    elif self.special_mode_active == "CHAR_GEN_TEST":
+                        if converted_event.sym == tcod.event.KeySym.ESCAPE:
+                            self.special_modes.stop_character_generation_test()
+                            continue
 
                     if self.input_queue:
                         if converted_event.sym in (tcod.event.KeySym.F10, tcod.event.KeySym.ESCAPE):

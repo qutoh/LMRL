@@ -44,6 +44,9 @@ class UICallbacks:
         elif choice == "PEG V3 Iterative Test":
             self.ui_manager.app_state = AppState.PEG_V3_TEST
             return
+        elif choice == "Character Generation Test":
+            self.ui_manager.app_state = AppState.CHARACTER_GENERATION_TEST
+            return
         else:
             self.ui_manager.selected_world_name = choice
             config.load_world_data(self.ui_manager.selected_world_name)
