@@ -15,14 +15,14 @@ def _prepare_physical_description_task(base_kwargs: dict, role_hint: str, scene_
     based on the ENABLE_PAPER_DOLL_MODE setting.
     """
     kwargs = base_kwargs.copy()
+
     if config.settings.get("ENABLE_PAPER_DOLL_MODE"):
-        task_key = 'DIRECTOR_CREATE_BASE_PHYS_DESC_FROM_PROFILE'
-    else:
-        task_key = 'DIRECTOR_CREATE_LEAD_PHYS_DESC_FROM_ROLE'
-        # Ensure the necessary keys are present for the non-paper-doll task
-        kwargs['role_archetype'] = role_hint
-        kwargs['scene_prompt'] = scene_context
         kwargs['equipment_instruction'] = loc('prompt_substring_paper_doll_off')
+    else:
+        kwargs['equipment_instruction'] = loc('prompt_substring_paper_doll_off')
+    kwargs['role_archetype'] = role_hint
+    kwargs['scene_prompt'] = scene_context
+    task_key = 'DIRECTOR_CREATE_LEAD_PHYS_DESC_FROM_ROLE'
     return task_key, kwargs
 
 
