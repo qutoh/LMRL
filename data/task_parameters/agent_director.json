@@ -40,10 +40,6 @@
     "source_agent": "DIRECTOR",
     "default_adjustment": -0.2
   },
-  "DIRECTOR_CREATE_BASE_PHYS_DESC_FROM_PROFILE": {
-    "task_prompt_key": "task_prompt_director_create_base_phys_desc_from_profile",
-    "source_agent": "DIRECTOR"
-  },
   "DIRECTOR_CREATE_FULL_LEAD_PROFILE_FROM_ROLE": {
     "task_prompt_key": "task_prompt_director_create_full_lead_profile_from_role",
     "source_agent": "DIRECTOR"
@@ -134,7 +130,7 @@
   "GET_CHARACTER_PLACEMENT": {
     "task_prompt_key": "task_prompt_peg_character_placement",
     "source_agent": "DIRECTOR",
-    "model_override": "",
+    "model_override": "cydonia-22b-v1.3",
     "default_adjustment": 0.0,
     "affects_global_context_limit": false
   },

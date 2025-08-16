@@ -45,7 +45,8 @@
   },
   "WORLDGEN_DECIDE_ACTION": {
     "task_prompt_key": "task_prompt_worldgen_decide_action",
-    "source_agent": "ATLAS"
+    "source_agent": "ATLAS",
+	"player_takeover_enabled": false
   },
   "WORLDGEN_DETERMINE_RELATIONSHIP": {
     "task_prompt_key": "task_prompt_worldgen_determine_relationship",

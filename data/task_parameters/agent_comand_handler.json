@@ -27,56 +27,56 @@
   "CH_FIX_ATLAS": {
     "task_prompt_key": "task_prompt_ch_fix_atlas",
     "source_agent": "COMMAND_HANDLER",
-    "model_override": "",
+    "model_override": "uncensored-phi-3-mini-4k-geminified",
     "default_adjustment": -0.2,
     "is_failure_handler": true
   },
   "CH_FIX_DIRECTOR": {
     "task_prompt_key": "task_prompt_ch_fix_director",
     "source_agent": "COMMAND_HANDLER",
-    "model_override": "",
+    "model_override": "uncensored-phi-3-mini-4k-geminified",
     "default_adjustment": -0.2,
     "is_failure_handler": true
   },
   "CH_FIX_NPC_JSON_FROM_PROCGEN": {
     "task_prompt_key": "task_prompt_ch_fix_npc_json_from_procgen",
     "source_agent": "COMMAND_HANDLER",
-    "model_override": "",
+    "model_override": "uncensored-phi-3-mini-4k-geminified",
     "default_adjustment": -0.2,
     "is_failure_handler": true
   },
   "CH_FIX_PEG_JSON": {
     "task_prompt_key": "task_prompt_ch_fix_peg_json",
     "source_agent": "COMMAND_HANDLER",
-    "model_override": "",
+    "model_override": "uncensored-phi-3-mini-4k-geminified",
     "default_adjustment": -0.2,
     "is_failure_handler": true
   },
   "CH_FIX_PEG_V2_JSON": {
     "task_prompt_key": "task_prompt_ch_fix_peg_v2_json",
     "source_agent": "COMMAND_HANDLER",
-    "model_override": "",
+    "model_override": "uncensored-phi-3-mini-4k-geminified",
     "default_adjustment": -0.2,
     "is_failure_handler": true
   },
   "CH_FIX_PEG_V3_JSON": {
     "task_prompt_key": "task_prompt_ch_fix_peg_v3_json",
     "source_agent": "COMMAND_HANDLER",
-    "model_override": "",
+    "model_override": "uncensored-phi-3-mini-4k-geminified",
     "default_adjustment": -0.2,
     "is_failure_handler": true
   },
   "CH_FIX_PROCGEN": {
     "task_prompt_key": "task_prompt_ch_fix_procgen",
     "source_agent": "COMMAND_HANDLER",
-    "model_override": "",
+    "model_override": "uncensored-phi-3-mini-4k-geminified",
     "default_adjustment": -0.2,
     "is_failure_handler": true
   },
   "POSITION_FIX_MOVEMENT_JSON": {
     "task_prompt_key": "task_prompt_command_handler_fix_movement",
     "source_agent": "COMMAND_HANDLER",
-    "model_override": "",
+    "model_override": "uncensored-phi-3-mini-4k-geminified",
     "default_adjustment": -0.2,
     "is_failure_handler": true
   }

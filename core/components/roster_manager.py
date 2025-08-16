@@ -6,64 +6,69 @@ from ..common import utils
 from ..common import file_io
 from ..common.game_state import Entity
 from ..common.localization import loc
+from ..common.utils import log_message
 from ..llm.llm_api import execute_task
 from . import character_factory
 
 
-def get_or_create_npc_from_data(engine, npc_data: dict | str, location_context: dict) -> dict | None:
+def get_or_create_character_from_concept(engine, char_concept: dict | str, location_context: dict) -> tuple[
+    dict | None, str | None]:
     """
-    Takes high-level NPC data, finds a full profile in casting,
-    or creates one using the Director with full context if it doesn't exist.
-    The newly created NPC is then cached to the world's casting file.
+    Takes a high-level character concept, finds a full profile in any casting list (inhabitant, lead, or NPC),
+    or creates one if it doesn't exist. The newly created inhabitant is then cached.
     """
-    npc_concept_dict = {}
-    if isinstance(npc_data, str):
-        parts = npc_data.split(' - ', 1)
-        npc_concept_dict['name'] = parts[0].strip()
-        npc_concept_dict['description'] = parts[1].strip() if len(parts) > 1 else "An individual."
-    elif isinstance(npc_data, dict):
-        npc_concept_dict = npc_data
+    concept_dict = {}
+    if isinstance(char_concept, str):
+        parts = char_concept.split(' - ', 1)
+        concept_dict['name'] = parts[0].strip()
+        concept_dict['description'] = parts[1].strip() if len(parts) > 1 else "An individual."
+    elif isinstance(char_concept, dict):
+        concept_dict = char_concept
     else:
-        return None
+        return None, None
 
-    npc_name = npc_concept_dict.get('name')
-    if not npc_name: return None
+    char_name = concept_dict.get('name')
+    if not char_name: return None, None
 
-    # Check world-specific casting file first
-    world_casting_path = file_io.join_path(engine.config.data_dir, 'worlds', engine.world_name, 'casting_npcs.json')
-    world_casting_list = file_io.read_json(world_casting_path, default=[])
-    if found_char := find_character_in_list(npc_name, world_casting_list):
-        utils.log_message('debug', f"[ROSTER] Found pre-existing NPC '{npc_name}' in world casting file.")
-        return found_char
+    # --- SEARCH PHASE: Check all casting files first, with inhabitant cache as top priority ---
+    inhabitant_path = file_io.join_path(engine.config.data_dir, 'worlds', engine.world_name,
+                                                'inhabitants.json')
+    inhabitant_list = file_io.read_json(inhabitant_path, default=[])
 
-    # Check global casting file
-    if found_char := find_character_in_list(npc_name, config.casting_npcs):
-        utils.log_message('debug', f"[ROSTER] Found pre-existing NPC '{npc_name}' in global casting file.")
-        return found_char
+    # Priority 1: Check the dedicated inhabitant cache for this world.
+    if found_char := find_character_in_list(char_name, inhabitant_list):
+        utils.log_message('debug', f"[ROSTER] Found pre-existing inhabitant '{char_name}' in world's inhabitant cache.")
+        return found_char, 'npc'  # Inhabitants are always treated as NPCs
 
-    utils.log_message('debug', f"[ROSTER] NPC '{npc_name}' not in casting. Generating full profile from concept.")
-    director_agent = config.agents['DIRECTOR']
+    # Priority 2: Check standard world/global casting files
+    world_leads_path = file_io.join_path(engine.config.data_dir, 'worlds', engine.world_name, 'casting_leads.json')
+    world_leads_list = file_io.read_json(world_leads_path, default=[])
+    world_npcs_path = file_io.join_path(engine.config.data_dir, 'worlds', engine.world_name, 'casting_npcs.json')
+    world_npcs_list = file_io.read_json(world_npcs_path, default=[])
 
-    # Pass full context to the instruction creation step
-    instructions = character_factory.create_instructions_from_description(
-        engine, director_agent, npc_name, npc_concept_dict.get('description', 'An ordinary person.'),
-        location_context
-    )
-    if not instructions:
-        return None
+    if found_char := find_character_in_list(char_name, world_leads_list): return found_char, 'lead'
+    if found_char := find_character_in_list(char_name, world_npcs_list): return found_char, 'npc'
+    if found_char := find_character_in_list(char_name, config.casting_leads): return found_char, 'lead'
+    if found_char := find_character_in_list(char_name, config.casting_npcs): return found_char, 'npc'
 
-    full_npc_profile = {
-        "name": npc_name,
-        "description": npc_concept_dict.get('description'),
-        "instructions": instructions
+    # --- CREATION PHASE: Only if not found anywhere ---
+    utils.log_message('debug', f"[ROSTER] Inhabitant concept '{char_name}' not found. Generating full profile.")
+
+    char_data_for_creation = {
+        "name": char_name,
+        "source_sentence": concept_dict.get('description', 'An individual encountered in the scene.')
     }
+    full_char_profile = character_factory.create_npc_from_generation_sentence(engine, char_data_for_creation)
 
-    # Save the newly generated full profile back to the world's casting file for future use
-    world_casting_list.append(full_npc_profile)
-    file_io.write_json(world_casting_path, world_casting_list)
-    utils.log_message('debug', f"[ROSTER] Saved newly generated NPC '{npc_name}' to world casting file.")
+    if not full_char_profile:
+        return None, None
 
-    return full_npc_profile
+    # Save the newly generated profile to the inhabitant cache for persistence.
+    inhabitant_list.append(full_char_profile)
+    file_io.write_json(inhabitant_path, inhabitant_list)
+    utils.log_message('debug', f"[ROSTER] Saved newly generated inhabitant '{char_name}' to world's inhabitant cache.")
+
+    return full_char_profile, 'npc'
 
 
 def resolve_character_from_description(engine, description: str, existing_characters: list[str]) -> str | None:
@@ -122,6 +127,7 @@ def decorate_and_add_character(engine, character_data, role_type):
     # --- Persist the new character to world files ---
     if engine.world_name:
         # 1. Save the full profile to the world's casting file.
+        # This is now primarily for non-inhabitant characters, but won't hurt to save inhabitants too.
         file_io.save_character_to_world_casting(engine.world_name, character_data, role_type)
 
         # 2. Save a simple concept to the location's inhabitant list.
@@ -165,9 +171,10 @@ def decorate_and_add_character(engine, character_data, role_type):
         char['equipment'] = {"equipped": [], "removed": [], "outfits": {}}
 
     add_character(engine, char)
-    utils.log_message('game', f"{char.get('name', 'A new character')} has joined the story.")
+    log_message('game', f"{char.get('name', 'A new character')} has joined the story.")
     if phys_desc := char.get('physical_description'):
-        utils.log_message('game', f"-> {phys_desc}")
+        log_message('game', f"-> {phys_desc}")
+
     utils.log_message('debug', loc('system_roster_loaded', role_type=role_type.upper(), char_name=char['name'],
                                    model_name=char.get('model')))
 
@@ -213,11 +220,12 @@ def load_characters_from_scene(engine, scene_data):
         if npc_profile := find_character_in_list(name, all_casting_npcs):
             decorate_and_add_character(engine, npc_profile, 'npc')
 
-    # 2. Load/Generate NPCs from the location's "inhabitants" list
+    # 2. Load/Generate characters from the location's "inhabitants" list
     if inhabitants := location_data.get('inhabitants'):
-        for npc_concept in inhabitants:
-            if full_npc_profile := get_or_create_npc_from_data(engine, npc_concept, location_context):
-                decorate_and_add_character(engine, full_npc_profile, 'npc')
+        for char_concept in inhabitants:
+            full_char_profile, role_type = get_or_create_character_from_concept(engine, char_concept, location_context)
+            if full_char_profile and role_type:
+                decorate_and_add_character(engine, full_char_profile, role_type)
 
 
 # # NEW: Wrapper function to centralize the create->add flow
@@ -365,7 +373,6 @@ def promote_npc_to_lead(engine, npc_name):
             char_to_promote['role_type'] = 'lead'
             char_to_promote['is_essential'] = True
             char_to_promote['is_director_managed'] = True
-
             utils.log_message('debug', loc('system_director_lead_promote', npc_name=npc_name,
                                            character_name='(N/A)'))  # Context may vary
             return char_to_promote

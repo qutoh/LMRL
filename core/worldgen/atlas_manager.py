@@ -56,6 +56,7 @@ class AtlasManager:
             utils.log_message('game', f"[ATLAS] ...generated concept: '{npc_concept}'.")
             return npc_concept.strip()
         return None
+
     def _build_context_for_decision(self, breadcrumb_trail: list, current_location: dict) -> tuple[str, dict]:
         """Builds a descriptive string of the current location and its connections for the LLM."""
         lines = [f"You are currently at: {self._build_descriptive_breadcrumb_trail(breadcrumb_trail)}"]
@@ -105,7 +106,8 @@ class AtlasManager:
 
         return "\n".join(lines), connections
 
-    def _find_breadcrumb_for_node(self, target_name: str, current_data=None, current_breadcrumb=None, visited=None) -> list | None:
+    def _find_breadcrumb_for_node(self, target_name: str, current_data=None, current_breadcrumb=None,
+                                  visited=None) -> list | None:
         """Recursively searches the world data for a node by name and returns its breadcrumb, now with cycle detection."""
         if current_data is None: current_data = config.world
         if current_breadcrumb is None: current_breadcrumb = []
@@ -187,12 +189,9 @@ class AtlasManager:
         return {"Name": new_name.strip(), "Description": new_desc.strip(), "Type": new_type.strip(),
                 "Relationship": relationship.strip().upper()}
 
-    def _create_location_one_shot(self, world_theme: str, parent_breadcrumb: list[str], parent_location: dict,
-                                  relationship_override: str | None) -> dict | None:
+    def _create_location_one_shot(self, world_theme: str, parent_breadcrumb: list[str],
+                                  parent_location: dict) -> dict | None:
         """Primary Method: Creates a new location with relationship using a single JSON prompt."""
-        if relationship_override:
-            return self._create_location_stepwise_fallback(world_theme, parent_location, "", relationship_override)
-
         valid_rels = self._get_valid_relationships(parent_breadcrumb)
         rel_str = "\n".join([f"- `{rel}`" for rel in valid_rels])
 
@@ -267,9 +266,15 @@ class AtlasManager:
 
     def _handle_location_creation(self, world_name, world_theme, breadcrumb, current_node,
                                   relationship_override):
-        """Handles the CREATE action, including lattice logic."""
-        new_loc_data = self._create_location_one_shot(world_theme, breadcrumb, current_node, relationship_override)
-        if not new_loc_data: return breadcrumb, current_node, "CONTINUE"
+        """Handles the CREATE action, including lattice logic and relationship overrides."""
+        new_loc_data = self._create_location_one_shot(world_theme, breadcrumb, current_node)
+        if not new_loc_data:
+            return breadcrumb, current_node, "CONTINUE"
+
+        if relationship_override:
+            utils.log_message('debug',
+                              f"[ATLAS] Overriding generated relationship with pre-decided action: '{relationship_override}'")
+            new_loc_data["Relationship"] = relationship_override
 
         rel = new_loc_data.pop("Relationship").upper()
         new_name = new_loc_data["Name"]
@@ -285,7 +290,8 @@ class AtlasManager:
             new_node_breadcrumb = breadcrumb + [new_name]
             file_io.add_relationship_to_node(world_name, new_node_breadcrumb, "PARENT", current_node["Name"])
             config.load_world_data(world_name)
-            return new_node_breadcrumb, file_io._find_node_by_breadcrumb(config.world, new_node_breadcrumb), "CONTINUE"
+            return new_node_breadcrumb, file_io._find_node_by_breadcrumb(config.world,
+                                                                        new_node_breadcrumb), "CONTINUE"
         elif rel in LATTICE_RELATIONSHIPS:
             parent_breadcrumb = breadcrumb[:-1]
             file_io.add_child_to_world(world_name, parent_breadcrumb, new_loc_data)
@@ -297,7 +303,8 @@ class AtlasManager:
             file_io.add_relationship_to_node(world_name, new_node_breadcrumb, "PARENT",
                                              current_node.get("relationships", {}).get("PARENT"))
             config.load_world_data(world_name)
-            return new_node_breadcrumb, file_io._find_node_by_breadcrumb(config.world, new_node_breadcrumb), "CONTINUE"
+            return new_node_breadcrumb, file_io._find_node_by_breadcrumb(config.world,
+                                                                        new_node_breadcrumb), "CONTINUE"
         return breadcrumb, current_node, "CONTINUE"
 
     def _decide_next_action(self, world_theme: str, context_string: str, scene_prompt: str | None) -> str:
@@ -374,7 +381,7 @@ class AtlasManager:
         world_name = self._get_world_name(theme, ui_manager=ui_manager)
         utils.log_message('game', f"[ATLAS] World named: {world_name}")
 
-        origin_location = self._create_location_one_shot(theme, [], {"Name": "The Cosmos"}, None)
+        origin_location = self._create_location_one_shot(theme, [], {"Name": "The Cosmos"})
         if not origin_location:
             utils.log_message('game', "[ATLAS] ERROR: Failed to create origin location.")
             return None
@@ -391,6 +398,8 @@ class AtlasManager:
         file_io.write_json(file_io.join_path(world_dir, 'levels.json'), {})
         file_io.write_json(file_io.join_path(world_dir, 'generated_scenes.json'), [])
         file_io.write_json(file_io.join_path(world_dir, 'casting_npcs.json'), [])
+        file_io.write_json(file_io.join_path(world_dir, 'inhabitants.json'), [])
+
 
         exploration_steps = config.settings.get("ATLAS_AUTONOMOUS_EXPLORATION_STEPS", 0)
         if exploration_steps > 0:

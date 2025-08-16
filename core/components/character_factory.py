@@ -29,10 +29,12 @@ def _prepare_physical_description_task(base_kwargs: dict, role_hint: str, scene_
 def _create_character_one_shot(engine, agent, task_key, task_kwargs) -> dict | None:
     """Primary Method: Attempts to generate all descriptive fields in one LLM call."""
     # Dynamically inject the correct equipment instruction based on settings
+
     if config.settings.get("ENABLE_PAPER_DOLL_MODE"):
-        task_kwargs['equipment_instruction'] = loc('prompt_substring_paper_doll_on')
+        task_kwargs['equipment_instruction'], arg_equipment_passthrough = loc('prompt_substring_paper_doll_on')
     else:
         task_kwargs['equipment_instruction'] = loc('prompt_substring_paper_doll_off')
+    task_kwargs['full_json'] = loc('prompt_substring_full_json_character', **task_kwargs)
 
     raw_response = execute_task(engine, agent, task_key, [], task_prompt_kwargs=task_kwargs)
 
