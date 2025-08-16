@@ -100,6 +100,11 @@
     "source_agent": "DIRECTOR",
     "default_adjustment": 0.1
   },
+  "DIRECTOR_DEFINE_LEAD_ROLES_FOR_SCENE_FALLBACK": {
+    "task_prompt_key": "task_prompt_director_define_lead_roles_for_scene_fallback",
+    "source_agent": "DIRECTOR",
+    "is_failure_handler": true
+  },
   "DIRECTOR_GET_COMMAND": {
     "task_prompt_key": "task_prompt_director_main",
     "source_agent": "DIRECTOR",
@@ -129,7 +134,7 @@
   "GET_CHARACTER_PLACEMENT": {
     "task_prompt_key": "task_prompt_peg_character_placement",
     "source_agent": "DIRECTOR",
-    "model_override": "cydonia-22b-v1.3",
+    "model_override": "",
     "default_adjustment": 0.0,
     "affects_global_context_limit": false
   },
