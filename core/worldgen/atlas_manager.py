@@ -65,7 +65,6 @@ class AtlasManager:
         inhabitants = current_location.get('inhabitants', [])
         inhabitant_names = [i.split(' - ')[0] if isinstance(i, str) else i.get('name', '') for i in inhabitants]
         lines.append(f"  - Inhabitants: {', '.join(filter(None, inhabitant_names)) or 'None'}")
-        utils.log_message("game", lines)
         lines.append("\n  Available connections:")
 
         connections = {}
@@ -160,17 +159,19 @@ class AtlasManager:
         return file_io.sanitize_filename(name.strip())
 
     def _create_location_stepwise_fallback(self, world_theme: str, parent_location: dict, context: str,
-                                           relationship_override: str | None) -> dict | None:
+                                           relationship_override: str | None, scene_prompt: str | None) -> dict | None:
         """Fallback: Creates a new location using a robust, multi-step process."""
         utils.log_message('debug', "[ATLAS] Single-shot failed. Falling back to step-wise generation.")
         name_kwargs = {"world_theme": world_theme, "parent_name": parent_location.get("Name", "the world"),
-                       "parent_description": parent_location.get("Description", ""), "user_idea": "A new place."}
+                       "parent_description": parent_location.get("Description", ""), "user_idea": "A new place.",
+                       "scene_prompt": scene_prompt or "N/A"}
         new_name = execute_task(self.engine, self.atlas_agent, 'WORLDGEN_CREATE_LOCATION_NAME', [],
                                 task_prompt_kwargs=name_kwargs)
         if not new_name or not new_name.strip(): new_name = file_io.get_random_name()
 
         desc_kwargs = {"world_theme": world_theme, "parent_name": parent_location.get("Name", "the world"),
-                       "parent_description": parent_location.get("Description", ""), "new_name": new_name}
+                       "parent_description": parent_location.get("Description", ""), "new_name": new_name,
+                       "scene_prompt": scene_prompt or "N/A"}
         new_desc = execute_task(self.engine, self.atlas_agent, 'WORLDGEN_CREATE_LOCATION_DESC', [],
                                 task_prompt_kwargs=desc_kwargs)
         if not new_desc: return None
@@ -190,13 +191,14 @@ class AtlasManager:
                 "Relationship": relationship.strip().upper()}
 
     def _create_location_one_shot(self, world_theme: str, parent_breadcrumb: list[str],
-                                  parent_location: dict) -> dict | None:
+                                  parent_location: dict, scene_prompt: str | None) -> dict | None:
         """Primary Method: Creates a new location with relationship using a single JSON prompt."""
         valid_rels = self._get_valid_relationships(parent_breadcrumb)
         rel_str = "\n".join([f"- `{rel}`" for rel in valid_rels])
 
         kwargs = {
             "world_theme": world_theme,
+            "scene_prompt": scene_prompt or "N/A",
             "current_location_summary": f"Name: {parent_location.get('Name', 'the world')}\nDescription: {parent_location.get('Description', '')}",
             "valid_relationships": rel_str
         }
@@ -212,7 +214,7 @@ class AtlasManager:
                                              context=f"Generated for parent: {parent_location.get('Name')}")
                 command['Relationship'] = "NEARBY"
             return command
-        return self._create_location_stepwise_fallback(world_theme, parent_location, "", None)
+        return self._create_location_stepwise_fallback(world_theme, parent_location, "", None, scene_prompt)
 
     def explore_one_step(self, world_name: str, world_theme: str, breadcrumb: list[str], current_node: dict,
                          scene_prompt: str | None = None):
@@ -231,18 +233,19 @@ class AtlasManager:
         elif action in self._get_valid_relationships(breadcrumb) and action not in connections:
             utils.log_message('game', f"[ATLAS] Action '{action}' is a direct command to create a new location.")
             return self._handle_location_creation(world_name, world_theme, breadcrumb, current_node,
-                                                  relationship_override=action)
+                                                  relationship_override=action, scene_prompt=scene_prompt)
 
         # --- Handle Generic Actions ---
         if action == "NAVIGATE":
             return self._handle_navigation(current_node, breadcrumb, world_theme, scene_prompt, connections)
         elif action == "CREATE":
             return self._handle_location_creation(world_name, world_theme, breadcrumb, current_node,
-                                                  relationship_override=None)
+                                                  relationship_override=None, scene_prompt=scene_prompt)
         elif action == "POPULATE":
             if new_npc := self._generate_npc_concept_for_location(world_theme, current_node):
                 file_io.add_inhabitant_to_location(world_name, breadcrumb, {"name": new_npc.split(' - ')[0],
-                                                                            "description": new_npc.split(' - ', 1)[1]})
+                                                                            "description":
+                                                                                new_npc.split(' - ', 1)[1]})
                 config.load_world_data(world_name)
                 return breadcrumb, file_io._find_node_by_breadcrumb(config.world, breadcrumb), "CONTINUE"
 
@@ -265,9 +268,9 @@ class AtlasManager:
         return breadcrumb, current_node, "CONTINUE"
 
     def _handle_location_creation(self, world_name, world_theme, breadcrumb, current_node,
-                                  relationship_override):
+                                  relationship_override, scene_prompt):
         """Handles the CREATE action, including lattice logic and relationship overrides."""
-        new_loc_data = self._create_location_one_shot(world_theme, breadcrumb, current_node)
+        new_loc_data = self._create_location_one_shot(world_theme, breadcrumb, current_node, scene_prompt)
         if not new_loc_data:
             return breadcrumb, current_node, "CONTINUE"
 
@@ -381,7 +384,7 @@ class AtlasManager:
         world_name = self._get_world_name(theme, ui_manager=ui_manager)
         utils.log_message('game', f"[ATLAS] World named: {world_name}")
 
-        origin_location = self._create_location_one_shot(theme, [], {"Name": "The Cosmos"})
+        origin_location = self._create_location_one_shot(theme, [], {"Name": "The Cosmos"}, "A new world is born.")
         if not origin_location:
             utils.log_message('game', "[ATLAS] ERROR: Failed to create origin location.")
             return None
@@ -398,7 +401,7 @@ class AtlasManager:
         file_io.write_json(file_io.join_path(world_dir, 'levels.json'), {})
         file_io.write_json(file_io.join_path(world_dir, 'generated_scenes.json'), [])
         file_io.write_json(file_io.join_path(world_dir, 'casting_npcs.json'), [])
-        file_io.write_json(file_io.join_path(world_dir, 'inhabitants.json'), [])
+        file_io.write_json(file_io.join_path(world_dir, 'casting_inhabitants.json'), [])
 
 
         exploration_steps = config.settings.get("ATLAS_AUTONOMOUS_EXPLORATION_STEPS", 0)
