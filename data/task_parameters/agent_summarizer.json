@@ -13,5 +13,9 @@
     "task_prompt_key": "task_prompt_summarizer_meta",
     "source_agent": "SUMMARIZER",
     "default_adjustment": 0.0
+  },
+  "SUMMARIZE_SYNTHESIZE_DMS": {
+    "task_prompt_key": "task_prompt_summarizer_synthesize_dms",
+    "source_agent": "SUMMARIZER"
   }
 }

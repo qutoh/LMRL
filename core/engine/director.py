@@ -80,9 +80,27 @@ class DirectorManager:
             "location_summary": location_summary,
             "npc_list_summary": npc_summary
         }
-        roles_str = execute_task(self.engine, self.director_agent, 'DIRECTOR_DEFINE_LEAD_ROLES_FOR_SCENE', [],
-                                 task_prompt_kwargs=roles_kwargs)
-        needed_roles = [role.strip() for role in roles_str.split(';') if role.strip()]
+        raw_roles_response = execute_task(self.engine, self.director_agent, 'DIRECTOR_DEFINE_LEAD_ROLES_FOR_SCENE', [],
+                                          task_prompt_kwargs=roles_kwargs)
+
+        needed_roles = []
+        # Primary method: Parse as structured JSON with a command handler fallback.
+        command = command_parser.parse_structured_command(
+            self.engine,
+            raw_roles_response,
+            'DIRECTOR',
+            fallback_task_key='CH_FIX_LEAD_ROLES_JSON'
+        )
+
+        if command and isinstance(command.get('roles'), list) and command['roles']:
+            needed_roles = command['roles']
+        else:
+            # Final fallback: Call a different, simpler prompt and parse its response.
+            utils.log_message('debug', "[DIRECTOR] JSON for lead roles failed. Falling back to semicolon-based task.")
+            fallback_response = execute_task(self.engine, self.director_agent,
+                                             'DIRECTOR_DEFINE_LEAD_ROLES_FOR_SCENE_FALLBACK', [],
+                                             task_prompt_kwargs=roles_kwargs)
+            needed_roles = [role.strip() for role in fallback_response.split(';') if role.strip()]
 
         utils.log_message('game', f"[DIRECTOR] The director has defined the lead roles needed: {needed_roles}")
 
@@ -125,18 +143,15 @@ class DirectorManager:
         chosen_dms_str = execute_task(self.engine, self.director_agent, 'DIRECTOR_CHOOSE_DMS_FOR_SCENE', [],
                                       task_prompt_kwargs=dm_kwargs)
 
+        chosen_dm_profiles = []
         if chosen_dms_str and 'none' not in chosen_dms_str.lower():
             chosen_dm_names = [name.strip() for name in chosen_dms_str.split(';') if name.strip()]
             for name in chosen_dm_names:
                 if dm_to_load := roster_manager.find_character_in_list(name, dm_casting_list):
-
-                    # --- DM Tuning ---
                     tuned_dm = dm_to_load.copy()
                     tune_kwargs = {
-                        "world_theme": self.engine.world_theme,
-                        "scene_prompt": scene_prompt,
-                        "dm_name": tuned_dm['name'],
-                        "dm_instructions": tuned_dm.get('instructions', '')
+                        "world_theme": self.engine.world_theme, "scene_prompt": scene_prompt,
+                        "dm_name": tuned_dm['name'], "dm_instructions": tuned_dm.get('instructions', '')
                     }
                     new_instructions_str = execute_task(self.engine, self.director_agent,
                                                         'DIRECTOR_TUNE_DM_INSTRUCTIONS', [],
@@ -144,24 +159,44 @@ class DirectorManager:
 
                     if new_instructions_str and 'none' not in new_instructions_str.lower():
                         tuned_dm['instructions'] = new_instructions_str.strip()
-
-                        # Get annotation for the new version
                         anno_kwargs = {
                             "original_instructions": dm_to_load.get('instructions', ''),
                             "new_instructions": tuned_dm['instructions']
                         }
                         annotation = execute_task(self.engine, self.director_agent, 'DIRECTOR_GET_DM_ANNOTATION', [],
                                                   task_prompt_kwargs=anno_kwargs)
-
                         if annotation and 'none' not in annotation.lower():
                             tuned_dm['name'] = f"{tuned_dm['name']}, {annotation.strip()}"
-
-                        # Save the new variant to the world's casting file
                         file_io.save_character_to_world_casting(self.engine.world_name, tuned_dm, 'dm')
                         utils.log_message('debug',
                                           f"[DIRECTOR] Created and saved new DM variant: '{tuned_dm['name']}'.")
 
-                    roster_manager.decorate_and_add_character(self.engine, tuned_dm, 'dm')
+                    chosen_dm_profiles.append(tuned_dm)
+
+        # --- DM Synthesis or Individual Addition ---
+        if not config.settings.get("enable_multiple_dms", False) and len(chosen_dm_profiles) > 1:
+            utils.log_message('game', "[DIRECTOR] Synthesizing multiple DM roles into a single Game Master...")
+            dm_profiles_str = "\n---\n".join(
+                f"Name: {dm.get('name')}\nDescription: {dm.get('description')}\nInstructions: {dm.get('instructions')}"
+                for dm in chosen_dm_profiles
+            )
+            synth_kwargs = {"dm_profiles_str": dm_profiles_str}
+            raw_synth_response = execute_task(self.engine, config.agents['SUMMARIZER'], 'SUMMARIZE_SYNTHESIZE_DMS', [],
+                                              task_prompt_kwargs=synth_kwargs)
+            command = command_parser.parse_structured_command(self.engine, raw_synth_response, 'SUMMARIZER',
+                                                              'CH_FIX_SYNTHESIZED_DM_JSON')
+
+            if command and all(k in command for k in ['name', 'description', 'instructions']):
+                utils.log_message('game',
+                                  f"[DIRECTOR] ...synthesis complete. Creating new Game Master: '{command['name']}'.")
+                roster_manager.decorate_and_add_character(self.engine, command, 'dm')
+            else:
+                utils.log_message('debug', "[DIRECTOR] DM synthesis failed. Falling back to using multiple DMs.")
+                for dm_profile in chosen_dm_profiles:
+                    roster_manager.decorate_and_add_character(self.engine, dm_profile, 'dm')
+        else:
+            for dm_profile in chosen_dm_profiles:
+                roster_manager.decorate_and_add_character(self.engine, dm_profile, 'dm')
 
         roster_manager.inject_lead_summary_into_dms(self.engine)
 
@@ -203,7 +238,7 @@ class DirectorManager:
         utils.log_message('debug', loc('system_director_load_attempt', target_name=target_name))
         if char_to_load := roster_manager.find_character_in_list(target_name,
                                                                  roster_manager.get_available_casting_characters(
-                                                                         self.engine)):
+                                                                     self.engine)):
             is_lead = roster_manager.find_character_in_list(target_name, config.casting_leads) is not None
             role_type = 'lead' if is_lead else 'npc'
             roster_manager.decorate_and_add_character(self.engine, char_to_load, role_type)

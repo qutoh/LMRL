@@ -64,6 +64,7 @@ class AtlasManager:
         inhabitants = current_location.get('inhabitants', [])
         inhabitant_names = [i.split(' - ')[0] if isinstance(i, str) else i.get('name', '') for i in inhabitants]
         lines.append(f"  - Inhabitants: {', '.join(filter(None, inhabitant_names)) or 'None'}")
+        utils.log_message("game", lines)
         lines.append("\n  Available connections:")
 
         connections = {}
