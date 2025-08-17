@@ -19,6 +19,7 @@ from .prometheus_manager import PrometheusManager
 from core.common.annotation_manager import AnnotationManager
 from core.components.item_manager import ItemManager
 from core.components.character_manager import CharacterManager
+from core.components.dm_manager import DMManager
 
 
 class StoryEngine:
@@ -76,6 +77,7 @@ class StoryEngine:
         self.annotation_manager = AnnotationManager(self)
         self.item_manager = ItemManager(self)
         self.character_manager = CharacterManager()
+        self.dm_manager = DMManager(self)
         self.config = config
 
         if world_name:

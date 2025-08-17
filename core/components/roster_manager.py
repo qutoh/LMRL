@@ -399,3 +399,12 @@ def update_character_instructions(character, new_instructions):
         character['instructions'] = new_instructions
         return True
     return False
+
+
+def get_active_dm(engine):
+    """Finds the single active meta-DM if single DM mode is enabled."""
+    if not config.settings.get("enable_multiple_dms", False):
+        for char in engine.characters:
+            if char.get('role_type') == 'dm':
+                return char
+    return None

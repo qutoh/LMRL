@@ -34,6 +34,7 @@ def _prepare_messages_for_llm(
 
     if not any(msg.get('role') == 'user' for msg in final_messages):
         log_message('debug', "[LLM_API WARNING] No user messages in final prompt. Adding generic fallback.")
+        log_message('debug', f'Full kwargs: {task_prompt_kwargs},\n Full messages: {final_messages}\n Key: {task_prompt_key}')
         final_messages.append({"role": "user", "content": "What do you do next?"})
 
     return [system_message] + final_messages

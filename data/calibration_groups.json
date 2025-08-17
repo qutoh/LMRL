@@ -64,6 +64,7 @@
 			"CALIBRATION_CHOOSE_KEYWORD_FROM_NARRATIVE",
 			"DIRECTOR_CAST_LEAD_FOR_ROLE",
 			"DIRECTOR_CHOOSE_DMS_FOR_SCENE",
+			"DIRECTOR_CHOOSE_DM_TO_UNFUSE",
 			"DIRECTOR_CHOOSE_NEXT_ACTOR",
 			"PEG_V3_CHOOSE_PARENT",
 			"POSITION_GET_MOVEMENT_KEYWORD",
@@ -88,6 +89,7 @@
 		"representative_task": null,
 		"description": "Generates free-form creative text (prose). This group is not calibrated as its output is subjective.",
 		"members": [
+			"CHARACTER_UPDATE_STATE",
 			"DIRECTOR_CREATE_INSTR_FROM_DESC",
 			"DIRECTOR_CREATE_INSTR_FROM_ROLE",
 			"DIRECTOR_CREATE_LEAD_DESC_FROM_ROLE",

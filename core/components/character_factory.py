@@ -21,15 +21,13 @@ def _prepare_physical_description_task(base_kwargs: dict, role_hint: str, scene_
     else:
         kwargs['equipment_instruction'] = loc('prompt_substring_paper_doll_off')
     kwargs['role_archetype'] = role_hint
-    kwargs['scene_prompt'] = scene_context
+    # No need to add scene_prompt here as it's part of the shared context
     task_key = 'DIRECTOR_CREATE_LEAD_PHYS_DESC_FROM_ROLE'
     return task_key, kwargs
 
 
 def _create_character_one_shot(engine, agent, task_key, task_kwargs) -> dict | None:
     """Primary Method: Attempts to generate all descriptive fields in one LLM call."""
-    # Dynamically inject the correct equipment instruction based on settings
-
     if config.settings.get("ENABLE_PAPER_DOLL_MODE"):
         task_kwargs['equipment_instruction'] = loc('prompt_substring_paper_doll_on')
     else:
@@ -58,15 +56,19 @@ def _create_npc_from_generation_sentence_stepwise(engine, char_data: dict) -> di
     npc_name = char_data.get('name', 'Unnamed Character')
     creator_agent = config.agents['DIRECTOR']
 
-    desc_kwargs = {"new_name": npc_name, "context_sentence": context_sentence}
+    shared_context_str = loc('prompt_substring_world_scene_context', world_theme=engine.world_theme,
+                             scene_prompt=engine.scene_prompt)
+    base_kwargs = {"prompt_substring_world_scene_context": shared_context_str}
+
+    desc_kwargs = {**base_kwargs, "new_name": npc_name, "context_sentence": context_sentence}
     description = execute_task(engine, creator_agent, 'NPC_CREATE_DESC_FROM_PROCGEN', [],
                                task_prompt_kwargs=desc_kwargs) or "An individual."
 
-    instr_kwargs = {"npc_name": npc_name, "description": description}
+    instr_kwargs = {**base_kwargs, "npc_name": npc_name, "description": description}
     instructions = execute_task(engine, creator_agent, 'NPC_CREATE_INSTR_FROM_PROCGEN', [],
                                 task_prompt_kwargs=instr_kwargs) or "Behave as described."
 
-    base_phys_desc_kwargs = {"new_name": npc_name, "new_description": description}
+    base_phys_desc_kwargs = {**base_kwargs, "new_name": npc_name, "new_description": description}
     phys_desc_task, final_phys_desc_kwargs = _prepare_physical_description_task(
         base_kwargs=base_phys_desc_kwargs,
         role_hint=description,
@@ -114,7 +116,6 @@ def _initialize_character_equipment(engine, character_data: dict, scene_context:
     phys_desc = character_data.get('physical_description', '')
 
     if config.settings.get("ENABLE_PAPER_DOLL_MODE"):
-        # PAPER DOLL MODE
         base_phys_desc = phys_desc
         character_data['equipment'] = {
             "equipped": [], "removed": [],
@@ -149,13 +150,11 @@ def _initialize_character_equipment(engine, character_data: dict, scene_context:
 
         if final_phys_desc:
             character_data['physical_description'] = final_phys_desc.strip()
-            # Standardize the first real outfit name to OUTFIT_0 for consistency.
             character_data['equipment']['outfits']['OUTFIT_0'] = {
                 "items": sorted([item['name'] for item in starting_items]),
                 "description": final_phys_desc.strip()
             }
     else:
-        # STANDARD MODE
         equip_kwargs = {"physical_description": phys_desc}
         raw_items_response = execute_task(engine, equipment_agent, 'EQUIPMENT_GENERATE_INITIAL', [],
                                           task_prompt_kwargs=equip_kwargs)
@@ -189,7 +188,13 @@ def create_npc_from_generation_sentence(engine, char_data: dict) -> dict | None:
     utils.log_message('debug', f"[PEG CREATE] Creating character '{npc_name}' from sentence: '{context_sentence}'")
 
     creator_agent = config.agents['DIRECTOR']
-    kwargs = {"context_sentence": context_sentence, "npc_name": npc_name}
+    shared_context_str = loc('prompt_substring_world_scene_context', world_theme=engine.world_theme,
+                             scene_prompt=engine.scene_prompt)
+    kwargs = {
+        "prompt_substring_world_scene_context": shared_context_str,
+        "context_sentence": context_sentence,
+        "npc_name": npc_name
+    }
     new_npc = _create_character_one_shot(engine, creator_agent, 'DIRECTOR_CREATE_FULL_NPC_PROFILE', kwargs)
 
     if not new_npc:
@@ -206,7 +211,12 @@ def create_npc_from_generation_sentence(engine, char_data: dict) -> dict | None:
 def create_lead_from_role_and_scene(engine, director_agent, scene_prompt: str, role_archetype: str) -> dict | None:
     """Creates a new lead character guided by a specific role archetype."""
     log_message('debug', f"[DIRECTOR] Creating new lead for role: '{role_archetype}'.")
-    kwargs = {"scene_prompt": scene_prompt, "role_archetype": role_archetype}
+    shared_context_str = loc('prompt_substring_world_scene_context', world_theme=engine.world_theme,
+                             scene_prompt=scene_prompt)
+    kwargs = {
+        "prompt_substring_world_scene_context": shared_context_str,
+        "role_archetype": role_archetype
+    }
     new_lead = _create_character_one_shot(engine, director_agent, 'DIRECTOR_CREATE_FULL_LEAD_PROFILE_FROM_ROLE',
                                           kwargs)
 
@@ -228,26 +238,32 @@ def _create_lead_from_role_and_scene_stepwise(engine, director_agent, scene_prom
     """Fallback: Creates a full lead profile from a role using a step-by-step process."""
     log_message('debug', f"[DIRECTOR] Creating new lead for role '{role_archetype}' via stepwise method.")
 
-    name_kwargs = {"scene_prompt": scene_prompt, "role_archetype": role_archetype}
+    shared_context_str = loc('prompt_substring_world_scene_context', world_theme=engine.world_theme,
+                             scene_prompt=scene_prompt)
+    base_kwargs = {
+        "prompt_substring_world_scene_context": shared_context_str,
+        "role_archetype": role_archetype
+    }
+
+    name_kwargs = base_kwargs.copy()
     new_name = execute_task(engine, director_agent, 'DIRECTOR_CREATE_LEAD_NAME_FROM_ROLE', [],
                             task_prompt_kwargs=name_kwargs)
     if not new_name or not new_name.strip(): new_name = file_io.get_random_name()
     new_name = new_name.strip()
 
-    desc_kwargs = {"scene_prompt": scene_prompt, "new_name": new_name, "role_archetype": role_archetype}
+    desc_kwargs = {**base_kwargs, "new_name": new_name}
     new_description = execute_task(engine, director_agent, 'DIRECTOR_CREATE_LEAD_DESC_FROM_ROLE', [],
                                    task_prompt_kwargs=desc_kwargs)
     if not new_description: return None
     new_description = new_description.strip()
 
-    instr_kwargs = {"scene_prompt": scene_prompt, "new_name": new_name, "new_description": new_description,
-                    "role_archetype": role_archetype}
+    instr_kwargs = {**desc_kwargs, "new_description": new_description}
     new_instructions = execute_task(engine, director_agent, 'DIRECTOR_CREATE_LEAD_INSTR_FROM_ROLE', [],
                                     task_prompt_kwargs=instr_kwargs)
     if not new_instructions: return None
     new_instructions = new_instructions.strip()
 
-    base_phys_desc_kwargs = {"new_name": new_name, "new_description": new_description}
+    base_phys_desc_kwargs = {**base_kwargs, "new_name": new_name, "new_description": new_description}
     phys_desc_task, final_phys_desc_kwargs = _prepare_physical_description_task(
         base_kwargs=base_phys_desc_kwargs,
         role_hint=role_archetype,
@@ -264,15 +280,19 @@ def _create_lead_from_role_and_scene_stepwise(engine, director_agent, scene_prom
 def _create_temporary_npc_stepwise(engine, director_agent, npc_name, context) -> dict | None:
     """Fallback for creating a temporary NPC when the one-shot method fails."""
     utils.log_message('debug', f"[DIRECTOR] Stepwise fallback for temporary NPC '{npc_name}'.")
-    desc_kwargs = {"context": context, "npc_name": npc_name}
+    shared_context_str = loc('prompt_substring_world_scene_context', world_theme=engine.world_theme,
+                             scene_prompt=engine.scene_prompt)
+    base_kwargs = {"prompt_substring_world_scene_context": shared_context_str}
+
+    desc_kwargs = {**base_kwargs, "context": context, "npc_name": npc_name}
     description = execute_task(engine, director_agent, 'NPC_CREATE_DESC_FROM_CONTEXT', [],
                                task_prompt_kwargs=desc_kwargs) or "An individual."
 
-    instr_kwargs = {"npc_name": npc_name, "description": description}
+    instr_kwargs = {**base_kwargs, "npc_name": npc_name, "description": description}
     instructions = execute_task(engine, director_agent, 'NPC_CREATE_INSTR_FROM_CONTEXT', [],
                                 task_prompt_kwargs=instr_kwargs) or "Behave as described."
 
-    base_phys_desc_kwargs = {"new_name": npc_name, "new_description": description}
+    base_phys_desc_kwargs = {**base_kwargs, "new_name": npc_name, "new_description": description}
     phys_desc_task, final_phys_desc_kwargs = _prepare_physical_description_task(
         base_kwargs=base_phys_desc_kwargs,
         role_hint=description,
@@ -292,7 +312,13 @@ def create_temporary_npc(engine, creator_dm, npc_name, dialogue_log):
     recent_dialogue = "\n".join([f"{entry['speaker']}: {entry['content']}" for entry in dialogue_log[-15:]])
 
     director_agent = config.agents['DIRECTOR']
-    kwargs = {"context_sentence": recent_dialogue, "npc_name": npc_name}
+    shared_context_str = loc('prompt_substring_world_scene_context', world_theme=engine.world_theme,
+                             scene_prompt=engine.scene_prompt)
+    kwargs = {
+        "prompt_substring_world_scene_context": shared_context_str,
+        "context_sentence": recent_dialogue,
+        "npc_name": npc_name
+    }
     new_npc = _create_character_one_shot(engine, director_agent, 'DIRECTOR_CREATE_FULL_NPC_PROFILE', kwargs)
 
     if not new_npc:
@@ -312,53 +338,8 @@ def create_lead_stepwise(engine, dialogue_log):
     director_agent = config.agents['DIRECTOR']
     context_str = "\n".join([f"{entry['speaker']}: {entry['content']}" for entry in dialogue_log[-15:]])
 
-    # Since this is player-driven, we use a generic role/description.
     role_archetype = "A new adventurer joining the story."
 
-    # Use the robust one-shot/fallback mechanism
     new_lead = create_lead_from_role_and_scene(engine, director_agent, context_str, role_archetype)
 
     return new_lead
-
-
-
-def create_lead_from_scene_context(engine, director_agent, scene_prompt: str) -> dict | None:
-    """DEPRECATED: Creates a new lead character via a robust, step-by-step process using the starting scene."""
-    log_message('debug', "[DIRECTOR] Creating a new lead character suitable for the scene.")
-
-    name_kwargs = {"scene_prompt": scene_prompt}
-    new_name = execute_task(engine, director_agent, 'DIRECTOR_CREATE_LEAD_NAME_FROM_SCENE', [],
-                            task_prompt_kwargs=name_kwargs)
-    if not new_name or not new_name.strip(): new_name = file_io.get_random_name()
-    new_name = new_name.strip()
-
-    desc_kwargs = {"scene_prompt": scene_prompt, "new_name": new_name}
-    new_description = execute_task(engine, director_agent, 'DIRECTOR_CREATE_LEAD_DESC_FROM_SCENE', [],
-                                   task_prompt_kwargs=desc_kwargs)
-    if not new_description: return None
-    new_description = new_description.strip()
-
-    instr_kwargs = {"scene_prompt": scene_prompt, "new_name": new_name, "new_description": new_description}
-    new_instructions = execute_task(engine, director_agent, 'DIRECTOR_CREATE_LEAD_INSTR_FROM_SCENE', [],
-                                    task_prompt_kwargs=instr_kwargs)
-    if not new_instructions: return None
-    new_instructions = new_instructions.strip()
-
-    return {"name": new_name, "description": new_description, "instructions": new_instructions}
-
-
-def create_instructions_from_description(engine, director_agent, npc_name: str, description: str,
-                                         location_context: dict = None) -> str | None:
-    """Generates only the instructions for a character based on their name and description."""
-    instr_kwargs = {
-        "npc_name": npc_name, "description": description,
-        "world_theme": location_context.get('world_theme', ''),
-        "scene_prompt": location_context.get('scene_prompt', ''),
-        "location_description": location_context.get('location_description', '')
-    }
-    instructions = execute_task(engine, director_agent, 'DIRECTOR_CREATE_INSTR_FROM_DESC', [],
-                                task_prompt_kwargs=instr_kwargs)
-    if not instructions:
-        log_message('debug', loc('system_npc_create_fail_instr'))
-        return None
-    return instructions.strip()

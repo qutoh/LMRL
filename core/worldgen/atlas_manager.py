@@ -1,5 +1,7 @@
 # /core/worldgen/atlas_manager.py
 
+import random
+from sentence_transformers.util import cos_sim
 from core.common.config_loader import config
 from core.llm.llm_api import execute_task
 from core.common import file_io, utils, command_parser
@@ -294,7 +296,7 @@ class AtlasManager:
             file_io.add_relationship_to_node(world_name, new_node_breadcrumb, "PARENT", current_node["Name"])
             config.load_world_data(world_name)
             return new_node_breadcrumb, file_io._find_node_by_breadcrumb(config.world,
-                                                                        new_node_breadcrumb), "CONTINUE"
+                                                                         new_node_breadcrumb), "CONTINUE"
         elif rel in LATTICE_RELATIONSHIPS:
             parent_breadcrumb = breadcrumb[:-1]
             file_io.add_child_to_world(world_name, parent_breadcrumb, new_loc_data)
@@ -307,7 +309,7 @@ class AtlasManager:
                                              current_node.get("relationships", {}).get("PARENT"))
             config.load_world_data(world_name)
             return new_node_breadcrumb, file_io._find_node_by_breadcrumb(config.world,
-                                                                        new_node_breadcrumb), "CONTINUE"
+                                                                         new_node_breadcrumb), "CONTINUE"
         return breadcrumb, current_node, "CONTINUE"
 
     def _decide_next_action(self, world_theme: str, context_string: str, scene_prompt: str | None) -> str:
@@ -350,21 +352,79 @@ class AtlasManager:
             return old_breadcrumb[:-1] if len(old_breadcrumb) > 1 else old_breadcrumb
         return None
 
+    def _get_all_locations_with_breadcrumbs(self) -> list[tuple[dict, list]]:
+        """Recursively traverses the world dict and returns a flat list of (location_data, breadcrumb) tuples."""
+        locations = []
+
+        def recurse_nodes(node_dict, current_path):
+            for name, data in node_dict.items():
+                if isinstance(data, dict):
+                    new_path = current_path + [name]
+                    locations.append((data, new_path))
+                    if "Children" in data and data["Children"]:
+                        recurse_nodes(data["Children"], new_path)
+
+        recurse_nodes(config.world, [])
+        return locations
+
+    def _find_best_location_by_semantic_search(self, scene_prompt: str) -> list:
+        """Uses vector embeddings to find the most thematically similar location for a scene."""
+        if not self.engine.embedding_model:
+            utils.log_message('debug', "[ATLAS] Embedding model not available for search. Falling back to random.")
+            return self._get_random_starting_breadcrumb()
+
+        all_locations = self._get_all_locations_with_breadcrumbs()
+        if not all_locations:
+            return [next(iter(config.world))]  # Fallback to root if no locations found
+
+        # Create a text document for each location
+        location_docs = [f"{loc.get('Name', '')}: {loc.get('Description', '')}" for loc, _ in all_locations]
+
+        # Generate embeddings
+        scene_embedding = self.engine.embedding_model.encode(scene_prompt, convert_to_tensor=True)
+        location_embeddings = self.engine.embedding_model.encode(location_docs, convert_to_tensor=True)
+
+        # Find the best match
+        similarities = cos_sim(scene_embedding, location_embeddings)
+        best_match_index = similarities.argmax().item()
+
+        best_location_node, best_breadcrumb = all_locations[best_match_index]
+        utils.log_message('debug',
+                          f"[ATLAS] Semantic search best match: '{best_location_node.get('Name')}' (Score: {similarities[0][best_match_index]:.4f})")
+        return best_breadcrumb
+
+    def _get_random_starting_breadcrumb(self) -> list:
+        """Traverses the entire world structure and returns the breadcrumb of a random node."""
+        all_locations = self._get_all_locations_with_breadcrumbs()
+        if not all_locations:
+            return [next(iter(config.world))]
+
+        _, random_breadcrumb = random.choice(all_locations)
+        return random_breadcrumb
+
     def find_or_create_location_for_scene(self, world_name: str, world_theme: str, scene_prompt: str) -> tuple[
         dict, list]:
         utils.log_message('game', "[ATLAS] Starting to place the scene...")
-        world_data = config.world
-        root_key = next(iter(world_data))
-        breadcrumb = [root_key]
+
+        strategy = config.settings.get("ATLAS_SCENE_PLACEMENT_STRATEGY", "SEARCH").upper()
+
+        if strategy == 'SEARCH':
+            breadcrumb = self._find_best_location_by_semantic_search(scene_prompt)
+            utils.log_message('debug', f"[ATLAS] Semantic search selected starting location: {' -> '.join(breadcrumb)}")
+        elif strategy == 'RANDOM':
+            breadcrumb = self._get_random_starting_breadcrumb()
+            utils.log_message('debug', f"[ATLAS] Randomly selected starting location: {' -> '.join(breadcrumb)}")
+        else:  # Default to root
+            breadcrumb = [next(iter(config.world))]
 
         max_depth = 10
         for i in range(max_depth):
             current_node = file_io._find_node_by_breadcrumb(config.world, breadcrumb)
             if not current_node:
-                utils.log_message('debug', f"[ATLAS ERROR] Breadcrumb {breadcrumb} led to a dead end.")
-                # Fallback: reset to root
-                breadcrumb = [root_key]
-                current_node = world_data[root_key]
+                utils.log_message('debug',
+                                  f"[ATLAS ERROR] Breadcrumb {breadcrumb} led to a dead end. Resetting to root.")
+                breadcrumb = [next(iter(config.world))]  # Fallback to root
+                current_node = file_io._find_node_by_breadcrumb(config.world, breadcrumb)
 
             utils.log_message('game',
                               f"[ATLAS] Examining fit for the scene in: {self._build_descriptive_breadcrumb_trail(breadcrumb)} (Step {i + 1}/{max_depth})")
@@ -375,6 +435,7 @@ class AtlasManager:
             if status == "ACCEPT":
                 utils.log_message('game', f"[ATLAS] The location was set for the scene: {current_node['Name']}")
                 return current_node, breadcrumb
+
         utils.log_message('game', f"[ATLAS] Reached max depth. Accepting current location.")
         current_node = file_io._find_node_by_breadcrumb(config.world, breadcrumb)
         return current_node, breadcrumb
@@ -403,7 +464,6 @@ class AtlasManager:
         file_io.write_json(file_io.join_path(world_dir, 'casting_npcs.json'), [])
         file_io.write_json(file_io.join_path(world_dir, 'inhabitants.json'), [])
 
-
         exploration_steps = config.settings.get("ATLAS_AUTONOMOUS_EXPLORATION_STEPS", 0)
         if exploration_steps > 0:
             utils.log_message('game',
@@ -424,12 +484,7 @@ class AtlasManager:
 
                 utils.log_message('game', f'Location: {current_node["Name"]}')
                 utils.log_message('game', f'Description: {current_node['Description']}')
-                if status == "POPULATE" or "NAVIGATE":
-                    # these don't count against the limit.
-                    i -= 1
                 if status == "ACCEPT":
-                    i -= 1
-                    # Cool why is this option here for worldgen what are you doing Gemini lol, you made 20 different prompts for character generation but one extra for atlas is adhgdjghsdfg
                     utils.log_message('game', "[ATLAS] Atlas just thinks this place is neat :3")
                     breadcrumb, node, status = self.explore_one_step(world_name, theme, current_breadcrumb,
                                                                      current_node)
