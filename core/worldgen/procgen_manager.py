@@ -42,7 +42,7 @@ class ProcGenManager:
             gen = architect_v3.generate_layout_in_steps(callback)
             for _, final_state_obj in gen:
                 state = final_state_obj
-        else:  # Default to Conversational (V1)
+        else:
             architect = MapArchitect(self.engine, game_map, getattr(self.engine, 'world_theme', 'fantasy'),
                                      scene_prompt)
             state = architect.generate_layout(callback)

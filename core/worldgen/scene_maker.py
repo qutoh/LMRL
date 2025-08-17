@@ -42,7 +42,6 @@ class SceneMakerManager:
         if not location: return {"scene_prompt": "A story begins."}
         utils.log_message('debug', f"[SCENE MAKER] Generating a new scene for location: '{location.get('Name')}'.")
 
-        # Ensure world_theme is correctly retrieved from the engine instance
         world_theme = getattr(self.engine, 'world_theme', 'A generic fantasy world.')
 
         prompt_kwargs = {

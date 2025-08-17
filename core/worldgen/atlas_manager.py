@@ -39,7 +39,7 @@ class AtlasManager:
     def _generate_npc_concept_for_location(self, world_theme: str, location: dict) -> str | None:
         """Orchestrates the generation of a single NPC concept string for a location."""
         utils.log_message('game',
-                          f"[ATLAS] Decided to generate an NPC concept for {location.get('Name', 'this place')}.")
+                          f"[ATLAS] Created a character for {location.get('Name', 'this place')}.")
         loc_name = location.get("Name", "this place")
         loc_desc = location.get("Description", "")
 
@@ -160,7 +160,7 @@ class AtlasManager:
 
     def _create_location_stepwise_fallback(self, world_theme: str, parent_location: dict, context: str,
                                            relationship_override: str | None, scene_prompt: str | None) -> dict | None:
-        """Fallback: Creates a new location using a robust, multi-step process."""
+        """Fallback: Creates a new location using multiple steps."""
         utils.log_message('debug', "[ATLAS] Single-shot failed. Falling back to step-wise generation.")
         name_kwargs = {"world_theme": world_theme, "parent_name": parent_location.get("Name", "the world"),
                        "parent_description": parent_location.get("Description", ""), "user_idea": "A new place.",
@@ -226,12 +226,12 @@ class AtlasManager:
         # --- Handle Action Short-circuiting ---
         if action in connections:
             target_name = connections[action]
-            utils.log_message('game', f"[ATLAS] Action '{action}' is a direct navigation command to '{target_name}'.")
+            utils.log_message('game', f"[ATLAS] Action '{action}' moved to '{target_name}'.")
             new_breadcrumb = self._calculate_new_breadcrumb(breadcrumb, action, target_name)
             if new_breadcrumb:
                 return new_breadcrumb, file_io._find_node_by_breadcrumb(config.world, new_breadcrumb), "CONTINUE"
         elif action in self._get_valid_relationships(breadcrumb) and action not in connections:
-            utils.log_message('game', f"[ATLAS] Action '{action}' is a direct command to create a new location.")
+            utils.log_message('game', f"[ATLAS] Action '{action}' pushed through the void.")
             return self._handle_location_creation(world_name, world_theme, breadcrumb, current_node,
                                                   relationship_override=action, scene_prompt=scene_prompt)
 
@@ -352,7 +352,7 @@ class AtlasManager:
 
     def find_or_create_location_for_scene(self, world_name: str, world_theme: str, scene_prompt: str) -> tuple[
         dict, list]:
-        utils.log_message('game', "[ATLAS] Starting autonomous scene placement...")
+        utils.log_message('game', "[ATLAS] Starting to place the scene...")
         world_data = config.world
         root_key = next(iter(world_data))
         breadcrumb = [root_key]
@@ -367,22 +367,22 @@ class AtlasManager:
                 current_node = world_data[root_key]
 
             utils.log_message('game',
-                              f"[ATLAS] Analyzing fit in: {self._build_descriptive_breadcrumb_trail(breadcrumb)} (Step {i + 1}/{max_depth})")
+                              f"[ATLAS] Examining fit for the scene in: {self._build_descriptive_breadcrumb_trail(breadcrumb)} (Step {i + 1}/{max_depth})")
 
             breadcrumb, current_node, status = self.explore_one_step(
                 world_name, world_theme, breadcrumb, current_node, scene_prompt
             )
             if status == "ACCEPT":
-                utils.log_message('game', f"[ATLAS] Final location found: {current_node['Name']}")
+                utils.log_message('game', f"[ATLAS] The location was set for the scene: {current_node['Name']}")
                 return current_node, breadcrumb
         utils.log_message('game', f"[ATLAS] Reached max depth. Accepting current location.")
         current_node = file_io._find_node_by_breadcrumb(config.world, breadcrumb)
         return current_node, breadcrumb
 
     def create_new_world(self, theme: str, ui_manager=None) -> str | None:
-        utils.log_message('game', f"[ATLAS] Forging new world with theme: {theme}")
+        utils.log_message('game', f"[ATLAS] Atlas is forging a new world with theme: {theme}")
         world_name = self._get_world_name(theme, ui_manager=ui_manager)
-        utils.log_message('game', f"[ATLAS] World named: {world_name}")
+        utils.log_message('game', f"[ATLAS] Atlas has named this world: {world_name}")
 
         origin_location = self._create_location_one_shot(theme, [], {"Name": "The Cosmos"}, "A new world is born.")
         if not origin_location:
@@ -391,7 +391,7 @@ class AtlasManager:
 
         origin_location.pop("Relationship", None)  # Root has no relationship
         origin_location['theme'] = theme
-        utils.log_message('game', f"[ATLAS] Origin location created: {origin_location.get('Name')}")
+        utils.log_message('game', f"[ATLAS] The center of the world: {origin_location.get('Name')}")
 
         world_data = {origin_location['Name']: origin_location}
         world_dir = file_io.join_path(file_io.PROJECT_ROOT, 'data', 'worlds', world_name)
@@ -407,7 +407,7 @@ class AtlasManager:
         exploration_steps = config.settings.get("ATLAS_AUTONOMOUS_EXPLORATION_STEPS", 0)
         if exploration_steps > 0:
             utils.log_message('game',
-                              f"\n--- [ATLAS] Starting {exploration_steps}-step autonomous world exploration... ---")
+                              f"\n--- [ATLAS] Starting {exploration_steps}-step world exploration... ---")
             config.load_world_data(world_name)
             current_breadcrumb = [origin_location['Name']]
 
@@ -416,11 +416,20 @@ class AtlasManager:
                 if not current_node:
                     utils.log_message('debug', f"[ATLAS ERROR] Breadcrumb {current_breadcrumb} broke mid-exploration.")
                     break
+
                 utils.log_message('game', f"\n[ATLAS EXPLORATION] Step {i + 1}/{exploration_steps}")
                 breadcrumb, node, status = self.explore_one_step(world_name, theme, current_breadcrumb, current_node)
+
                 current_breadcrumb = breadcrumb
+
+                utils.log_message('game', f'Location: {current_node["Name"]}')
+                utils.log_message('game', f'Description: {current_node['Description']}')
                 if status == "ACCEPT":
-                    utils.log_message('game', "[ATLAS] Autonomous exploration concluded early by accepting a location.")
-                    break
-            utils.log_message('game', "--- [ATLAS] Autonomous exploration complete. ---\n")
+                    # Cool why is this option here for worldgen what are you doing Gemini lol, you made 20 different prompts for character generation but one extra for atlas is adhgdjghsdfg
+                    utils.log_message('game', "[ATLAS] Atlas just thinks this place is neat :3")
+                    breadcrumb, node, status = self.explore_one_step(world_name, theme, current_breadcrumb,
+                                                                     current_node)
+                    current_breadcrumb = breadcrumb
+
+            utils.log_message('game', "--- [ATLAS] Exploration complete. ---\n")
         return world_name
