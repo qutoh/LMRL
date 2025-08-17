@@ -176,15 +176,15 @@ class SetupManager:
 
         if self.game_state:
             roster_manager.spawn_entities_from_roster(self.engine, self.game_state)
-            action_descriptions = []
+            action_intro = ""
             for character in self.engine.characters:
                 if character.get('is_positional'):
-                    # The action_description is part of the command now, but not returned. Let's adjust.
                     position_manager.place_character_contextually(self.engine, self.game_state, character,
                                                                   generation_state)
 
-            # TODO: Collect action descriptions if place_character_contextually is modified to return them.
-            action_intro = ""
+            # Initialize character states after they are all placed.
+            self.engine.character_manager.initialize_all_character_states(self.engine)
+
 
         # Build a descriptive summary of the entire generated level for the player.
         level_description_sentences = []

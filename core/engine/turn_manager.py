@@ -62,6 +62,7 @@ class TurnManager:
         self.engine.render_queue.put(('ADD_EVENT_LOG', f"{current_actor['name']} is thinking...", (150, 150, 150)))
 
         next_actor = None
+        events = {}
 
         # A character's main turn is a generic task; the prompt is already built.
         raw_llm_response = llm_api.execute_task(
@@ -74,65 +75,69 @@ class TurnManager:
                                                          is_dm_role=current_actor.get('role_type') == 'dm')
 
         if prose:
-            # Add timestamp immediately so all downstream consumers have it.
             dialogue_entry = {
                 "speaker": current_actor['name'],
                 "content": prose,
                 "timestamp": self.engine.current_game_time.isoformat()
             }
 
-            # Pass original messages for potential re-prompting
-            prometheus_result = self.engine.prometheus_manager.analyze_and_dispatch(prose, dialogue_entry,
-                                                                                    unacted_roles, messages)
+            next_actor_name, events = self.engine.prometheus_manager.analyze_and_dispatch(
+                prose, dialogue_entry, unacted_roles, messages
+            )
 
-            if isinstance(prometheus_result, dict) and prometheus_result.get('status') == 'REPROMPTED':
+            if events.get('refusal'):
                 # The turn was handled by the refusal system. Overwrite prose and next_actor.
+                prometheus_result = self.engine.prometheus_manager._call_handle_refusal(dialogue_entry, messages,
+                                                                                        unacted_roles=unacted_roles)
                 prose = prometheus_result.get('new_prose', '')
                 next_actor_name = prometheus_result.get('next_actor_name')
-            else:
-                next_actor_name = prometheus_result
+                events = prometheus_result.get('events', {})
 
             if next_actor_name and isinstance(next_actor_name, str):
                 next_actor = roster_manager.find_character(self.engine, next_actor_name)
 
-            # Ensure we only process valid, final prose
             if prose:
                 dialogue_entry["content"] = prose  # Update with new prose if reprompted
                 utils.log_message('story', prose)
                 self.engine.dialogue_log.append(dialogue_entry)
 
-                duration_seconds = utility_tasks.get_duration_for_action(self.engine, prose)
+                duration_seconds = events.get('time_passed_seconds',
+                                              utility_tasks.get_duration_for_action(self.engine, prose))
                 self.engine.advance_time(duration_seconds)
 
                 if current_actor.get('is_positional'):
                     if movement_mode := self._classify_movement_mode(prose):
                         position_manager.process_movement_intent(self.engine, self.game_state, current_actor['name'],
-                                                                 prose,
-                                                                 movement_mode)
+                                                                 prose, movement_mode)
+
+                if not events.get('refusal'):
+                    self.engine.character_manager.update_character_state(self.engine, current_actor, dialogue_entry, events)
 
         return next_actor
 
     def execute_turn_for(self, current_actor, unacted_roles):
         """Public method to execute a turn for any actor."""
         next_actor = None
+        events = {}
 
         if current_actor.get("controlled_by") == "human":
             prose = self.player_interface.execute_turn(current_actor)
         else:
             return self._execute_ai_turn(current_actor, unacted_roles)
 
-        # All post-prose logic for human turns is shared here.
         if prose:
             dialogue_entry = {"speaker": current_actor['name'], "content": prose,
                               "timestamp": self.engine.current_game_time.isoformat()}
             self.engine.dialogue_log.append(dialogue_entry)
 
-            # For human turns, we don't need to pass original_messages as we can't re-prompt them.
-            next_actor_name = self.engine.prometheus_manager.analyze_and_dispatch(prose, dialogue_entry, unacted_roles,
-                                                                                  [])
-
-            duration_seconds = utility_tasks.get_duration_for_action(self.engine, prose)
+            next_actor_name, events = self.engine.prometheus_manager.analyze_and_dispatch(prose, dialogue_entry,
+                                                                                          unacted_roles, [])
+            duration_seconds = events.get('time_passed_seconds',
+                                          utility_tasks.get_duration_for_action(self.engine, prose))
             self.engine.advance_time(duration_seconds)
+
+            if not events.get('refusal'):
+                self.engine.character_manager.update_character_state(self.engine, current_actor, dialogue_entry, events)
 
             if next_actor_name and isinstance(next_actor_name, str):
                 next_actor = roster_manager.find_character(self.engine, next_actor_name)

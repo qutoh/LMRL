@@ -1,4 +1,8 @@
 {
+  "CHARACTER_UPDATE_STATE": {
+    "task_prompt_key": "task_prompt_character_update_state",
+    "default_adjustment": 0.05
+  },
   "NAVIGATE_OBSTACLE": {
     "task_prompt_key": "task_prompt_navigate_obstacle"
   },

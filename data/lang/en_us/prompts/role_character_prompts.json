@@ -1,0 +1,3 @@
+{
+    "task_prompt_character_update_state": "You are {character_name}. Based on your personality, your current surroundings, your physical state, and the recent events, update your internal monologue. What are you thinking, feeling, or planning to do next? Your response should be a brief, first-person summary of your current state.\n\n### Your Surroundings:\n{surroundings_context}\n\n### Your Physical State:\n{physical_context}\n\n### Recent Events:\n{events_context}\n\nYour internal monologue:"
+}

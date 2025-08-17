@@ -144,6 +144,7 @@ def decorate_and_add_character(engine, character_data, role_type):
     # --- Decorate with in-memory run-time attributes ---
     char = character_data.copy()
     char['role_type'] = role_type
+    char['character_state'] = ""
 
     if role_type == 'lead':
         char.update({'is_positional': True, 'is_director_managed': True, 'is_essential': True, 'is_controllable': True})
