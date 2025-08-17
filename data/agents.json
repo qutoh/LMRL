@@ -16,7 +16,7 @@
     },
       "EQUIPMENT_MANAGER": {
         "name": "Equipment Manager",
-        "model": "phi-3-mini-4k-instruct",
+        "model": "",
         "persona": "You are a meticulous and logical quartermaster. Your purpose is to accurately track and describe a character's inventory and appearance based on narrative events. You respond only with structured data (JSON or semicolon-separated lists) as requested.",
         "affects_global_context_limit": false
     },
@@ -56,19 +56,19 @@
     },
     "TIMEKEEPER": {
         "name": "Timekeeper",
-        "model": "phi-3-mini-4k-instruct",
+        "model": "",
         "persona": "You are a utility model that analyzes text to estimate the passage of time. You think in terms of real-world seconds and output your estimate in a structured JSON format.",
         "affects_global_context_limit": false
     },
     "MNEMOSYNE": {
         "name": "Mnemosyne",
-        "model": "phi-3-mini-4k-instruct",
+        "model": "",
         "persona": "You are a utility model that specializes in extreme condensation of text. You can take a single character's action or dialogue and summarize its core essence into a single, brief paragraph for archival purposes.",
         "affects_global_context_limit": false
     },
     "CHARACTER_RESOLVER": {
         "name": "Character Resolver",
-        "model": "phi-3-mini-4k-instruct",
+        "model": "",
         "persona": "You are a logical entity resolution model. You are skilled at matching ambiguous or generic descriptions to specific names from a provided list. You make a single, best-guess choice or indicate no match.",
         "affects_global_context_limit": false
     }

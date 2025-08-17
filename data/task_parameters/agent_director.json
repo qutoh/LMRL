@@ -130,7 +130,7 @@
   "GET_CHARACTER_PLACEMENT": {
     "task_prompt_key": "task_prompt_peg_character_placement",
     "source_agent": "DIRECTOR",
-    "model_override": "cydonia-22b-v1.3",
+    "model_override": "",
     "default_adjustment": 0.0,
     "affects_global_context_limit": false
   },

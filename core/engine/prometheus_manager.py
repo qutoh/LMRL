@@ -72,10 +72,35 @@ class PrometheusManager:
         }
 
     def _call_modify_equipment(self, dialogue_entry: dict, **kwargs):
-        """Dispatches to the ItemManager to handle equipment changes."""
+        """Dispatches to the ItemManager for each character affected by an equipment change."""
         utils.log_message('debug', "[PROMETHEUS] Activating tool: modify_equipment.")
-        if hasattr(self.engine, 'item_manager'):
-            self.engine.item_manager.modify_character_equipment(dialogue_entry)
+        if not hasattr(self.engine, 'item_manager'):
+            return
+
+        equipment_agent = config.agents['EQUIPMENT_MANAGER']
+
+        all_chars_in_scene = [c['name'] for c in roster_manager.get_all_characters(self.engine)]
+        char_list_str = "; ".join(all_chars_in_scene)
+
+        target_kwargs = {
+            "character_list": char_list_str,
+            "recent_events": dialogue_entry.get('content', '')
+        }
+
+        targets_response = execute_task(self.engine, equipment_agent, 'EQUIPMENT_IDENTIFY_TARGETS', [],
+                                        task_prompt_kwargs=target_kwargs)
+
+        if not targets_response or "none" in targets_response.lower():
+            return
+
+        affected_names = [name.strip() for name in targets_response.split(';') if name.strip()]
+
+        for name in affected_names:
+            # Find the closest match in the scene to account for LLM typos
+            target_char = next((char for char in all_chars_in_scene if name.lower() in char.lower()), None)
+            if target_char:
+                utils.log_message('debug', f"[PROMETHEUS] Dispatching equipment modification for '{target_char}'.")
+                self.engine.item_manager.modify_character_equipment(target_char, dialogue_entry['content'])
 
     def _call_handle_refusal(self, dialogue_entry: dict, original_messages: list, **kwargs) -> dict:
         """Dispatches to the utility task that handles re-prompting after a refusal."""
@@ -85,11 +110,13 @@ class PrometheusManager:
         if not original_actor:
             return {'status': 'FAILED', 'reason': 'Original actor not found.'}
 
-        new_prose = utility_tasks.reprompt_after_refusal(self.engine, original_actor, 'GENERIC_TURN', original_messages)
+        new_prose = utility_tasks.reprompt_after_refusal(self.engine, original_actor, 'GENERIC_TURN',
+                                                         original_messages)
 
         if new_prose:
             new_dialogue_entry = {'speaker': original_actor['name'], 'content': new_prose}
-            next_actor_name = self.analyze_and_dispatch(new_prose, new_dialogue_entry, kwargs.get('unacted_roles', []),
+            next_actor_name = self.analyze_and_dispatch(new_prose, new_dialogue_entry,
+                                                        kwargs.get('unacted_roles', []),
                                                         original_messages, is_reprompt=True)
             return {'status': 'REPROMPTED', 'new_prose': new_prose, 'next_actor_name': next_actor_name}
         else:

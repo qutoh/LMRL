@@ -232,21 +232,21 @@ class CalibrationManager:
         mean, lower, upper = self._get_confidence_interval(scores)
         return mean, lower, upper
 
-    def _find_optimal_temperature(self, model_id: str, task: dict, is_sequence: bool, top_p: float) -> float:
+    def _find_optimal_temperature(self, model_id: str, task: dict, is_sequence: bool, top_p: float) -> tuple[float, float]:
         utils.log_message('debug',
                           f"  -> Phase 2: Calibrating Temperature for {task['target_task_key']} on '{model_id}' (Top_P={top_p})")
         dummy_agent = {"model": model_id, "persona": "You are a utility model."}
 
         temp_file_path = file_io.join_path(config.data_dir, 'temp_calibration.json')
-        progress = file_io.read_json(temp_file_path, default={})
+        progress = file_io.read_json(temp_file_path, default={'phase': 'temperature', 'results': []})
 
         if progress.get('phase') != 'temperature':
             progress = {'phase': 'temperature', 'results': []}
 
         results = progress.get('results', [])
 
-        temps_to_test = [t for t in np.arange(0.2, 1.9, 0.2) if
-                         round(t, 2) not in {r.get('temp') for r in results if 'temp' in r}]
+        temps_tested = {round(r.get('temp', -1.0), 2) for r in results}
+        temps_to_test = [t for t in np.arange(0.2, 1.9, 0.2) if round(t, 2) not in temps_tested]
 
         for temp in temps_to_test:
             py_temp = float(temp)
@@ -260,15 +260,16 @@ class CalibrationManager:
             self._log_to_ui(log_msg, (220, 210, 180))
             utils.log_message('debug', log_msg)
 
-        if not results: return 0.7
+        if not results: return 0.7, 0.0
 
         best_result = max(results, key=lambda x: x['mean'])
         best_temp = best_result['temp']
+        best_score = best_result['mean']
 
         utils.log_message('debug',
-                          f"  -> Optimal temperature for '{task['target_task_key']}' is {best_temp:.2f} (Best Score: {best_result['mean']:.3f})")
+                          f"  -> Optimal temperature for '{task['target_task_key']}' is {best_temp:.2f} (Best Score: {best_score:.3f})")
         file_io.remove_file(temp_file_path)
-        return round(best_temp, 2)
+        return round(best_temp, 2), best_score
 
     def _find_optimal_top_p(self, model_id: str, task: dict) -> float:
         utils.log_message('debug', f"  -> Phase 1: Calibrating Top_P for {task['target_task_key']} on '{model_id}'")
@@ -282,10 +283,11 @@ class CalibrationManager:
 
         results = progress.get('results', [])
 
+        p_values_tested = {r.get('p') for r in results}
+        top_p_values_to_test = [p for p in [0.85, 0.90, 0.95, 0.98, 1.0] if p not in p_values_tested]
+
         fixed_temp = 0.7
         is_sequence = task.get("validation", {}).get("type") == "sequence"
-        top_p_values_to_test = [p for p in [0.85, 0.90, 0.95, 0.98, 1.0] if
-                                p not in {r.get('p') for r in results if 'p' in r}]
 
         for p in top_p_values_to_test:
             responses = []
@@ -370,7 +372,10 @@ class CalibrationManager:
             final_top_p = calibrated_sampling[model_id][group_id]['top_p']
 
         if task['target_task_key'] not in calibrated_temps.get(model_id, {}):
-            optimal_temp = self._find_optimal_temperature(model_id, task, is_sequence, final_top_p)
-            calibrated_temps.setdefault(model_id, {})[task['target_task_key']] = optimal_temp
+            optimal_temp, final_score = self._find_optimal_temperature(model_id, task, is_sequence, final_top_p)
+            calibrated_temps.setdefault(model_id, {})[task['target_task_key']] = {
+                "temperature": optimal_temp,
+                "score": round(final_score, 3)
+            }
             file_io.write_json(save_path_temp, calibrated_temps)
             config.calibrated_temperatures = calibrated_temps

@@ -1,15 +1,7 @@
 {
     "cydonia-22b-v1.3": {
         "DIRECTOR_COMMAND_VALIDATION": {
-            "top_p": 0.85
-        },
-        "CREATIVE_KEYWORD_CHOICE_VALIDATION": {
-            "top_p": 0.85
-        }
-    },
-    "phi-3-mini-4k-instruct": {
-        "CREATIVE_KEYWORD_CHOICE_VALIDATION": {
-            "top_p": 0.85
+            "top_p": 0.95
         }
     }
 }

@@ -1,12 +1,16 @@
 {
     "cydonia-22b-v1.3": {
-        "DIRECTOR_GET_COMMAND": 1.8,
-        "CALIBRATION_CHOOSE_KEYWORD_FROM_NARRATIVE": 1.8,
-        "DIRECTOR_CHECK_NPC_SURVIVAL": 0.2
-    },
-    "phi-3-mini-4k-instruct": {
-        "POSITION_PARSE_MOVEMENT": 0.2,
-        "POSITION_FIX_MOVEMENT_JSON": 0.2,
-        "ESTIMATE_ACTION_DURATION": 0.2
+        "DIRECTOR_GET_COMMAND": {
+            "temperature": 1.8,
+            "score": 1.27
+        },
+        "POSITION_PARSE_MOVEMENT": {
+            "temperature": 0.8,
+            "score": 0.968
+        },
+        "POSITION_FIX_MOVEMENT_JSON": {
+            "temperature": 0.2,
+            "score": 0.795
+        }
     }
 }
