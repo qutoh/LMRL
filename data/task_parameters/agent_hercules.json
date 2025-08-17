@@ -1,0 +1,7 @@
+{
+    "CALIBRATION_CHOOSE_KEYWORD_FROM_NARRATIVE": {
+        "task_prompt_key": "task_prompt_calibration_keyword_choice",
+        "source_agent": "HERCULES",
+        "default_adjustment": -0.2
+    }
+}

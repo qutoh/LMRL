@@ -11,6 +11,10 @@
         "POSITION_FIX_MOVEMENT_JSON": {
             "temperature": 0.2,
             "score": 0.795
+        },
+        "ESTIMATE_ACTION_DURATION": {
+            "temperature": 0.6,
+            "score": 0.404
         }
     }
 }

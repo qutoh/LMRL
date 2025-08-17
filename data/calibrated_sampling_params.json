@@ -2,6 +2,9 @@
     "cydonia-22b-v1.3": {
         "DIRECTOR_COMMAND_VALIDATION": {
             "top_p": 0.95
+        },
+        "CREATIVE_KEYWORD_CHOICE_VALIDATION": {
+            "top_p": 0.85
         }
     }
 }

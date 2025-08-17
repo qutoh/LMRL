@@ -20,7 +20,7 @@
 	"Narrative_JSON_Extraction": {
 		"representative_task": "MOVEMENT_PARSE_VALIDATION",
 		"description": "Reads and interprets natural language prose to extract structured information into a JSON object.",
-		"calibrate_sampling_params": false,
+		"calibrate_sampling_params": true,
 		"members": [
 			"POSITION_PARSE_MOVEMENT"
 		]
@@ -28,7 +28,7 @@
 	"Formatting_JSON_Repair": {
 		"representative_task": "MOVEMENT_FIX_VALIDATION",
 		"description": "Handles low-level, non-creative formatting tasks, primarily fixing broken or incomplete text and forcing it into a valid JSON structure.",
-		"calibrate_sampling_params": false,
+		"calibrate_sampling_params": true,
 		"members": [
 			"CH_FIX_ATLAS",
 			"CH_FIX_DIRECTOR",
@@ -45,7 +45,7 @@
 	"Logical_JSON_Estimation": {
 		"representative_task": "TEMPORAL_ESTIMATION_VALIDATION",
 		"description": "Makes a reasonable, logical estimation from a narrative context and returns it as a value within a JSON.",
-		"calibrate_sampling_params": false,
+		"calibrate_sampling_params": true,
 		"members": [
 			"ESTIMATE_ACTION_DURATION"
 		]
@@ -53,7 +53,7 @@
 	"Rule_Based_JSON_Classification": {
 		"representative_task": null,
 		"description": "Handles pure classification where the model is given a single piece of data and a clear menu of options to categorize into a JSON.",
-		"calibrate_sampling_params": false,
+		"calibrate_sampling_params": true,
 		"members": []
 	},
 	"Narrative_Keyword_Extraction": {
@@ -78,7 +78,7 @@
 	"Logical_Keyword_Choice": {
 		"representative_task": "LOGICAL_KEYWORD_VALIDATION",
 		"description": "Handles simple, logical, non-narrative decisions that result in a single keyword output (e.g., YES/NO).",
-		"calibrate_sampling_params": false,
+		"calibrate_sampling_params": true,
 		"members": [
 			"DIRECTOR_CONFIRM_NPC_SAVE",
 			"WORLDGEN_ANALYZE_SCENE_FIT"
