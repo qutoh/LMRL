@@ -124,8 +124,8 @@ class SetupManager:
         }
         run_scene_path = file_io.join_path(self.engine.run_path, 'scene.json')
         file_io.write_json(run_scene_path, [chosen_scene])
-        roster_manager.load_characters_from_scene(self.engine, chosen_scene)
 
+        # --- Generation Phase ---
         cached_level = self.engine.config.levels.get(scene_prompt)
         if cached_level and "placed_features" in cached_level:
             generation_state = GenerationState(self.game_state.game_map)
@@ -158,12 +158,20 @@ class SetupManager:
         map_artist = MapArtist()
         map_artist.draw_map(self.game_state.game_map, generation_state, self.engine.config.features)
 
+        # --- Character and Casting Phase ---
+        # 1. Load characters specified by the scene file (from casting) and the location's persistent inhabitants.
+        roster_manager.load_characters_from_scene(self.engine, chosen_scene)
+
+        # 2. Create and persist any NPCs generated during level creation (e.g., CHARACTER features).
         for char_data in generation_state.character_creation_queue:
             if new_npc := character_factory.create_npc_from_generation_sentence(self.engine, char_data):
                 roster_manager.decorate_and_add_character(self.engine, new_npc, 'npc')
 
+        # 3. Director establishes the ephemeral lead characters for this specific run.
         location_summary = f"{chosen_scene['source_location'].get('Name', '')}: {chosen_scene['source_location'].get('Description', '')}"
         self.engine.director_manager.establish_initial_cast(scene_prompt, location_summary)
+
+        # 4. Final setup before game starts.
         self._determine_context_limit()
 
         if self.game_state:

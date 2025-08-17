@@ -33,34 +33,29 @@ class DirectorManager:
 
         role_type = char_to_remove.get('role_type')
         should_save_to_casting = False
-        casting_filename = None
-        log_key = ''  # Initialize log_key
+        log_key = ''
 
-        if role_type == 'lead':
-            casting_filename = 'casting_leads.json'
+        if role_type in ['lead', 'dm']:
             should_save_to_casting = True
-            log_key = 'system_lead_removed_and_saved'
+            log_key = 'system_lead_removed_and_saved' if role_type == 'lead' else '' # Add DM log key if needed
         elif role_type == 'npc':
-            # For NPCs, ask the Director if they should be saved.
             prompt_kwargs = {'npc_name': char_to_remove['name'],
                              'npc_description': char_to_remove.get('description', '')}
             response = execute_task(self.engine, self.director_agent, 'DIRECTOR_CONFIRM_NPC_SAVE', [],
                                     task_prompt_kwargs=prompt_kwargs)
             if response and 'yes' in response.strip().lower():
-                casting_filename = file_io.join_path(self.engine.config.data_dir, 'worlds', self.engine.world_name,
-                                                     'casting_npcs.json')
                 should_save_to_casting = True
                 log_key = 'system_npc_removed_and_saved'
             else:
                 log_key = 'system_npc_removed_not_saved'
 
-        if should_save_to_casting and casting_filename:
-            file_io.save_character_to_casting_file(self.engine.run_path, char_to_remove, casting_filename)
+        if should_save_to_casting:
+            file_io.save_character_to_world_casting(self.engine.world_name, char_to_remove, role_type)
 
         removed_char_name = char_to_remove['name']
         roster_manager.remove_character(self.engine, removed_char_name)
 
-        if log_key:  # Ensure log_key was set before trying to use it
+        if log_key:
             log_args = {'lead_name' if role_type == 'lead' else 'npc_name': removed_char_name}
             utils.log_message('game', loc(log_key, **log_args))
 

@@ -251,21 +251,6 @@ def finalize_run_directory(current_run_path, final_name):
         return current_run_path, error
 
 
-def save_character_to_casting_file(run_path, character, list_filename):
-    """Saves a character to a specific casting file inside the run directory."""
-    file_path = join_path(run_path, list_filename)
-    casting_list = read_json(file_path, default=[])
-
-    char_copy = {k: v for k, v in character.items() if not k.startswith('is_')}
-    if 'role_type' in char_copy:
-        del char_copy['role_type']
-
-    updated_list = [c for c in casting_list if c.get('name', '').lower() != char_copy.get('name', '').lower()]
-    updated_list.append(char_copy)
-
-    return write_json(file_path, updated_list)
-
-
 def save_character_to_world_casting(world_name: str, character: dict, role_type: str):
     """Saves a character's full profile to the persistent casting file for the world."""
     if not world_name or not role_type: return False

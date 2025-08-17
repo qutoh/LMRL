@@ -1,6 +1,7 @@
 # /core/ui/ui_callbacks.py
 
 import random
+import copy
 from .app_states import AppState
 from ..common import file_io
 from ..common.config_loader import config
@@ -89,11 +90,19 @@ class UICallbacks:
                 scenes_path = file_io.join_path(ui.atlas_engine.config.data_dir, 'worlds', ui.selected_world_name,
                                                 'generated_scenes.json')
                 all_scenes = file_io.read_json(scenes_path, default=[])
+
+                # Create a sanitized copy of the location data for the scene file.
+                # This prevents dynamic inhabitants from being saved into the reusable scene.
+                sanitized_location = copy.deepcopy(ui.starting_location)
+                if 'inhabitants' in sanitized_location:
+                    del sanitized_location['inhabitants']
+
                 new_scene_entry = {
                     "scene_prompt": ui.scene_prompt,
                     "source_location_name": ui.starting_location.get("Name"),
-                    "source_location": ui.starting_location
+                    "source_location": sanitized_location
                 }
+
                 if not any(s.get('scene_prompt') == new_scene_entry['scene_prompt'] for s in all_scenes):
                     all_scenes.append(new_scene_entry)
                     file_io.write_json(scenes_path, all_scenes)

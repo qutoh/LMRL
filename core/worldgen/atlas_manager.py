@@ -401,7 +401,7 @@ class AtlasManager:
         file_io.write_json(file_io.join_path(world_dir, 'levels.json'), {})
         file_io.write_json(file_io.join_path(world_dir, 'generated_scenes.json'), [])
         file_io.write_json(file_io.join_path(world_dir, 'casting_npcs.json'), [])
-        file_io.write_json(file_io.join_path(world_dir, 'casting_inhabitants.json'), [])
+        file_io.write_json(file_io.join_path(world_dir, 'inhabitants.json'), [])
 
 
         exploration_steps = config.settings.get("ATLAS_AUTONOMOUS_EXPLORATION_STEPS", 0)
@@ -424,7 +424,11 @@ class AtlasManager:
 
                 utils.log_message('game', f'Location: {current_node["Name"]}')
                 utils.log_message('game', f'Description: {current_node['Description']}')
+                if status == "POPULATE" or "NAVIGATE":
+                    # these don't count against the limit.
+                    i -= 1
                 if status == "ACCEPT":
+                    i -= 1
                     # Cool why is this option here for worldgen what are you doing Gemini lol, you made 20 different prompts for character generation but one extra for atlas is adhgdjghsdfg
                     utils.log_message('game', "[ATLAS] Atlas just thinks this place is neat :3")
                     breadcrumb, node, status = self.explore_one_step(world_name, theme, current_breadcrumb,

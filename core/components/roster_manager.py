@@ -119,24 +119,27 @@ def find_character_in_list(name: str, char_list: list) -> dict | None:
 def decorate_and_add_character(engine, character_data, role_type):
     """
     Adds internal attributes, default settings, adds character to the engine's
-    roster, and saves them to persistent world files.
+    roster, and saves NPCs as persistent inhabitants of their location.
     """
     if find_character(engine, character_data['name']):
         return
 
     # --- Persist the new character to world files ---
-    if engine.world_name:
-        # 1. Save the full profile to the world's casting file.
-        # This is now primarily for non-inhabitant characters, but won't hurt to save inhabitants too.
-        file_io.save_character_to_world_casting(engine.world_name, character_data, role_type)
+    if engine.world_name and role_type == 'npc' and engine.location_breadcrumb:
+        # 1. Save a simple concept to the location's inhabitant list within world.json
+        concept = {
+            "name": character_data.get("name"),
+            "description": character_data.get("description")
+        }
+        file_io.add_inhabitant_to_location(engine.world_name, engine.location_breadcrumb, concept)
 
-        # 2. Save a simple concept to the location's inhabitant list.
-        if role_type in ['lead', 'npc'] and engine.location_breadcrumb:
-            concept = {
-                "name": character_data.get("name"),
-                "description": character_data.get("description")
-            }
-            file_io.add_inhabitant_to_location(engine.world_name, engine.location_breadcrumb, concept)
+        # 2. Save the full character profile to the world's dedicated inhabitant cache.
+        inhabitant_path = file_io.join_path(engine.config.data_dir, 'worlds', engine.world_name, 'inhabitants.json')
+        inhabitant_list = file_io.read_json(inhabitant_path, default=[])
+        char_name_lower = character_data.get('name', '').lower()
+        if not any(c.get('name', '').lower() == char_name_lower for c in inhabitant_list):
+            inhabitant_list.append(character_data)
+            file_io.write_json(inhabitant_path, inhabitant_list)
 
     # --- Decorate with in-memory run-time attributes ---
     char = character_data.copy()
@@ -182,6 +185,17 @@ def decorate_and_add_character(engine, character_data, role_type):
 def load_initial_roster(engine):
     """Loads all characters from their respective files for a given run."""
     run_path = engine.run_path
+
+    # --- Global Characters (loaded into every game) ---
+    global_leads = file_io.read_json(file_io.join_path(config.data_dir, 'leads.json'), default=[])
+    global_npcs = file_io.read_json(file_io.join_path(config.data_dir, 'casting_npcs.json'), default=[])
+    global_dms = file_io.read_json(file_io.join_path(config.data_dir, 'dm_roles.json'), default=[])
+
+    for char in global_leads: decorate_and_add_character(engine, char, 'lead')
+    for char in global_npcs: decorate_and_add_character(engine, char, 'npc')
+    for char in global_dms: decorate_and_add_character(engine, char, 'dm')
+
+    # --- Run-Specific Characters (from a saved game or scene) ---
     initial_leads = file_io.read_json(file_io.join_path(run_path, 'leads.json'), default=[])
     initial_dms = file_io.read_json(file_io.join_path(run_path, 'dm_roles.json'), default=[])
     initial_npcs = file_io.read_json(file_io.join_path(run_path, 'temporary_npcs.json'), default=[])
