@@ -90,6 +90,14 @@ class Config:
             if npc['name'].lower() not in existing_npc_names:
                 self.casting_npcs.append(npc)
 
+        # --- MERGE DM CASTING LISTS ---
+        world_dms_file = file_io.join_path(world_data_path, 'casting_dms.json')
+        world_dms = file_io.read_json(world_dms_file, default=[])
+        existing_dm_names = {dm['name'].lower() for dm in self.casting_dms}
+        for dm in world_dms:
+            if dm['name'].lower() not in existing_dm_names:
+                self.casting_dms.append(dm)
+
     def _load_json(self, filename, default=None):
         """Helper function to load a JSON file with error handling."""
         path = file_io.join_path(self.data_dir, filename)

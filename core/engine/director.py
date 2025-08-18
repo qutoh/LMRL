@@ -130,8 +130,8 @@ class DirectorManager:
             char_roster_summary = "\n".join(
                 [f"- {c['name']} ({c.get('role_type', 'char')}): {c['description']}" for c in all_chars])
 
-            run_dm_path = file_io.join_path(self.engine.run_path, 'casting_dms.json')
-            dm_casting_list = file_io.read_json(run_dm_path, default=config.casting_dms)
+            # Use the merged list from the config object, which now includes world-specific DMs.
+            dm_casting_list = config.casting_dms
             dm_list_str = "\n".join([f"- {dm['name']}: {dm['description']}" for dm in dm_casting_list])
 
             dm_kwargs = {

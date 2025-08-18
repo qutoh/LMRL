@@ -17,35 +17,60 @@ class DMManager:
         self.engine = engine
 
     def _tailor_dm_for_scene(self, dm_profile: dict) -> dict:
-        """Creates a scene-specific variant of a global DM."""
-        tuned_dm = dm_profile.copy()
-
+        """
+        Creates a scene-specific variant of a global DM, checking for a cached
+        version before generating a new one.
+        """
         shared_context_str = loc('prompt_substring_world_scene_context',
                                  world_theme=self.engine.world_theme,
                                  scene_prompt=self.engine.scene_prompt)
 
+        # First, generate the new instructions to see if any tailoring is needed.
         tune_kwargs = {
             "prompt_substring_world_scene_context": shared_context_str,
-            "dm_name": tuned_dm['name'],
-            "dm_instructions": tuned_dm.get('instructions', '')
+            "dm_name": dm_profile['name'],
+            "dm_instructions": dm_profile.get('instructions', '')
         }
         new_instructions_str = execute_task(self.engine, config.agents['DIRECTOR'],
                                             'DIRECTOR_TUNE_DM_INSTRUCTIONS', [],
                                             task_prompt_kwargs=tune_kwargs)
 
-        if new_instructions_str and 'none' not in new_instructions_str.lower():
+        if not new_instructions_str or 'none' in new_instructions_str.lower():
+            return dm_profile  # No tailoring was needed, return the original.
+
+        # Since tailoring is needed, get the annotation to form the unique name.
+        anno_kwargs = {
+            "prompt_substring_world_scene_context": shared_context_str,
+            "original_instructions": dm_profile.get('instructions', ''),
+            "new_instructions": new_instructions_str.strip()
+        }
+        annotation = execute_task(self.engine, config.agents['DIRECTOR'], 'DIRECTOR_GET_DM_ANNOTATION', [],
+                                  task_prompt_kwargs=anno_kwargs)
+
+        if annotation and 'none' not in annotation.lower():
+            # Construct the unique name from the base name and the new annotation.
+            base_name = dm_profile['name'].split(',')[0].strip()
+            tailored_name = f"{base_name}, {annotation.strip()}"
+
+            # Check the comprehensive, in-memory casting list for this tailored version.
+            if existing_dm := roster_manager.find_character_in_list(tailored_name, config.casting_dms):
+                utils.log_message('debug', f"[DM FUSION] Found and reused existing tailored DM: '{tailored_name}'.")
+                return existing_dm
+
+            # If not found, create, save, and add the new DM to the in-memory list.
+            tuned_dm = dm_profile.copy()
+            tuned_dm['name'] = tailored_name
             tuned_dm['instructions'] = new_instructions_str.strip()
-            anno_kwargs = {
-                "prompt_substring_world_scene_context": shared_context_str,
-                "original_instructions": dm_profile.get('instructions', ''),
-                "new_instructions": tuned_dm['instructions']
-            }
-            annotation = execute_task(self.engine, config.agents['DIRECTOR'], 'DIRECTOR_GET_DM_ANNOTATION', [],
-                                      task_prompt_kwargs=anno_kwargs)
-            if annotation and 'none' not in annotation.lower():
-                tuned_dm['name'] = f"{tuned_dm['name']}, {annotation.strip()}"
-            file_io.save_character_to_world_casting(self.engine.world_name, tuned_dm, 'dm')
+
+            if file_io.save_character_to_world_casting(self.engine.world_name, tuned_dm, 'dm'):
+                config.casting_dms.append(tuned_dm)  # Update in-memory cache
+
             utils.log_message('debug', f"[DM FUSION] Created and saved new DM variant: '{tuned_dm['name']}'.")
+            return tuned_dm
+
+        # Fallback if annotation fails: return with tuned instructions but original name.
+        tuned_dm = dm_profile.copy()
+        tuned_dm['instructions'] = new_instructions_str.strip()
         return tuned_dm
 
     def initialize_meta_dm(self, initial_dm_profiles: list):

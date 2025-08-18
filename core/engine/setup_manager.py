@@ -176,15 +176,10 @@ class SetupManager:
 
         if self.game_state:
             roster_manager.spawn_entities_from_roster(self.engine, self.game_state)
-            action_intro = ""
             for character in self.engine.characters:
                 if character.get('is_positional'):
                     position_manager.place_character_contextually(self.engine, self.game_state, character,
                                                                   generation_state)
-
-            # Initialize character states after they are all placed.
-            self.engine.character_manager.initialize_all_character_states(self.engine)
-
 
         # Build a descriptive summary of the entire generated level for the player.
         level_description_sentences = []
@@ -205,7 +200,7 @@ class SetupManager:
         utils.log_message('game', f"{log_header}\n\n{formatted_level_context}\n---")
 
         narrative_intro = generation_state.narrative_log if generation_state and generation_state.narrative_log else ""
-        enhanced_prompt = f"{narrative_intro}\n\n{scene_prompt} {action_intro}".strip()
+        enhanced_prompt = f"{narrative_intro}\n\n{scene_prompt}".strip()
         self.engine.dialogue_log.append({"speaker": "Scene Setter", "content": enhanced_prompt})
         file_io.save_active_character_files(self.engine)
         self.engine.render_queue.put(('ADD_EVENT_LOG', 'Setup complete. The story begins...'))

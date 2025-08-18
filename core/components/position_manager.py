@@ -124,7 +124,8 @@ def _find_walkable_tile_in_area(game_state: GameState, x1, y1, x2, y2) -> tuple[
 def place_character_contextually(engine, game_state: GameState, character: dict, generation_state):
     """
     Uses an LLM to find a contextually appropriate location for a character
-    from the generated features and places them there. Includes a robust fallback.
+    from the generated features and places them there. It now also sets the
+    initial character_state from the LLM's action description.
     """
     entity = game_state.get_entity(character['name'])
     if not entity or not generation_state or not generation_state.placed_features:
@@ -140,6 +141,7 @@ def place_character_contextually(engine, game_state: GameState, character: dict,
 
     placer_agent = engine.config.agents.get('DIRECTOR')
     chosen_narrative_tag = None
+    action_description = "observing the scene."  # Default state
 
     if valid_location_tags and placer_agent:
         prompt_kwargs = {
@@ -152,6 +154,15 @@ def place_character_contextually(engine, game_state: GameState, character: dict,
             engine, placer_agent, 'GET_CHARACTER_PLACEMENT', [], task_prompt_kwargs=prompt_kwargs
         )
         command = command_parser.parse_structured_command(engine, raw_response, 'DIRECTOR')
+
+        # --- Set Initial Character State from LLM Response ---
+        # This happens regardless of whether the placement is successful.
+        if command and command.get("action_description"):
+            action_description = command.get("action_description").strip()
+
+        character['character_state'] = action_description
+        utils.log_message('full', f"[INITIAL STATE] {character['name']}: '{action_description}'")
+
         chosen_narrative_tag = command.get("location_tag")
 
     # --- Placement Logic ---
