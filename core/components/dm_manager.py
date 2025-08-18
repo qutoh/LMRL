@@ -2,6 +2,7 @@
 
 from ..common import utils, file_io, command_parser
 from ..common.config_loader import config
+from ..common.localization import loc
 from ..llm.llm_api import execute_task
 from . import roster_manager
 
@@ -18,9 +19,15 @@ class DMManager:
     def _tailor_dm_for_scene(self, dm_profile: dict) -> dict:
         """Creates a scene-specific variant of a global DM."""
         tuned_dm = dm_profile.copy()
+
+        shared_context_str = loc('prompt_substring_world_scene_context',
+                                 world_theme=self.engine.world_theme,
+                                 scene_prompt=self.engine.scene_prompt)
+
         tune_kwargs = {
-            "world_theme": self.engine.world_theme, "scene_prompt": self.engine.scene_prompt,
-            "dm_name": tuned_dm['name'], "dm_instructions": tuned_dm.get('instructions', '')
+            "prompt_substring_world_scene_context": shared_context_str,
+            "dm_name": tuned_dm['name'],
+            "dm_instructions": tuned_dm.get('instructions', '')
         }
         new_instructions_str = execute_task(self.engine, config.agents['DIRECTOR'],
                                             'DIRECTOR_TUNE_DM_INSTRUCTIONS', [],
@@ -29,6 +36,7 @@ class DMManager:
         if new_instructions_str and 'none' not in new_instructions_str.lower():
             tuned_dm['instructions'] = new_instructions_str.strip()
             anno_kwargs = {
+                "prompt_substring_world_scene_context": shared_context_str,
                 "original_instructions": dm_profile.get('instructions', ''),
                 "new_instructions": tuned_dm['instructions']
             }

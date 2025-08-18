@@ -223,7 +223,6 @@ class SpecialModeManager:
         cal_manager = CalibrationManager(ui.atlas_engine, ui.model_manager.embedding_model, ui.event_log)
         ui.calibration_jobs = cal_manager.get_calibration_plan()
         ui.current_job_index = 0
-        ui.event_log.add_message("Starting targeted calibration...", (150, 200, 255))
 
     def _run_single_calibration_job(self, job):
         """The target function for the calibration thread. Runs one job."""
@@ -231,12 +230,12 @@ class SpecialModeManager:
         model_id = job['model_id']
         task = job['task']
 
-        ui.calibration_status_message = f"Loading model for calibration: {model_id}..."
+        ui.calibration_update_queue.put({'type': 'status', 'text': f"Loading model for calibration: {model_id}..."})
         ui.model_manager.set_active_models([model_id])
         ui.model_manager.models_loaded.wait()
 
-        ui.calibration_status_message = f"Calibrating task '{task['target_task_key']}' for: {model_id}..."
-        cal_manager = CalibrationManager(ui.atlas_engine, ui.model_manager.embedding_model, ui.event_log)
+        cal_manager = CalibrationManager(ui.atlas_engine, ui.model_manager.embedding_model, ui.event_log,
+                                         ui.calibration_update_queue)
         cal_manager.run_calibration_test(job)
 
     def handle_calibration_step(self):
@@ -244,8 +243,9 @@ class SpecialModeManager:
         ui = self.ui_manager
         if ui.calibration_thread is None or not ui.calibration_thread.is_alive():
             if ui.current_job_index >= len(ui.calibration_jobs):
-                ui.calibration_status_message = "Calibration complete for all models."
-                ui.event_log.add_message(ui.calibration_status_message, (150, 255, 150))
+                ui.calibration_update_queue.put({'type': 'status', 'text': "Calibration complete for all models."})
+                # Short delay to allow the final message to be seen
+                time.sleep(3)
                 ui.app_state = AppState.WORLD_SELECTION
             else:
                 job = ui.calibration_jobs[ui.current_job_index]

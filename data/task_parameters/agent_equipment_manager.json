@@ -22,5 +22,9 @@
     "EQUIPMENT_DESCRIBE_ITEMS": {
         "task_prompt_key": "task_prompt_equipment_describe_items",
         "source_agent": "EQUIPMENT_MANAGER"
+    },
+    "EQUIPMENT_DESCRIBE_ONE_ITEM": {
+        "task_prompt_key": "task_prompt_equipment_describe_one_item",
+        "source_agent": "EQUIPMENT_MANAGER"
     }
 }

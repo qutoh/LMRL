@@ -17,10 +17,11 @@ class CalibrationManager:
     Orchestrates the process of finding optimal temperature and top_k settings for LLM tasks.
     """
 
-    def __init__(self, engine, embedding_model, event_log=None):
+    def __init__(self, engine, embedding_model, event_log=None, update_queue=None):
         self.engine = engine
         self.embedding_model = embedding_model
         self.event_log = event_log
+        self.update_queue = update_queue
         self.calibration_data = file_io.read_json(
             file_io.join_path(config.data_dir, 'calibration_tasks.json'), default={}
         )
@@ -64,39 +65,44 @@ class CalibrationManager:
         return (passed_checks / len(rules)), cleaned_response
 
     def _get_semantic_score(self, raw_output: str, task: dict) -> float:
-        if not self.embedding_model or "semantic_exemplar" not in task:
+        """
+        Calculates a score based on the logical correctness of structural choices,
+        ignoring subjective creative text.
+        """
+        if "semantic_exemplar" not in task:
             return 1.0
 
-        exemplar_str = task["semantic_exemplar"]
-        text_to_compare = raw_output
-
         try:
-            if task.get("validation", {}).get("type") == "json":
-                llm_data, _ = self._get_json_from_output(raw_output)
-                if not llm_data: return 0.0
-                exemplar_data = json.loads(exemplar_str)
-                valid_alternatives = task.get("validation", {}).get("mutually_exclusive_actions", [])
-                if valid_alternatives and llm_data.get("action") in valid_alternatives and llm_data.get(
-                        "action") != exemplar_data.get("action"):
-                    return 1.0
-                creative_fields = task.get("creative_fields", [])
-                text_to_compare = json.dumps(self._prepare_for_semantic_comparison(llm_data, creative_fields))
-                exemplar_str = json.dumps(self._prepare_for_semantic_comparison(exemplar_data, creative_fields))
+            llm_data, _ = self._get_json_from_output(raw_output)
+            if not llm_data: return 0.0
 
-            vec1 = self.embedding_model.encode(exemplar_str)
-            vec2 = self.embedding_model.encode(text_to_compare)
-            return max(0, cos_sim(vec1, vec2).item())
+            exemplar_data = json.loads(task["semantic_exemplar"])
+            llm_action = llm_data.get("action")
+            exemplar_action = exemplar_data.get("action")
+            valid_alternatives = task.get("validation", {}).get("mutually_exclusive_actions", [])
+
+            if llm_action == exemplar_action:
+                return 1.0
+
+            if llm_action in valid_alternatives:
+                return 0.7
+
+            return 0.0
 
         except (json.JSONDecodeError, Exception):
             return 0.0
 
     def _calculate_score(self, raw_output: str, task: dict, temp: float) -> tuple[float, str]:
-        structural_score, cleaned_response = self._get_structural_score(raw_output, task)
-        base_score = structural_score
+        if task.get("validation", {}).get("type") == "key_value_checklist":
+            score, cleaned = self._score_key_value_checklist(raw_output, task)
+            return score, cleaned
 
-        if "semantic_exemplar" in task:
-            semantic_score = self._get_semantic_score(raw_output, task)
-            base_score = (structural_score * self.structural_weight) + (semantic_score * self.semantic_weight)
+        structural_score, cleaned_response = self._get_structural_score(raw_output, task)
+        if structural_score < 1.0:
+            return 0.0, cleaned_response
+
+        semantic_score = self._get_semantic_score(raw_output, task)
+        base_score = (structural_score * self.structural_weight) + (semantic_score * self.semantic_weight)
 
         reward_factor = task.get("validation", {}).get("temperature_reward_factor", 0.0)
         return base_score * (1 + (temp * reward_factor)), cleaned_response
@@ -107,18 +113,23 @@ class CalibrationManager:
         if not expected_pairs: return 1.0, raw_output
 
         context = task.get("prompt_args", {}).get("recent_events", "No context available.")
-        extracted_pairs, _, _ = parse_and_log_tool_decisions(raw_output, list(expected_pairs.keys()), context)
+
+        all_possible_tools = list(config.agents.get("PROMETHEUS", {}).get("tool_dispatch_table", {}).keys())
+        if not all_possible_tools:
+            all_possible_tools = list(expected_pairs.keys())
+
+        extracted_pairs, _, _ = parse_and_log_tool_decisions(raw_output, all_possible_tools, context)
 
         correct_count = 0
         for key, expected_value in expected_pairs.items():
-            if key not in extracted_pairs: continue
-            extracted_value = extracted_pairs[key]
+            extracted_value = extracted_pairs.get(key.lower(), False)
+
             if isinstance(expected_value, list):
                 if extracted_value in expected_value: correct_count += 1
             elif extracted_value == expected_value:
                 correct_count += 1
 
-        return (correct_count / len(expected_pairs)) if extracted_pairs else 0.0, raw_output
+        return (correct_count / len(expected_pairs)) if expected_pairs else 0.0, raw_output
 
     def _score_keyword_output(self, raw_output: str, task: dict) -> tuple[float, str]:
         rules, text = task.get("validation", {}), raw_output.strip()
@@ -157,12 +168,6 @@ class CalibrationManager:
                     return False
             return isinstance(data, dict) and rule.get("child_key") in data
         return False
-
-    def _prepare_for_semantic_comparison(self, data: dict, creative_fields: list) -> dict:
-        prepared_data = data.copy()
-        for key in creative_fields:
-            if key in prepared_data: prepared_data[key] = "[CREATIVE_CONTENT]"
-        return prepared_data
 
     def _calculate_sequence_score(self, choices: list, task_definition: dict, temp: float) -> float:
         if len(set(choices)) == 1: return 0.0
@@ -203,38 +208,47 @@ class CalibrationManager:
     def _get_stable_score(self, dummy_agent, task, temp, top_k, top_p, is_sequence):
         scores = []
         target_key = task["target_task_key"]
-        for i in range(self.max_samples):
-            if is_sequence:
-                choices = []
-                for step_def in task['steps']:
-                    kwargs = step_def.get('prompt_args', {}).copy()
-                    kwargs['user_message_content'] = step_def.get('user_message_content', '')
-                    raw = llm_api.execute_task(self.engine, dummy_agent, target_key, [], kwargs, temp, top_k, top_p)
-                    choices.append(next((opt for opt in step_def['valid_options'] if opt.lower() in raw.lower()), ""))
-                score = self._calculate_sequence_score(choices, task, temp)
-                log_msg = f"Task: {target_key[:10]} | T: {temp:.2f}, P: {top_p}, K: {top_k} (Run {i + 1}) | Score: {score:.3f}"
-            else:
+
+        if is_sequence:
+            for i, step_def in enumerate(task.get('steps', [])):
+                kwargs = step_def.get('prompt_args', {}).copy()
+                kwargs['user_message_content'] = step_def.get('user_message_content', '')
+                raw = llm_api.execute_task(self.engine, dummy_agent, target_key, [], kwargs, temp, top_k, top_p)
+
+                subtype = task.get("validation", {}).get("subtype")
+                if subtype == 'key_value_checklist':
+                    score, cleaned = self._calculate_score(raw, step_def, temp)
+                    if self.update_queue: self.update_queue.put({'type': 'temp_sample', 'response': cleaned})
+                else:
+                    choices = [next((opt for opt in step_def['valid_options'] if opt.lower() in raw.lower()), "")]
+                    score = self._calculate_sequence_score(choices, task, temp)
+                    cleaned = raw
+                    if self.update_queue: self.update_queue.put({'type': 'temp_sample', 'response': cleaned})
+
+                log_msg = f"Task: {target_key[:10]} | T: {temp:.2f}, P: {top_p}, K: {top_k} (Step {i + 1}) | Score: {score:.3f}"
+                utils.log_message('full', f"      | Response: {cleaned.strip()}")
+                scores.append(score)
+        else:
+            for i in range(self.max_samples):
                 kwargs = task.get("prompt_args", {}).copy()
                 raw = llm_api.execute_task(self.engine, dummy_agent, target_key, [], kwargs, temp, top_k, top_p)
                 score, cleaned = self._calculate_score(raw, task, temp)
+                if self.update_queue: self.update_queue.put({'type': 'temp_sample', 'response': cleaned})
                 log_msg = f"Task: {target_key[:10]} | T: {temp:.2f}, P: {top_p}, K: {top_k} (Sample {i + 1}) | Score: {score:.3f}"
                 utils.log_message('full', f"      | Response: {cleaned.strip()}")
-
-            scores.append(score)
-            self._log_to_ui(log_msg, (200, 200, 220))
-            utils.log_message('full', f"    - {log_msg}")
-
-            if i + 1 >= self.min_samples and (
-                    self._get_confidence_interval(scores)[2] - self._get_confidence_interval(scores)[
-                1]) < self.ci_width_threshold:
-                break
+                scores.append(score)
+                if i + 1 >= self.min_samples and (
+                        self._get_confidence_interval(scores)[2] - self._get_confidence_interval(scores)[
+                    1]) < self.ci_width_threshold:
+                    break
 
         mean, lower, upper = self._get_confidence_interval(scores)
         return mean, lower, upper
 
-    def _find_optimal_temperature(self, model_id: str, task: dict, is_sequence: bool, top_p: float) -> tuple[float, float]:
-        utils.log_message('debug',
-                          f"  -> Phase 2: Calibrating Temperature for {task['target_task_key']} on '{model_id}' (Top_P={top_p})")
+    def _find_optimal_temperature(self, model_id: str, task: dict, is_sequence: bool, top_p: float) -> tuple[
+        float, float]:
+        if self.update_queue: self.update_queue.put({'type': 'phase_change', 'phase': 'temperature',
+                                                     'text': f"Calibrating Temperature for {task['target_task_key']}..."})
         dummy_agent = {"model": model_id, "persona": "You are a utility model."}
 
         temp_file_path = file_io.join_path(config.data_dir, 'temp_calibration.json')
@@ -272,7 +286,8 @@ class CalibrationManager:
         return round(best_temp, 2), best_score
 
     def _find_optimal_top_p(self, model_id: str, task: dict) -> float:
-        utils.log_message('debug', f"  -> Phase 1: Calibrating Top_P for {task['target_task_key']} on '{model_id}'")
+        if self.update_queue: self.update_queue.put(
+            {'type': 'phase_change', 'phase': 'top_p', 'text': f"Calibrating Top-P for {task['target_task_key']}..."})
         dummy_agent = {"model": model_id, "persona": "You are a utility model."}
 
         temp_file_path = file_io.join_path(config.data_dir, 'temp_calibration.json')
@@ -304,6 +319,9 @@ class CalibrationManager:
                 raw = llm_api.execute_task(self.engine, dummy_agent, task["target_task_key"], [], kwargs_for_prompt,
                                            fixed_temp, 0, p)
                 responses.append(raw)
+                if self.update_queue:
+                    score, cleaned = self._get_structural_score(raw, task)
+                    self.update_queue.put({'type': 'top_p_sample', 'response': cleaned, 'is_valid': score > 0.99})
 
             score = self._calculate_diversity_score(responses, task)
             results.append({'p': p, 'score': score})
@@ -356,7 +374,7 @@ class CalibrationManager:
         calibrated_sampling.setdefault(model_id, {}).setdefault(group_id, {})
 
         is_sequence = task.get("validation", {}).get("type") == "sequence"
-        final_top_p = 0.95  # Default
+        final_top_p = 0.95
 
         if job.get('calibrate_sampling'):
             if 'top_p' not in calibrated_sampling.get(model_id, {}).get(group_id, {}):

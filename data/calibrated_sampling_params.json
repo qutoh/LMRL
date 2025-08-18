@@ -1,0 +1,27 @@
+{
+    "cydonia-22b-v1.3": {
+        "CREATIVE_KEYWORD_CHOICE_VALIDATION": {
+            "top_p": 0.85
+        }
+    },
+    "pantheon-of-cydonia-realm-i1@q4_k_s": {
+        "MOVEMENT_PARSE_VALIDATION": {
+            "top_p": 0.9
+        },
+        "MOVEMENT_FIX_VALIDATION": {
+            "top_p": 0.85
+        },
+        "TEMPORAL_ESTIMATION_VALIDATION": {
+            "top_p": 1.0
+        },
+        "DIRECTOR_COMMAND_VALIDATION": {
+            "top_p": 1.0
+        },
+        "CREATIVE_KEYWORD_CHOICE_VALIDATION": {
+            "top_p": 0.85
+        },
+        "LOGICAL_KEYWORD_VALIDATION": {
+            "top_p": 0.9
+        }
+    }
+}

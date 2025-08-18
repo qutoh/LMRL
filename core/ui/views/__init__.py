@@ -10,6 +10,7 @@ from .settings_view import SettingsView
 from .menu_view import MenuView
 from .prometheus_view import PrometheusView
 from .character_generation_test_view import CharacterGenerationTestView
+from .calibration_view import CalibrationView
 
 __all__ = [
     "WorldSelectionView",
@@ -21,5 +22,6 @@ __all__ = [
     "SettingsView",
     "MenuView",
     "PrometheusView",
-    "CharacterGenerationTestView"
+    "CharacterGenerationTestView",
+    "CalibrationView"
 ]

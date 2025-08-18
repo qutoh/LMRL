@@ -26,7 +26,7 @@ from ..common import utils
 
 from ..common.game_state import GameState
 from .views import WorldSelectionView, GameView, SceneSelectionView, TextInputView, LoadOrNewView, SaveSelectionView, \
-    SettingsView, MenuView, PrometheusView
+    SettingsView, MenuView, PrometheusView, CalibrationView
 from .input_handler import TextInputHandler
 from ..llm.model_manager import ModelManager
 
@@ -71,7 +71,7 @@ class UIManager:
         self.calibration_thread = None
         self.calibration_jobs = []
         self.current_job_index = 0
-        self.calibration_status_message = ""
+        self.calibration_update_queue = Queue()
 
         self.help_texts = {
             "DEFAULT": "[UP/DOWN] Navigate | [ENTER] Select | [ESC] Back/Exit",
@@ -88,6 +88,7 @@ class UIManager:
             AppState.GAME_RUNNING: "[F8] Flag Response | [F9] Player Takeover | [F10/ESC] Save & Exit",
             "IN_GAME_INPUT": "[ENTER] Submit Action | [ESC] Skip Action | [CTRL+V] Paste",
             "IN_GAME_MENU": "[UP/DOWN] Navigate | [ENTER] Select | [ESC] Cancel",
+            AppState.CALIBRATING: "[ESC] Stop Calibration",
             AppState.PEG_V3_TEST: "[ENTER] Next Step | [SPACE] Fast-Forward | [LEFT/RIGHT] Change Scenario | [ESC] Back",
             AppState.CHARACTER_GENERATION_TEST: "[ESC] Stop Test & Return to Menu",
             AppState.SHUTTING_DOWN: "Shutting down, please wait..."
@@ -112,6 +113,13 @@ class UIManager:
 
     def _process_logic(self):
         """The main state machine for the UI. Determines which view to show or action to take."""
+        if self.app_state == AppState.CALIBRATING:
+            if not isinstance(self.active_view, CalibrationView):
+                self.active_view = CalibrationView(self.root_console.width, self.root_console.height)
+            self.special_modes.handle_calibration_step()
+            self._handle_calibration_updates()
+            return
+
         if self.active_view is None:
             self.special_mode_active = None
             if self.app_state == AppState.WORLD_SELECTION:
@@ -187,9 +195,6 @@ class UIManager:
             else:
                 self.event_log.add_message("FATAL: World creation failed.", (255, 50, 50))
                 self.app_state = AppState.WORLD_SELECTION
-        elif self.app_state == AppState.CALIBRATING:
-            self.active_view = None
-            self.special_modes.handle_calibration_step()
         elif self.app_state == AppState.PEG_V3_TEST:
             if self.special_modes.peg_test_generator is None:
                 self.active_view = None
@@ -251,6 +256,20 @@ class UIManager:
 
         self.active_view = original_view
         return self.sync_input_result if self.sync_input_result is not None else None
+
+    def _handle_calibration_updates(self):
+        """Processes messages from the calibration thread queue to update the UI."""
+        if self.calibration_update_queue and not self.calibration_update_queue.empty():
+            try:
+                while not self.calibration_update_queue.empty():
+                    message = self.calibration_update_queue.get_nowait()
+                    if isinstance(self.active_view, CalibrationView):
+                        if message.get('type') == 'phase_change':
+                            self.active_view.set_phase(message['phase'], message['text'])
+                        else:
+                            self.active_view.update_data(message)
+            except Exception:
+                pass
 
     def _handle_game_loading(self):
         """Checks if models are ready and then starts the engine process."""
@@ -385,12 +404,6 @@ class UIManager:
             status = "Forging new world..." if self.model_manager.models_loaded.is_set() else "Loading world creation models..."
             self.root_console.print(self.root_console.width // 2, 20, status, alignment=tcod.constants.CENTER,
                                     fg=(200, 200, 255))
-        elif self.app_state == AppState.CALIBRATING:
-            self.root_console.print_box(x=0, y=self.root_console.height // 2 - 5, width=self.root_console.width,
-                                        height=10, string=self.calibration_status_message, fg=(200, 200, 255),
-                                        alignment=tcod.constants.CENTER)
-            self.event_log.render(console=self.root_console, x=1, y=self.root_console.height - 11,
-                                  width=self.root_console.width - 2, height=10)
         elif self.app_state == AppState.LOADING_GAME:
             self.root_console.print(self.root_console.width // 2, 20, "Please Wait... Loading Game Models",
                                     alignment=tcod.constants.CENTER, fg=(200, 200, 255))
