@@ -55,6 +55,7 @@ class StoryEngine:
         self.interrupted = False
         self.player_interrupted = False
         self.player_input_active = False
+        self.cast_manager_interrupted = False
 
         self.game_state = game_state
         self.generation_state = None
@@ -128,6 +129,8 @@ class StoryEngine:
                     if not self.interrupted: self.interrupted = True
                 elif message == '__INTERRUPT_PLAYER__':
                     if not self.player_interrupted: self.player_interrupted = True
+                elif message == '__INTERRUPT_CAST_MANAGER__':
+                    if not self.cast_manager_interrupted: self.cast_manager_interrupted = True
                 elif message == '__FLAG_LAST_RESPONSE__':
                     if self.last_interaction_log:
                         self.annotation_manager.annotate_last_log_as_failure('PLAYER_FLAGGED',
@@ -188,7 +191,7 @@ class StoryEngine:
             turn_queue = turn_order[:]
             while turn_queue:
                 self._check_for_interrupts()
-                if self.interrupted or self.player_interrupted:
+                if self.interrupted or self.player_interrupted or self.cast_manager_interrupted:
                     break
 
                 current_actor = turn_queue.pop(0)
@@ -204,6 +207,11 @@ class StoryEngine:
             if self.player_interrupted:
                 self.player_interface.initiate_takeover_menu()
                 self.player_interrupted = False
+                continue
+
+            if self.cast_manager_interrupted:
+                self.player_interface.initiate_cast_management_menu()
+                self.cast_manager_interrupted = False
                 continue
 
             if self.interrupted:

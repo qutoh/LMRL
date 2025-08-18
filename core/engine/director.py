@@ -151,7 +151,7 @@ class DirectorManager:
                     chosen_dm_profiles.append(self.engine.dm_manager._tailor_dm_for_scene(dm_to_load))
 
         # --- DM Synthesis or Individual Addition ---
-        if not config.settings.get("enable_multiple_dms", False) and len(chosen_dm_profiles) > 1:
+        if not config.settings.get("enable_multiple_dms", False) and len(chosen_dm_profiles) > 0:
             self.engine.dm_manager.initialize_meta_dm(chosen_dm_profiles)
         else:
             for dm_profile in chosen_dm_profiles:

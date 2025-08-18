@@ -19,14 +19,14 @@ class DMManager:
     def _tailor_dm_for_scene(self, dm_profile: dict) -> dict:
         """Creates a scene-specific variant of a global DM."""
         tuned_dm = dm_profile.copy()
-
-        shared_context_str = loc('prompt_substring_world_scene_context',
-                                 world_theme=self.engine.world_theme,
+        
+        shared_context_str = loc('prompt_substring_world_scene_context', 
+                                 world_theme=self.engine.world_theme, 
                                  scene_prompt=self.engine.scene_prompt)
 
         tune_kwargs = {
             "prompt_substring_world_scene_context": shared_context_str,
-            "dm_name": tuned_dm['name'],
+            "dm_name": tuned_dm['name'], 
             "dm_instructions": tuned_dm.get('instructions', '')
         }
         new_instructions_str = execute_task(self.engine, config.agents['DIRECTOR'],
@@ -56,6 +56,9 @@ class DMManager:
         if not initial_dm_profiles:
             return
 
+        # The key should be based on the original, untailored names.
+        base_component_names = tuple(sorted([dm['name'].split(',')[0].strip() for dm in initial_dm_profiles]))
+        
         dm_profiles_str = "\n---\n".join(
             f"Name: {dm.get('name')}\nDescription: {dm.get('description')}\nInstructions: {dm.get('instructions')}"
             for dm in initial_dm_profiles
@@ -70,9 +73,7 @@ class DMManager:
             utils.log_message('game',
                               f"[DIRECTOR] ...synthesis complete. Creating new Game Master: '{command['name']}'.")
             meta_dm_data = command
-            # Initialize the fusion tracking data structures
-            component_names = tuple(sorted([dm['name'] for dm in initial_dm_profiles]))
-            meta_dm_data['fused_personas'] = {component_names: command}
+            meta_dm_data['fused_personas'] = {base_component_names: command}
             meta_dm_data['component_dms'] = [dm['name'] for dm in initial_dm_profiles]
             roster_manager.decorate_and_add_character(self.engine, meta_dm_data, 'dm')
         else:
@@ -90,45 +91,38 @@ class DMManager:
             utils.log_message('debug', "[DM FUSION] Fuse called but no active meta-DM found. Aborting.")
             return
 
-        # Check if this base DM is already part of the fusion
         base_name_to_add = dm_to_fuse['name'].split(',')[0].strip()
-        if any(base_name_to_add in comp_name for comp_name in meta_dm.get('component_dms', [])):
+        current_base_components = [name.split(',')[0].strip() for name in meta_dm.get('component_dms', [])]
+        if base_name_to_add in current_base_components:
             utils.log_message('debug', f"[DM FUSION] DM '{base_name_to_add}' is already part of the meta-DM. Aborting.")
             return
 
-        # Tailor the DM if it's a global, untailored variant
         is_global = roster_manager.find_character_in_list(dm_to_fuse['name'], config.dm_roles) is not None or \
                     roster_manager.find_character_in_list(dm_to_fuse['name'], config.casting_dms) is not None
-
+        
         dm_variant_to_add = self._tailor_dm_for_scene(dm_to_fuse) if is_global else dm_to_fuse
 
-        # Construct the new component list and cache key
-        new_components = meta_dm['component_dms'] + [dm_variant_to_add['name']]
-        new_cache_key = tuple(sorted([name.split(',')[0].strip() for name in new_components]))
+        new_components_full_names = meta_dm['component_dms'] + [dm_variant_to_add['name']]
+        new_cache_key = tuple(sorted(current_base_components + [base_name_to_add]))
 
-        # Cache Hit: Use existing persona
         if new_cache_key in meta_dm.get('fused_personas', {}):
             utils.log_message('debug', f"[DM FUSION] Found cached persona for components: {new_cache_key}. Applying.")
             cached_persona = meta_dm['fused_personas'][new_cache_key]
             meta_dm.update(cached_persona)
-            meta_dm['component_dms'] = new_components
-        # Cache Miss: Synthesize a new persona
+            meta_dm['component_dms'] = new_components_full_names
         else:
-            utils.log_message('debug',
-                              f"[DM FUSION] No cached persona found for {new_cache_key}. Synthesizing new one.")
+            utils.log_message('debug', f"[DM FUSION] No cached persona found for {new_cache_key}. Synthesizing new one.")
+            
             all_dm_profiles_for_synthesis = []
-            for name in new_components:
-                # Find the full profile for each component name
-                profile = roster_manager.find_character(self.engine, name)
-                if not profile:
-                    # If not in active roster, check world casting files
-                    world_dms_path = file_io.join_path(self.engine.config.data_dir, 'worlds', self.engine.world_name,
-                                                       'casting_dms.json')
-                    world_dms = file_io.read_json(world_dms_path, default=[])
-                    profile = roster_manager.find_character_in_list(name, world_dms)
-                if profile:
+            
+            # 1. Get profiles for existing components from the roster
+            for name in meta_dm['component_dms']:
+                 if profile := roster_manager.find_character(self.engine, name):
                     all_dm_profiles_for_synthesis.append(profile)
 
+            # 2. Add the newly tailored profile
+            all_dm_profiles_for_synthesis.append(dm_variant_to_add)
+            
             dm_profiles_str = "\n---\n".join(
                 f"Name: {dm.get('name')}\nDescription: {dm.get('description')}\nInstructions: {dm.get('instructions')}"
                 for dm in all_dm_profiles_for_synthesis
@@ -138,10 +132,10 @@ class DMManager:
                                               task_prompt_kwargs=synth_kwargs)
             command = command_parser.parse_structured_command(self.engine, raw_synth_response, 'SUMMARIZER',
                                                               'CH_FIX_SYNTHESIZED_DM_JSON')
-
+            
             if command and all(k in command for k in ['name', 'description', 'instructions']):
                 meta_dm.update(command)
-                meta_dm['component_dms'] = new_components
+                meta_dm['component_dms'] = new_components_full_names
                 meta_dm['fused_personas'][new_cache_key] = command
                 utils.log_message('game', f"[DM FUSION] Meta-DM has evolved into: '{command['name']}'.")
             else:
@@ -159,30 +153,27 @@ class DMManager:
 
         component_list_str = "\n".join([f"- {name}" for name in meta_dm['component_dms']])
         kwargs = {"component_dm_list": component_list_str}
-        response = execute_task(self.engine, config.agents['DIRECTOR'], 'DIRECTOR_CHOOSE_DM_TO_UNFUSE', [],
-                                task_prompt_kwargs=kwargs)
+        response = execute_task(self.engine, config.agents['DIRECTOR'], 'DIRECTOR_CHOOSE_DM_TO_UNFUSE', [], task_prompt_kwargs=kwargs)
 
         if not response or 'none' in response.lower():
             utils.log_message('debug', "[DM FUSION] Director chose not to un-fuse a DM.")
             return
 
         name_to_remove = response.strip()
-
-        # Find the full name to remove, matching against the start of the component names
+        
         full_name_to_remove = next((comp for comp in meta_dm['component_dms'] if comp.startswith(name_to_remove)), None)
 
         if not full_name_to_remove:
             utils.log_message('debug', f"[DM FUSION] Could not find component '{name_to_remove}' to un-fuse.")
             return
 
-        new_components = [comp for comp in meta_dm['component_dms'] if comp != full_name_to_remove]
-        new_cache_key = tuple(sorted([name.split(',')[0].strip() for name in new_components]))
+        new_components_full_names = [comp for comp in meta_dm['component_dms'] if comp != full_name_to_remove]
+        new_cache_key = tuple(sorted([name.split(',')[0].strip() for name in new_components_full_names]))
 
         if new_cache_key in meta_dm.get('fused_personas', {}):
             cached_persona = meta_dm['fused_personas'][new_cache_key]
             meta_dm.update(cached_persona)
-            meta_dm['component_dms'] = new_components
+            meta_dm['component_dms'] = new_components_full_names
             utils.log_message('game', f"[DM FUSION] Meta-DM has simplified to: '{cached_persona['name']}'.")
         else:
-            utils.log_message('debug',
-                              f"[DM FUSION] [ERROR] Cache miss on un-fusion for key {new_cache_key}. This should not happen. Aborting.")
+            utils.log_message('debug', f"[DM FUSION] [ERROR] Cache miss on un-fusion for key {new_cache_key}. This should not happen. Aborting.")

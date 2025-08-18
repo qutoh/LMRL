@@ -85,7 +85,7 @@ class UIManager:
             AppState.AWAITING_SCENE_INPUT: "[ENTER] Submit Scene | [ESC] Cancel | [CTRL+V] Paste",
             "PLAYER_TAKEOVER": "[ENTER] Submit Response | [ESC] Cancel/Let AI Handle It | [CTRL+V] Paste",
             "PROMETHEUS_TAKEOVER": "[UP/DOWN] Select Tool | [LEFT/RIGHT] Toggle | [ENTER] Submit | [ESC] Cancel",
-            AppState.GAME_RUNNING: "[F8] Flag Response | [F9] Player Takeover | [F10/ESC] Save & Exit",
+            AppState.GAME_RUNNING: "[F7] Cast Manager | [F8] Flag Response | [F9] Player Takeover | [F10/ESC] Save & Exit",
             "IN_GAME_INPUT": "[ENTER] Submit Action | [ESC] Skip Action | [CTRL+V] Paste",
             "IN_GAME_MENU": "[UP/DOWN] Navigate | [ENTER] Select | [ESC] Cancel",
             AppState.CALIBRATING: "[ESC] Stop Calibration",
@@ -105,7 +105,6 @@ class UIManager:
             toast.text_fields = [message]
             self.toaster.show_toast(toast)
         except Exception as e:
-            # Fail silently if notifications don't work
             print(f"[UI NOTIFICATION ERROR] {e}")
 
     def _get_default_token_limit(self) -> int:
@@ -504,12 +503,14 @@ class UIManager:
                             continue
 
                     if self.input_queue:
-                        if converted_event.sym in (tcod.event.KeySym.F10, tcod.event.KeySym.ESCAPE):
-                            self.input_queue.put('__INTERRUPT_SAVE__')
-                        elif converted_event.sym == tcod.event.KeySym.F9:
-                            self.input_queue.put('__INTERRUPT_PLAYER__')
+                        if converted_event.sym == tcod.event.KeySym.F7:
+                            self.input_queue.put('__INTERRUPT_CAST_MANAGER__')
                         elif converted_event.sym == tcod.event.KeySym.F8:
                             self.input_queue.put('__FLAG_LAST_RESPONSE__')
+                        elif converted_event.sym == tcod.event.KeySym.F9:
+                            self.input_queue.put('__INTERRUPT_PLAYER__')
+                        elif converted_event.sym in (tcod.event.KeySym.F10, tcod.event.KeySym.ESCAPE):
+                            self.input_queue.put('__INTERRUPT_SAVE__')
         self.shutdown()
 
     def shutdown(self):

@@ -230,7 +230,8 @@ class PlayerInterface:
         # --- Redundant safety check to prevent deadlocks ---
         task_params = config.task_parameters.get(task_key, {})
         if not task_params.get("player_takeover_enabled"):
-            utils.log_message('debug', f"[PLAYER] handle_task_takeover called for disabled task '{task_key}'. Ignoring.")
+            utils.log_message('debug',
+                              f"[PLAYER] handle_task_takeover called for disabled task '{task_key}'. Ignoring.")
             return None
 
         # --- Task-to-Handler Mapping ---
@@ -242,3 +243,74 @@ class PlayerInterface:
         # --- Default Handler ---
         # Any other task with player_takeover_enabled: true will use this.
         return self._handle_default_takeover(**kwargs)
+
+    def _handle_add_character_menu(self, dms_added_this_session: list):
+        """Handles the sub-menu for adding characters."""
+        while True:
+            choice = self._get_player_menu_choice("Add Character", ["Load from Casting", "Create New Lead", "Back"])
+            if not choice or "Back" in choice:
+                break
+
+            if "Load" in choice:
+                available = roster_manager.get_available_casting_characters(self.engine)
+                if char_data := self._prompt_for_choice(available, "Select a character to load"):
+                    role_type = 'npc'
+                    if roster_manager.find_character_in_list(char_data['name'], config.casting_leads):
+                        role_type = 'lead'
+                    elif roster_manager.find_character_in_list(char_data['name'], config.casting_dms):
+                        role_type = 'dm'
+
+                    if role_type == 'dm' and not config.settings.get("enable_multiple_dms", False):
+                        dms_added_this_session.append(char_data)
+                        self.engine.render_queue.put(
+                            ('ADD_EVENT_LOG', f"Queued '{char_data['name']}' for DM fusion.", (150, 255, 150)))
+                    else:
+                        roster_manager.decorate_and_add_character(self.engine, char_data, role_type)
+                        self.engine.render_queue.put(
+                            ('ADD_EVENT_LOG', f"Added '{char_data['name']}' to the story.", (150, 255, 150)))
+
+            elif "Create" in choice:
+                role_prompt = "Enter a role for the new Lead (e.g., 'a grizzled veteran'), or leave blank for a generic one."
+                role_archetype = self._get_player_input(role_prompt).strip() or "A new adventurer joining the story."
+
+                context_str = "\n".join(
+                    [f"{entry['speaker']}: {entry['content']}" for entry in self.engine.dialogue_log[-15:]])
+                director_agent = config.agents['DIRECTOR']
+
+                if new_lead := character_factory.create_lead_from_role_and_scene(self.engine, director_agent,
+                                                                                 context_str, role_archetype):
+                    roster_manager.decorate_and_add_character(self.engine, new_lead, 'lead')
+                    self.engine.render_queue.put(
+                        ('ADD_EVENT_LOG', f"Created and added new lead '{new_lead['name']}'.", (150, 255, 150)))
+
+    def _handle_remove_character_menu(self):
+        """Handles the menu for removing characters using the Director's logic."""
+        all_chars = roster_manager.get_all_characters(self.engine)
+        if char_to_remove := self._prompt_for_choice(all_chars, "Select a character to remove", show_desc=False):
+            self.engine.director_manager.remove_character_from_story(char_to_remove['name'])
+            # The director's method will print its own success/failure message.
+
+    def initiate_cast_management_menu(self):
+        """Handles the main player-facing menu for managing the story's cast."""
+        self.engine.render_queue.put(('ADD_EVENT_LOG', "\n--- Cast & Crew Management ---", (100, 255, 255)))
+        dms_added_this_session = []
+
+        while True:
+            choice = self._get_player_menu_choice("Cast & Crew",
+                                                  ["Add Character or DM", "Remove Character or DM", "Done"])
+            if not choice or "Done" in choice:
+                break
+
+            if "Add" in choice:
+                self._handle_add_character_menu(dms_added_this_session)
+            elif "Remove" in choice:
+                self._handle_remove_character_menu()
+
+        # Post-menu processing for DMs
+        if dms_added_this_session and not config.settings.get("enable_multiple_dms", False):
+            self.engine.render_queue.put(('ADD_EVENT_LOG', "Processing newly added DMs...", (200, 200, 255)))
+            for dm_profile in dms_added_this_session:
+                self.engine.dm_manager.fuse_dm_into_meta(dm_profile)
+
+        file_io.save_active_character_files(self.engine)
+        self.engine.render_queue.put(('ADD_EVENT_LOG', "--- Cast Management Closed ---", (100, 255, 255)))
