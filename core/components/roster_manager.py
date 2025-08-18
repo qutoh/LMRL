@@ -252,19 +252,6 @@ def create_and_add_lead(engine, dialogue_log):
     return None
 
 
-def inject_lead_summary_into_dms(engine):
-    """Adds a summary of the current lead characters to the instructions of all DMs."""
-    leads = [c for c in engine.characters if c.get('role_type') == 'lead']
-    if not leads: return
-    lead_summaries = [f"- **{lead['name']}**: {lead['description']}" for lead in leads]
-    full_summary = f"\n\n--- CURRENT PARTY ROSTER ---\nThe current adventuring party you are overseeing consists of the following individuals:\n" + "\n".join(
-        lead_summaries)
-    utils.log_message('debug', loc('system_lead_summary_header'))
-    utils.log_message('debug', full_summary)
-    for char in engine.characters:
-        if char.get('role_type') == 'dm':
-            char['instructions'] += full_summary
-
 
 def spawn_entities_from_roster(engine, game_state):
     """Creates Entity objects in the game_state for all positional characters."""

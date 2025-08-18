@@ -9,12 +9,13 @@ class Config:
         self.data_dir = file_io.join_path(file_io.PROJECT_ROOT, data_dir_name)
 
         self.settings = self._load_json('settings.json')
-        self.default_settings = self._load_json('default_settings.json', default={})  # NEW
+        self.default_settings = self._load_json('default_settings.json', default={})
 
         self.leads = self._load_json('leads.json')
         self.dm_roles = self._load_json('dm_roles.json')
         self.agents = self._load_json('agents.json', default={})
         self.scene = self._load_json('scene.json', default=[{"scene_prompt": "A story begins."}])
+        self.model_output_parsers = self._load_json('model_output_parsers.json', default={})
 
         self.levels = {}
         self.generated_scenes = []
@@ -29,7 +30,6 @@ class Config:
         self.casting_npcs = self._load_json('casting_npcs.json')
         self.casting_dms = self._load_json('casting_dms.json')
 
-        # --- MODIFIED: Load task parameters from a directory ---
         self.task_parameters = self._load_task_parameters()
 
         self.calibration_groups = self._load_json('calibration_groups.json', default={})
@@ -52,7 +52,6 @@ class Config:
             if filename.endswith('.json'):
                 file_path = file_io.join_path(params_dir, filename)
                 params_data = file_io.read_json(file_path, default={})
-                # Check for duplicate keys before merging
                 for key in params_data:
                     if key in merged_params:
                         print(
@@ -61,7 +60,7 @@ class Config:
 
         return merged_params
 
-    def save_settings(self):  # NEW
+    def save_settings(self):
         """Saves the current settings dictionary to settings.json."""
         path = file_io.join_path(self.data_dir, 'settings.json')
         return file_io.write_json(path, self.settings)

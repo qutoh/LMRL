@@ -1,5 +1,6 @@
 # /core/llm/llm_api.py
 
+import re
 import lmstudio as lms
 import google.generativeai as genai
 import uuid
@@ -9,6 +10,39 @@ from ..common.utils import log_message, get_text_from_messages
 from ..common.localization import loc
 from ..common import file_io
 from . import sampling_manager
+
+
+def _parse_and_strip_thinking_block(raw_text: str, model_id: str) -> str:
+    """
+    Checks for model-specific parsing rules and processes the raw LLM output.
+    - If response tags are found, it extracts the content between them.
+    - If only think tags are found, it strips the thinking block and returns the rest.
+    - If no rules apply, it returns the original text.
+    """
+    parser_config = config.model_output_parsers.get(model_id)
+    if not parser_config:
+        return raw_text
+
+    think_start = parser_config.get("think_start_str")
+    think_end = parser_config.get("think_end_str")
+    response_start = parser_config.get("response_start_str")
+    response_end = parser_config.get("response_end_str")
+
+    # Priority 1: Extract content from a dedicated response block if tags are defined.
+    if response_start and response_end:
+        pattern = re.compile(re.escape(response_start) + '(.*?)' + re.escape(response_end), re.DOTALL)
+        match = re.search(pattern, raw_text)
+        if match:
+            return match.group(1).strip()
+
+    # Priority 2: If no response block was found, strip a dedicated thinking block.
+    if think_start and think_end:
+        pattern = re.compile(re.escape(think_start) + '.*?' + re.escape(think_end), re.DOTALL)
+        # Replace the first occurrence of the thinking block with an empty string.
+        return re.sub(pattern, '', raw_text, count=1).strip()
+
+    # Fallback: If no tags matched or the configuration was partial.
+    return raw_text
 
 
 def _prepare_messages_for_llm(
@@ -86,9 +120,6 @@ def execute_task(engine, agent_or_character: dict, task_key: str, messages: list
     final_top_k = params['top_k']
     final_top_p = params['top_p']
 
-    task_prompt_key = task_params.get('task_prompt_key') if task_key != 'GENERIC_TURN' else None
-
-    # --- Persona and System Prompt Construction ---
     instructions = agent_or_character.get('instructions', '')
     if role_type in ['lead', 'npc']:
         persona = loc('prompt_system_character_wrapper', instructions=instructions)
@@ -97,6 +128,7 @@ def execute_task(engine, agent_or_character: dict, task_key: str, messages: list
     else:  # For agents
         persona = agent_or_character.get('persona', instructions)
 
+    task_prompt_key = task_params.get('task_prompt_key') if task_key != 'GENERIC_TURN' else None
     full_messages = _prepare_messages_for_llm(persona, task_prompt_key, messages, task_prompt_kwargs)
 
     raw_response = get_llm_response(
@@ -111,6 +143,8 @@ def execute_task(engine, agent_or_character: dict, task_key: str, messages: list
         "top_p": final_top_p, "top_k": final_top_k, "prompt": full_messages,
         "raw_response": raw_response, "annotation": {"status": "PASS"}
     }
+
+    processed_response = _parse_and_strip_thinking_block(raw_response, model_identifier)
 
     log_path = ""
     if role_type in ['lead', 'npc', 'dm'] and hasattr(engine, 'character_log_sessions'):
@@ -145,7 +179,7 @@ def execute_task(engine, agent_or_character: dict, task_key: str, messages: list
     if log_path and hasattr(engine, 'last_interaction_log'):
         engine.last_interaction_log = {"log_id": log_id, "log_path": log_path}
 
-    return raw_response
+    return processed_response
 
 
 def get_model_context_length(model_identifier):

@@ -157,8 +157,6 @@ class DirectorManager:
             for dm_profile in chosen_dm_profiles:
                 roster_manager.decorate_and_add_character(self.engine, dm_profile, 'dm')
 
-        roster_manager.inject_lead_summary_into_dms(self.engine)
-
     def _get_director_command(self, character):
         """Prepares prompt, gets a response from the Director, and parses it."""
         conversation_str = "\n".join(
