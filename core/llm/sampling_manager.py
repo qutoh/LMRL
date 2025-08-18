@@ -26,7 +26,7 @@ def _determine_temperature(
                     f"[SAMPLING] Key: {task_key}, Model: {model_identifier}, Using CALIBRATION OVERRIDE Temp: {temperature_override:.2f}")
         return temperature_override
 
-    calibrated_temp = None
+    calibrated_temp_data = None
     group = _get_calibration_group_for_task(task_key)
 
     if group and hasattr(config, 'calibrated_temperatures'):
@@ -41,9 +41,10 @@ def _determine_temperature(
                     break
 
         if representative_task_key and (model_temps := config.calibrated_temperatures.get(model_identifier)):
-            calibrated_temp = model_temps.get(representative_task_key)
+            calibrated_temp_data = model_temps.get(representative_task_key)
 
-    if calibrated_temp is not None:
+    if calibrated_temp_data and isinstance(calibrated_temp_data, dict) and 'temperature' in calibrated_temp_data:
+        calibrated_temp = calibrated_temp_data['temperature']
         log_message('full',
                     f"[SAMPLING] Key: {task_key} (Group Rep: {representative_task_key}), Model: {model_identifier}, Using CALIBRATED Temp: {calibrated_temp:.2f}")
         return calibrated_temp
