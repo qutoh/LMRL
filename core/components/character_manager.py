@@ -10,6 +10,7 @@ class CharacterManager:
     A utility class to handle the creation and updating of a character's
     internal state (`character_state`).
     """
+
     def __init__(self):
         pass
 
@@ -24,9 +25,11 @@ class CharacterManager:
         equipment_str = "\nYou are carrying/wearing:\n" + "\n".join(equipment_lines) if equipment_lines else ""
         return f"{phys_desc}{equipment_str}"
 
-    def _get_events_context_for_state_update(self, engine, character_to_update: dict, dialogue_entry: dict, events: dict) -> str:
+    def _get_events_context_for_state_update(self, engine, character_to_update: dict, dialogue_entry: dict,
+                                             events: dict) -> str:
         """Builds the recent events summary string for the state update prompt."""
-        event_lines = [f"The last thing that happened was: \"{dialogue_entry['speaker']}: {dialogue_entry['content']}\""]
+        event_lines = [
+            f"The last thing that happened was: \"{dialogue_entry['speaker']}: {dialogue_entry['content']}\""]
 
         if character_to_update['name'] == dialogue_entry['speaker']:
             if time_seconds := events.get('time_passed_seconds'):
@@ -53,6 +56,7 @@ class CharacterManager:
 
         kwargs = {
             "character_name": character.get('name', 'N/A'),
+            "current_state": character.get('character_state', 'I am new to this situation.'),
             "surroundings_context": surroundings,
             "physical_context": physical,
             "events_context": events
@@ -95,7 +99,8 @@ class CharacterManager:
 
         # Handle the special case of a newly added character first.
         if character_to_update['name'] == events.get('character_added'):
-            surroundings = position_manager.get_local_context_for_character(engine, engine.game_state, character_to_update['name'])
+            surroundings = position_manager.get_local_context_for_character(engine, engine.game_state,
+                                                                            character_to_update['name'])
             physical = self._get_physical_context_for_state_update(engine, character_to_update, events)
             events_str = self._get_events_context_for_state_update(engine, character_to_update, dialogue_entry, events)
             self._execute_state_update(engine, character_to_update, surroundings, physical, events_str)

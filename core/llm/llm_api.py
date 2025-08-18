@@ -25,8 +25,6 @@ def _prepare_messages_for_llm(
 
     if task_prompt_key:
         task_content = loc(task_prompt_key, **(task_prompt_kwargs or {}))
-        # If there are no other user messages, this task content IS the user message.
-        # Otherwise, append it as a new instruction.
         if not final_messages or not any(msg.get('role') == 'user' for msg in final_messages):
             final_messages.append({"role": "user", "content": task_content})
         else:
@@ -34,7 +32,6 @@ def _prepare_messages_for_llm(
 
     if not any(msg.get('role') == 'user' for msg in final_messages):
         log_message('debug', "[LLM_API WARNING] No user messages in final prompt. Adding generic fallback.")
-        log_message('debug', f'Full kwargs: {task_prompt_kwargs},\n Full messages: {final_messages}\n Key: {task_prompt_key}')
         final_messages.append({"role": "user", "content": "What do you do next?"})
 
     return [system_message] + final_messages
@@ -90,7 +87,16 @@ def execute_task(engine, agent_or_character: dict, task_key: str, messages: list
     final_top_p = params['top_p']
 
     task_prompt_key = task_params.get('task_prompt_key') if task_key != 'GENERIC_TURN' else None
-    persona = agent_or_character.get('persona') or agent_or_character.get('instructions', '')
+
+    # --- Persona and System Prompt Construction ---
+    instructions = agent_or_character.get('instructions', '')
+    if role_type in ['lead', 'npc']:
+        persona = loc('prompt_system_character_wrapper', instructions=instructions)
+    elif role_type == 'dm':
+        persona = loc('prompt_system_dm_wrapper', instructions=instructions)
+    else:  # For agents
+        persona = agent_or_character.get('persona', instructions)
+
     full_messages = _prepare_messages_for_llm(persona, task_prompt_key, messages, task_prompt_kwargs)
 
     raw_response = get_llm_response(
@@ -140,7 +146,6 @@ def execute_task(engine, agent_or_character: dict, task_key: str, messages: list
         engine.last_interaction_log = {"log_id": log_id, "log_path": log_path}
 
     return raw_response
-
 
 
 def get_model_context_length(model_identifier):

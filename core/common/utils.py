@@ -130,7 +130,6 @@ def serialize_character_for_prompt(character: dict) -> str:
             lines.extend([f"- {item}" for item in value])
         elif isinstance(value, str):
             lines.append(f"\nYour {key} is: {value}")
-
     return "\n".join(lines)
 
 

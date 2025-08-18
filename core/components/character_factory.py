@@ -17,7 +17,7 @@ def _prepare_physical_description_task(base_kwargs: dict, role_hint: str, scene_
     kwargs = base_kwargs.copy()
 
     if config.settings.get("ENABLE_PAPER_DOLL_MODE"):
-        kwargs['equipment_instruction'] = loc('prompt_substring_paper_doll_off')
+        kwargs['equipment_instruction'] = loc('prompt_substring_paper_doll_on')
     else:
         kwargs['equipment_instruction'] = loc('prompt_substring_paper_doll_off')
     kwargs['role_archetype'] = role_hint
