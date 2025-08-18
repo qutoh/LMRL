@@ -30,7 +30,7 @@
         "think_start_str": "THINKING:",
         "think_end_str": "END_THINKING",
         "response_start_str": "RESPONSE:",
-        "response_end_str": "END_RESPONSE"
+        "response_end_str": "END_RESPONSE",
 		"disable_reasoning_command": "Skip your thinking process and provide only the final RESPONSE."
     }
 }
