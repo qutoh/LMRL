@@ -30,15 +30,17 @@ def _parse_and_strip_thinking_block(raw_text: str, model_id: str) -> str:
 
     # Priority 1: Extract content from a dedicated response block if tags are defined.
     if response_start and response_end:
-        pattern = re.compile(re.escape(response_start) + '(.*?)' + re.escape(response_end), re.DOTALL)
+        # Use a more robust regex that allows for whitespace around tags and content.
+        pattern = re.compile(re.escape(response_start) + r'\s*(.*?)\s*' + re.escape(response_end), re.DOTALL)
         match = re.search(pattern, raw_text)
         if match:
             return match.group(1).strip()
 
     # Priority 2: If no response block was found, strip a dedicated thinking block.
     if think_start and think_end:
-        pattern = re.compile(re.escape(think_start) + '.*?' + re.escape(think_end), re.DOTALL)
-        # Replace the first occurrence of the thinking block with an empty string.
+        # Use a more robust regex for stripping the think block.
+        pattern = re.compile(r'\s*' + re.escape(think_start) + '.*?' + re.escape(think_end) + r'\s*', re.DOTALL)
+        # Replace the first occurrence of the thinking block (and surrounding whitespace) with an empty string.
         return re.sub(pattern, '', raw_text, count=1).strip()
 
     # Fallback: If no tags matched or the configuration was partial.
@@ -49,12 +51,22 @@ def _prepare_messages_for_llm(
         persona: str,
         task_prompt_key: str | None,
         messages: list,
-        task_prompt_kwargs: dict | None
+        task_prompt_kwargs: dict | None,
+        model_id: str,
+        enable_reasoning: bool
 ) -> list[dict]:
     """
     Assembles the final list of messages to be sent to the LLM.
     """
-    system_message = {"role": "system", "content": persona}
+    final_persona = persona
+    # Check for model-specific reasoning disable command
+    if not enable_reasoning:
+        parser_config = config.model_output_parsers.get(model_id)
+        if parser_config and parser_config.get("disable_reasoning_command"):
+            final_persona = f"{parser_config['disable_reasoning_command']}\n\n{persona}"
+            log_message('full', f"[LLM_API] Injected disable reasoning command for model {model_id}.")
+
+    system_message = {"role": "system", "content": final_persona}
     final_messages = list(messages)
 
     if task_prompt_key:
@@ -128,8 +140,22 @@ def execute_task(engine, agent_or_character: dict, task_key: str, messages: list
     else:  # For agents
         persona = agent_or_character.get('persona', instructions)
 
+    # Determine reasoning enablement based on priority:
+    # 1. Task-level enable_reasoning flag (if present)
+    # 2. Agent-level enable_reasoning flag (if present)
+    # 3. Global role-type setting (if present)
+    # 4. Default to True
+    enable_reasoning_for_task = task_params.get(
+        'enable_reasoning',
+        agent_or_character.get(
+            'enable_reasoning',
+            config.settings.get(f"ENABLE_{role_type.upper()}_REASONING", True) if role_type else True
+        )
+    )
+
     task_prompt_key = task_params.get('task_prompt_key') if task_key != 'GENERIC_TURN' else None
-    full_messages = _prepare_messages_for_llm(persona, task_prompt_key, messages, task_prompt_kwargs)
+    full_messages = _prepare_messages_for_llm(persona, task_prompt_key, messages, task_prompt_kwargs, model_identifier,
+                                              enable_reasoning_for_task)
 
     raw_response = get_llm_response(
         engine, agent_or_character, full_messages,
