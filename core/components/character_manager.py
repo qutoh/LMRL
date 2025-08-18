@@ -94,7 +94,7 @@ class CharacterManager:
         Builds a tailored context and calls the LLM to update a single character's
         internal state after their turn.
         """
-        if not character_to_update:
+        if not character_to_update or not character_to_update.get('is_positional'):
             return
 
         # Handle the special case of a newly added character first.

@@ -1,6 +1,7 @@
 # /core/components/roster_manager.py
 
 import random
+import ast
 from ..common.config_loader import config
 from ..common import utils
 from ..common import file_io
@@ -32,7 +33,7 @@ def get_or_create_character_from_concept(engine, char_concept: dict | str, locat
 
     # --- SEARCH PHASE: Check all casting files first, with inhabitant cache as top priority ---
     inhabitant_path = file_io.join_path(engine.config.data_dir, 'worlds', engine.world_name,
-                                                'inhabitants.json')
+                                        'inhabitants.json')
     inhabitant_list = file_io.read_json(inhabitant_path, default=[])
 
     # Priority 1: Check the dedicated inhabitant cache for this world.
@@ -143,8 +144,24 @@ def decorate_and_add_character(engine, character_data, role_type):
 
     # --- Decorate with in-memory run-time attributes ---
     char = character_data.copy()
+
+    # Convert stringified tuple keys back to tuples upon loading a saved meta-DM.
+    if 'fused_personas' in char and isinstance(char['fused_personas'], dict):
+        tuple_keyed_personas = {}
+        for key, value in char['fused_personas'].items():
+            # Use ast.literal_eval to safely convert string back to tuple
+            try:
+                tuple_key = ast.literal_eval(key)
+                if isinstance(tuple_key, tuple):
+                    tuple_keyed_personas[tuple_key] = value
+                else:  # Fallback if key isn't a tuple string (shouldn't happen with our save logic)
+                    tuple_keyed_personas[key] = value
+            except (ValueError, SyntaxError):
+                # Key was not a string representation of a tuple, keep as is.
+                tuple_keyed_personas[key] = value
+        char['fused_personas'] = tuple_keyed_personas
+
     char['role_type'] = role_type
-    char['character_state'] = ""
 
     if role_type == 'lead':
         char.update({'is_positional': True, 'is_director_managed': True, 'is_essential': True, 'is_controllable': True})
@@ -169,15 +186,19 @@ def decorate_and_add_character(engine, character_data, role_type):
     char['temperature'] = char.get('temperature', default_temp)
     char['scaling_factor'] = char.get('scaling_factor', default_scale)
 
-    if 'physical_description' not in char:
-        char['physical_description'] = "No specific description available."
-    if 'equipment' not in char:
-        char['equipment'] = {"equipped": [], "removed": [], "outfits": {}}
+    # Only add positional attributes if the character is meant to be in the scene.
+    if char.get('is_positional'):
+        char['character_state'] = ""
+        if 'physical_description' not in char:
+            char['physical_description'] = "No specific description available."
+        if 'equipment' not in char:
+            char['equipment'] = {"equipped": [], "removed": [], "outfits": {}}
 
     add_character(engine, char)
     log_message('game', f"{char.get('name', 'A new character')} has joined the story.")
-    if phys_desc := char.get('physical_description'):
-        log_message('game', f"-> {phys_desc}")
+    if char.get('is_positional'):
+        if phys_desc := char.get('physical_description'):
+            log_message('game', f"-> {phys_desc}")
 
     utils.log_message('debug', loc('system_roster_loaded', role_type=role_type.upper(), char_name=char['name'],
                                    model_name=char.get('model')))

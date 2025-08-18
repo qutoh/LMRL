@@ -290,6 +290,13 @@ def save_active_character_files(engine):
     clean_characters = []
     for char in engine.characters:
         char_copy = {k: v for k, v in char.items() if not k.startswith('is_')}
+
+        # Convert tuple keys in fused_personas to strings for JSON serialization.
+        if 'fused_personas' in char_copy and isinstance(char_copy['fused_personas'], dict):
+            # Using str() is safe and sufficient for this purpose.
+            string_keyed_personas = {str(key): value for key, value in char_copy['fused_personas'].items()}
+            char_copy['fused_personas'] = string_keyed_personas
+
         if 'role_type' in char_copy:
             clean_characters.append(char_copy)
 

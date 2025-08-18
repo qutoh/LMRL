@@ -19,14 +19,14 @@ class DMManager:
     def _tailor_dm_for_scene(self, dm_profile: dict) -> dict:
         """Creates a scene-specific variant of a global DM."""
         tuned_dm = dm_profile.copy()
-        
-        shared_context_str = loc('prompt_substring_world_scene_context', 
-                                 world_theme=self.engine.world_theme, 
+
+        shared_context_str = loc('prompt_substring_world_scene_context',
+                                 world_theme=self.engine.world_theme,
                                  scene_prompt=self.engine.scene_prompt)
 
         tune_kwargs = {
             "prompt_substring_world_scene_context": shared_context_str,
-            "dm_name": tuned_dm['name'], 
+            "dm_name": tuned_dm['name'],
             "dm_instructions": tuned_dm.get('instructions', '')
         }
         new_instructions_str = execute_task(self.engine, config.agents['DIRECTOR'],
@@ -58,7 +58,7 @@ class DMManager:
 
         # The key should be based on the original, untailored names.
         base_component_names = tuple(sorted([dm['name'].split(',')[0].strip() for dm in initial_dm_profiles]))
-        
+
         dm_profiles_str = "\n---\n".join(
             f"Name: {dm.get('name')}\nDescription: {dm.get('description')}\nInstructions: {dm.get('instructions')}"
             for dm in initial_dm_profiles
@@ -72,9 +72,14 @@ class DMManager:
         if command and all(k in command for k in ['name', 'description', 'instructions']):
             utils.log_message('game',
                               f"[DIRECTOR] ...synthesis complete. Creating new Game Master: '{command['name']}'.")
-            meta_dm_data = command
-            meta_dm_data['fused_personas'] = {base_component_names: command}
+
+            # 'command' is the pure persona. Create the full meta_dm object.
+            meta_dm_data = command.copy()
+
+            # The cache should store a copy of the pure persona to prevent recursion.
+            meta_dm_data['fused_personas'] = {base_component_names: command.copy()}
             meta_dm_data['component_dms'] = [dm['name'] for dm in initial_dm_profiles]
+
             roster_manager.decorate_and_add_character(self.engine, meta_dm_data, 'dm')
         else:
             utils.log_message('debug', "[DIRECTOR] DM synthesis failed. Falling back to using multiple DMs.")
@@ -99,7 +104,7 @@ class DMManager:
 
         is_global = roster_manager.find_character_in_list(dm_to_fuse['name'], config.dm_roles) is not None or \
                     roster_manager.find_character_in_list(dm_to_fuse['name'], config.casting_dms) is not None
-        
+
         dm_variant_to_add = self._tailor_dm_for_scene(dm_to_fuse) if is_global else dm_to_fuse
 
         new_components_full_names = meta_dm['component_dms'] + [dm_variant_to_add['name']]
@@ -112,9 +117,9 @@ class DMManager:
             meta_dm['component_dms'] = new_components_full_names
         else:
             utils.log_message('debug', f"[DM FUSION] No cached persona found for {new_cache_key}. Synthesizing new one.")
-            
+
             all_dm_profiles_for_synthesis = []
-            
+
             # 1. Get profiles for existing components from the roster
             for name in meta_dm['component_dms']:
                  if profile := roster_manager.find_character(self.engine, name):
@@ -122,7 +127,7 @@ class DMManager:
 
             # 2. Add the newly tailored profile
             all_dm_profiles_for_synthesis.append(dm_variant_to_add)
-            
+
             dm_profiles_str = "\n---\n".join(
                 f"Name: {dm.get('name')}\nDescription: {dm.get('description')}\nInstructions: {dm.get('instructions')}"
                 for dm in all_dm_profiles_for_synthesis
@@ -132,7 +137,7 @@ class DMManager:
                                               task_prompt_kwargs=synth_kwargs)
             command = command_parser.parse_structured_command(self.engine, raw_synth_response, 'SUMMARIZER',
                                                               'CH_FIX_SYNTHESIZED_DM_JSON')
-            
+
             if command and all(k in command for k in ['name', 'description', 'instructions']):
                 meta_dm.update(command)
                 meta_dm['component_dms'] = new_components_full_names
@@ -160,7 +165,7 @@ class DMManager:
             return
 
         name_to_remove = response.strip()
-        
+
         full_name_to_remove = next((comp for comp in meta_dm['component_dms'] if comp.startswith(name_to_remove)), None)
 
         if not full_name_to_remove:

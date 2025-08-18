@@ -78,8 +78,14 @@ class PrometheusManager:
             return []
 
         equipment_agent = config.agents['EQUIPMENT_MANAGER']
-        all_chars_in_scene = [c['name'] for c in roster_manager.get_all_characters(self.engine)]
-        char_list_str = "; ".join(all_chars_in_scene)
+
+        # Filter for only positional characters BEFORE asking the LLM to identify targets.
+        all_positional_chars = [c for c in roster_manager.get_all_characters(self.engine) if c.get('is_positional')]
+        char_list_str = "; ".join([c['name'] for c in all_positional_chars])
+
+        if not char_list_str:
+            return []
+
         target_kwargs = {"character_list": char_list_str, "recent_events": dialogue_entry.get('content', '')}
 
         targets_response = execute_task(self.engine, equipment_agent, 'EQUIPMENT_IDENTIFY_TARGETS', [],
@@ -90,7 +96,8 @@ class PrometheusManager:
         affected_names = [name.strip() for name in targets_response.split(';') if name.strip()]
         final_affected = []
         for name in affected_names:
-            target_char = next((char for char in all_chars_in_scene if name.lower() in char.lower()), None)
+            target_char = next((char['name'] for char in all_positional_chars if name.lower() in char['name'].lower()),
+                               None)
             if target_char:
                 utils.log_message('debug', f"[PROMETHEUS] Dispatching equipment modification for '{target_char}'.")
                 self.engine.item_manager.modify_character_equipment(target_char, dialogue_entry['content'])
