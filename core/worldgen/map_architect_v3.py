@@ -3,14 +3,14 @@
 import random
 from typing import Callable, Tuple, Generator
 
-from .v3_components.v3_llm import V3_LLM
-from .v3_components.placement import Placement
-from .v3_components.map_ops import MapOps
-from .v3_components.interior import Interior
-from .v3_components.pathing import Pathing
 from .v3_components.converter import Converter
-from ..common.game_state import GenerationState, MapArtist
+from .v3_components.interior import Interior
+from .v3_components.map_ops import MapOps
+from .v3_components.pathing import Pathing
+from .v3_components.placement import Placement
+from .v3_components.v3_llm import V3_LLM
 from ..common.config_loader import config
+from ..common.game_state import GenerationState, MapArtist
 
 # --- Algorithm Constants ---
 MAX_SUBFEATURES_TO_PLACE = 15
@@ -76,7 +76,14 @@ class MapArchitectV3:
 
             if not parent_branch.narrative_log: parent_branch.narrative_log = self.llm.get_narrative_seed(
                 parent_branch.name) or ""
-            narrative_beat = self.llm.get_next_narrative_beat(parent_branch.narrative_log)
+
+            other_features_context_list = [
+                f"({branch.feature_type} - \"{branch.narrative_log}...\")"
+                for branch in self.initial_feature_branches if branch is not parent_branch
+            ]
+            other_features_context = "\n".join(other_features_context_list) if other_features_context_list else "None."
+
+            narrative_beat = self.llm.get_next_narrative_beat(parent_branch.narrative_log, other_features_context)
             if not narrative_beat: continue
             parent_branch.narrative_log += " " + narrative_beat
             feature_data = self.llm.define_feature_from_sentence(narrative_beat)

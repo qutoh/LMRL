@@ -1,7 +1,9 @@
 # /core/ui/views/calibration_view.py
 
 from collections import Counter
+
 import tcod
+
 from ..ui_framework import View, DynamicTextBox, EventLog
 
 

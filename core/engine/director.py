@@ -1,11 +1,12 @@
-# /core/director.py
+# /core/engine/director.py
 
 import random
+
+from core.common import command_parser, file_io, utils
 from core.common.config_loader import config
 from core.common.localization import loc
-from core.components import roster_manager
 from core.components import character_factory
-from core.common import command_parser, file_io, utils
+from core.components import roster_manager
 from core.llm.llm_api import execute_task
 
 
@@ -126,36 +127,39 @@ class DirectorManager:
             else:
                 utils.log_message('debug', f"[DIRECTOR WARNING] Failed to generate a required lead for role '{role}'.")
 
-            all_chars = self.engine.characters
-            char_roster_summary = "\n".join(
-                [f"- {c['name']} ({c.get('role_type', 'char')}): {c['description']}" for c in all_chars])
+        # --- DM Management (Performed ONCE after all other characters are set) ---
+        all_chars = self.engine.characters
+        char_roster_summary = "\n".join(
+            [f"- {c['name']} ({c.get('role_type', 'char')}): {c['description']}" for c in all_chars])
 
-            # Use the merged list from the config object, which now includes world-specific DMs.
-            dm_casting_list = config.casting_dms
-            dm_list_str = "\n".join([f"- {dm['name']}: {dm['description']}" for dm in dm_casting_list])
+        dm_casting_list = config.casting_dms
+        dm_list_str = "\n".join([f"- {dm['name']}: {dm['description']}" for dm in dm_casting_list])
 
-            dm_kwargs = {
-                "prompt_substring_world_scene_context": shared_context_str,
-                "character_roster_summary": char_roster_summary,
-                "dm_list": dm_list_str
-            }
-            chosen_dms_str = execute_task(self.engine, self.director_agent, 'DIRECTOR_CHOOSE_DMS_FOR_SCENE', [],
-                                          task_prompt_kwargs=dm_kwargs)
+        dm_kwargs = {
+            "prompt_substring_world_scene_context": shared_context_str,
+            "character_roster_summary": char_roster_summary,
+            "dm_list": dm_list_str
+        }
+        chosen_dms_str = execute_task(self.engine, self.director_agent, 'DIRECTOR_CHOOSE_DMS_FOR_SCENE', [],
+                                      task_prompt_kwargs=dm_kwargs)
 
-            chosen_dm_profiles = []
-            if chosen_dms_str and 'none' not in chosen_dms_str.lower():
-                chosen_dm_names = [name.strip() for name in chosen_dms_str.split(';') if name.strip()]
-                for name in chosen_dm_names:
-                    if dm_to_load := roster_manager.find_character_in_list(name, dm_casting_list):
-                        chosen_dm_profiles.append(self.engine.dm_manager._tailor_dm_for_scene(dm_to_load))
+        chosen_dm_profiles = []
+        if chosen_dms_str and 'none' not in chosen_dms_str.lower():
+            chosen_dm_names = [name.strip() for name in chosen_dms_str.split(';') if name.strip()]
+            for name in chosen_dm_names:
+                if dm_to_load := roster_manager.find_character_in_list(name, dm_casting_list):
+                    chosen_dm_profiles.append(self.engine.dm_manager._tailor_dm_for_scene(dm_to_load))
 
-            # --- DM Synthesis or Individual Addition ---
-            if not config.settings.get("enable_multiple_dms", False) and len(chosen_dm_profiles) > 0:
-                self.engine.dm_manager.initialize_meta_dm(chosen_dm_profiles)
-            else:
-                for dm_profile in chosen_dm_profiles:
-                    roster_manager.decorate_and_add_character(self.engine, dm_profile, 'dm')
+        # --- DM Synthesis or Individual Addition ---
+        if not config.settings.get("enable_multiple_dms", False) and len(chosen_dm_profiles) > 0:
+            self.engine.dm_manager.initialize_meta_dm(chosen_dm_profiles)
+        else:
+            for dm_profile in chosen_dm_profiles:
+                roster_manager.decorate_and_add_character(self.engine, dm_profile, 'dm')
 
+
+    def _get_director_command(self, character):
+        """Prepares prompt, gets a response from the Director, and parses it."""
     def _get_director_command(self, character):
         """Prepares prompt, gets a response from the Director, and parses it."""
         conversation_str = "\n".join(

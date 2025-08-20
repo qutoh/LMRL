@@ -1,29 +1,30 @@
 # /core/llm/llm_api.py
 
 import re
-import lmstudio as lms
-import google.generativeai as genai
 import uuid
 from datetime import datetime
+
+import google.generativeai as genai
+import lmstudio as lms
+
 from core.common.config_loader import config
-from ..common.utils import log_message, get_text_from_messages
-from ..common.localization import loc
-from ..common import file_io
 from . import sampling_manager
+from ..common import file_io
+from ..common.localization import loc
+from ..common.utils import log_message, get_text_from_messages
 
 
 def _parse_and_strip_thinking_block(raw_text: str, model_id: str) -> str:
     """
     Checks for model-specific parsing rules and processes the raw LLM output.
     - If response tags are found, it extracts the content between them.
-    - If only think tags are found, it strips the thinking block and returns the rest.
+    - If an end-of-thought tag is found, it treats everything after it as the response.
     - If no rules apply, it returns the original text.
     """
-    parser_config = config.model_output_parsers.get(model_id)
+    parser_config = config.model_tuning.get(model_id)
     if not parser_config:
         return raw_text
 
-    think_start = parser_config.get("think_start_str")
     think_end = parser_config.get("think_end_str")
     response_start = parser_config.get("response_start_str")
     response_end = parser_config.get("response_end_str")
@@ -36,12 +37,13 @@ def _parse_and_strip_thinking_block(raw_text: str, model_id: str) -> str:
         if match:
             return match.group(1).strip()
 
-    # Priority 2: If no response block was found, strip a dedicated thinking block.
-    if think_start and think_end:
-        # Use a more robust regex for stripping the think block.
-        pattern = re.compile(r'\s*' + re.escape(think_start) + '.*?' + re.escape(think_end) + r'\s*', re.DOTALL)
-        # Replace the first occurrence of the thinking block (and surrounding whitespace) with an empty string.
-        return re.sub(pattern, '', raw_text, count=1).strip()
+    # Priority 2: Split the response at the first end-of-thought marker.
+    # This robustly handles cases where the start tag is missing.
+    if think_end:
+        parts = raw_text.split(think_end, 1)
+        if len(parts) > 1:
+            # We have successfully split the string. The response is the second part.
+            return parts[1].strip()
 
     # Fallback: If no tags matched or the configuration was partial.
     return raw_text
@@ -56,31 +58,62 @@ def _prepare_messages_for_llm(
         enable_reasoning: bool
 ) -> list[dict]:
     """
-    Assembles the final list of messages to be sent to the LLM.
+    Assembles the final list of messages to be sent to the LLM, respecting model-specific
+    tuning preferences for persona placement and system prompt construction.
     """
-    final_persona = persona
-    # Check for model-specific reasoning disable command
-    if not enable_reasoning:
-        parser_config = config.model_output_parsers.get(model_id)
-        if parser_config and parser_config.get("disable_reasoning_command"):
-            final_persona = f"{parser_config['disable_reasoning_command']}\n\n{persona}"
-            log_message('full', f"[LLM_API] Injected disable reasoning command for model {model_id}.")
-
-    system_message = {"role": "system", "content": final_persona}
+    tuning_config = config.model_tuning.get(model_id, {})
+    system_parts = []
+    
+    # 1. Add optional prefix
+    if prefix := tuning_config.get("system_prompt_prefix"):
+        system_parts.append(prefix)
+    
+    # 2. Handle persona placement
     final_messages = list(messages)
+    if tuning_config.get("prefer_user_prompt_for_persona", False):
+        # Find the first user message to prepend the persona.
+        user_message_found = False
+        for msg in final_messages:
+            if msg.get('role') == 'user':
+                msg['content'] = f"{persona}\n\n---\n\n{msg['content']}"
+                user_message_found = True
+                break
+        # If no user message exists, create one with the persona.
+        if not user_message_found:
+            final_messages.insert(0, {"role": "user", "content": persona})
+    else:
+        # Default behavior: persona goes into the system prompt.
+        system_parts.append(persona)
+        
+    # 3. Check for model-specific reasoning disable command
+    if not enable_reasoning:
+        if disable_cmd := tuning_config.get("disable_reasoning_command"):
+            system_parts.append(disable_cmd)
+            log_message('full', f"[LLM_API] Injected disable reasoning command for model {model_id}.")
+            
+    # 4. Add optional suffix
+    if suffix := tuning_config.get("system_prompt_suffix"):
+        system_parts.append(suffix)
+        
+    # 5. Assemble final system content
+    system_content = "\n\n".join(part for part in system_parts if part)
 
+    # Add the task prompt to the user messages
     if task_prompt_key:
         task_content = loc(task_prompt_key, **(task_prompt_kwargs or {}))
-        if not final_messages or not any(msg.get('role') == 'user' for msg in final_messages):
-            final_messages.append({"role": "user", "content": task_content})
-        else:
-            final_messages.append({"role": "user", "content": task_content})
+        final_messages.append({"role": "user", "content": task_content})
 
+    # Final sanity checks
     if not any(msg.get('role') == 'user' for msg in final_messages):
         log_message('debug', "[LLM_API WARNING] No user messages in final prompt. Adding generic fallback.")
         final_messages.append({"role": "user", "content": "What do you do next?"})
 
-    return [system_message] + final_messages
+    final_prompt = []
+    if system_content:
+        final_prompt.append({"role": "system", "content": system_content})
+    
+    final_prompt.extend(final_messages)
+    return final_prompt
 
 
 def execute_task(engine, agent_or_character: dict, task_key: str, messages: list,
@@ -206,7 +239,6 @@ def execute_task(engine, agent_or_character: dict, task_key: str, messages: list
         engine.last_interaction_log = {"log_id": log_id, "log_path": log_path}
 
     return processed_response
-
 
 def get_model_context_length(model_identifier):
     if not model_identifier: return None

@@ -1,10 +1,9 @@
-# /core/player.py
+# /core/components/player.py
 
-from core.common.localization import loc
-from core.components import character_factory, roster_manager, position_manager
 from core.common import file_io, utils
 from core.common.config_loader import config
-from ..common.utils import get_text_from_messages
+from core.common.localization import loc
+from core.components import character_factory, roster_manager, position_manager
 
 
 class PlayerInterface:

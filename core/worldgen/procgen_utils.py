@@ -1,4 +1,4 @@
-# /core/procgen_utils.py
+# /core/worldgen/procgen_utils.py
 
 import re
 

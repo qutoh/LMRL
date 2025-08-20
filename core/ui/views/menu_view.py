@@ -1,6 +1,7 @@
 # /core/ui/views/menu_view.py
 
 from typing import Callable, Optional
+
 import tcod
 
 from ..ui_framework import VBox, Button, Frame, View

@@ -2,12 +2,16 @@
   "CHARACTER_UPDATE_STATE": {
     "task_prompt_key": "task_prompt_character_update_state",
     "default_adjustment": 0.05
+	"model_override": "apriel-nemotron-15b-thinker"
+	"enable_reasoning": true
   },
   "NAVIGATE_OBSTACLE": {
     "task_prompt_key": "task_prompt_navigate_obstacle"
+	"enable_reasoning": true
   },
   "NO_PATH_FOUND": {
     "task_prompt_key": "task_prompt_no_path_found"
+	"enable_reasoning": true
   },
   "POSITION_GET_MOVEMENT_KEYWORD": {
     "task_prompt_key": "task_prompt_get_movement_keyword",

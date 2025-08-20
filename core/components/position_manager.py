@@ -1,17 +1,19 @@
 # /core/components/position_manager.py
 
+import math
 import random
 import re
-import tcod
+
 import numpy as np
-import math
-from ..llm import llm_api
+import tcod
+
+from . import game_functions
+from . import roster_manager
+from ..common import command_parser
+from ..common import utils
 from ..common.config_loader import config
 from ..common.game_state import GameState
-from ..common import utils
-from ..common import command_parser
-from . import roster_manager
-from . import game_functions
+from ..llm import llm_api
 
 FIRST_PERSON_PRONOUNS = {"i", "me", "myself", "my"}
 
@@ -121,7 +123,7 @@ def _find_walkable_tile_in_area(game_state: GameState, x1, y1, x2, y2) -> tuple[
     return None
 
 
-def place_character_contextually(engine, game_state: GameState, character: dict, generation_state):
+def place_character_contextually(engine, game_state: GameState, character: dict, generation_state, placed_characters: list):
     """
     Uses an LLM to find a contextually appropriate location for a character
     from the generated features and places them there. It now also sets the
@@ -144,10 +146,17 @@ def place_character_contextually(engine, game_state: GameState, character: dict,
     action_description = "observing the scene."  # Default state
 
     if valid_location_tags and placer_agent:
+        placed_chars_str = "\n".join(
+            [f"- {c['name']} is in '{get_narrative_location_for_position(game_state.get_entity(c['name']).x, game_state.get_entity(c['name']).y, generation_state)}' and is currently '{c.get('character_state', 'waiting')}'"
+             for c in placed_characters]
+        ) or "None."
+
         prompt_kwargs = {
+            "scene_prompt": engine.scene_prompt,
             "character_name": character['name'],
             "character_description": character.get('description', 'An adventurer.'),
-            "location_tags": ", ".join(f"'{tag}'" for tag in valid_location_tags)
+            "location_tags": ", ".join(f"'{tag}'" for tag in valid_location_tags),
+            "placed_characters_list": placed_chars_str
         }
 
         raw_response = llm_api.execute_task(

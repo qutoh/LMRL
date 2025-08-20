@@ -31,7 +31,7 @@
             "score": 1.198
         },
         "CALIBRATION_CHOOSE_KEYWORD_FROM_NARRATIVE": {
-            "temperature": 0.2,
+            "temperature": 0.8,
             "score": 0.0
         },
         "DIRECTOR_CONFIRM_NPC_SAVE": {

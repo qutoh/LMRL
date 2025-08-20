@@ -1,10 +1,11 @@
 # /core/ui/views/scene_selection_view.py
 
 from typing import Callable
+
 import tcod
-import random
 
 from ..ui_framework import VBox, Button, Frame, View, DynamicTextBox
+
 
 class SceneSelectionView(View):
     """A view for selecting a starting scene for a chosen world."""

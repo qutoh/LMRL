@@ -1,10 +1,13 @@
 # /core/ui/views/game_view.py
 
-import tcod
-import numpy as np
 import random
+
+import numpy as np
+import tcod
+
 from ..ui_framework import View, DynamicTextBox, EventLog
 from ...common.config_loader import config
+
 
 class GameView(View):
     """Renders the main game state, including map, entities, and logs."""

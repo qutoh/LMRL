@@ -1,7 +1,7 @@
-# /core/config_loader.py
+# /core/common/config_loader.py
 
-from .localization import loc
 from . import file_io
+from .localization import loc
 
 
 class Config:
@@ -15,7 +15,7 @@ class Config:
         self.dm_roles = self._load_json('dm_roles.json')
         self.agents = self._load_json('agents.json', default={})
         self.scene = self._load_json('scene.json', default=[{"scene_prompt": "A story begins."}])
-        self.model_output_parsers = self._load_json('model_output_parsers.json', default={})
+        self.model_tuning = self._load_json('model_tuning.json', default={})
 
         self.levels = {}
         self.generated_scenes = []

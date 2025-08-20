@@ -1,13 +1,13 @@
-# /core/prometheus_manager.py
+# /core/engine/prometheus_manager.py
 
 import re
-import json
-from core.common.config_loader import config
-from core.llm.llm_api import execute_task
+
 from core.common import file_io, utils
-from core.components import roster_manager
+from core.common.config_loader import config
 from core.components import character_factory
+from core.components import roster_manager
 from core.components import utility_tasks
+from core.llm.llm_api import execute_task
 
 
 def parse_and_log_tool_decisions(text: str, valid_tools: list[str], context: str) -> tuple[dict, list[str], str]:
@@ -78,11 +78,11 @@ class PrometheusManager:
             return []
 
         equipment_agent = config.agents['EQUIPMENT_MANAGER']
-
+        
         # Filter for only positional characters BEFORE asking the LLM to identify targets.
         all_positional_chars = [c for c in roster_manager.get_all_characters(self.engine) if c.get('is_positional')]
         char_list_str = "; ".join([c['name'] for c in all_positional_chars])
-
+        
         if not char_list_str:
             return []
 
@@ -96,8 +96,7 @@ class PrometheusManager:
         affected_names = [name.strip() for name in targets_response.split(';') if name.strip()]
         final_affected = []
         for name in affected_names:
-            target_char = next((char['name'] for char in all_positional_chars if name.lower() in char['name'].lower()),
-                               None)
+            target_char = next((char['name'] for char in all_positional_chars if name.lower() in char['name'].lower()), None)
             if target_char:
                 utils.log_message('debug', f"[PROMETHEUS] Dispatching equipment modification for '{target_char}'.")
                 self.engine.item_manager.modify_character_equipment(target_char, dialogue_entry['content'])
@@ -148,17 +147,17 @@ class PrometheusManager:
         director_agent = config.agents.get('DIRECTOR')
         active_chars = roster_manager.get_all_characters(self.engine)
         char_list_str = ", ".join([f"'{c['name']}'" for c in active_chars])
-        prompt_kwargs = {"recent_events": dialogue_entry.get('content', ''), "character_list": char_list_str}
-
+        
+        # Step 1: Identify the name of the new character from the recent dialogue.
+        prompt_kwargs_identify = {"recent_events": dialogue_entry.get('content', ''), "character_list": char_list_str}
         new_char_name = execute_task(self.engine, director_agent, 'DIRECTOR_IDENTIFY_NEW_CHARACTER', [],
-                                     task_prompt_kwargs=prompt_kwargs)
+                                     task_prompt_kwargs=prompt_kwargs_identify)
+
         if new_char_name and new_char_name.strip().upper() != 'NONE':
-            creator_dm = roster_manager.find_character(self.engine, dialogue_entry['speaker'])
-            if creator_dm:
-                if new_npc := character_factory.create_temporary_npc(self.engine, creator_dm, new_char_name,
-                                                                     self.engine.dialogue_log):
-                    roster_manager.decorate_and_add_character(self.engine, new_npc, 'npc')
-                    return new_npc.get('name')
+            # Step 2: Use the identified name and correct context to create the full profile.
+            if new_npc := character_factory.create_temporary_npc(self.engine, director_agent, new_char_name, self.engine.dialogue_log):
+                roster_manager.decorate_and_add_character(self.engine, new_npc, 'npc')
+                return new_npc.get('name')
         return None
 
     def _call_select_next_actor(self, dialogue_entry: dict, **kwargs) -> str | None:

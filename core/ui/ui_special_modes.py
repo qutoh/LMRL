@@ -1,30 +1,29 @@
 # /core/ui/ui_special_modes.py
 
-import threading
-import time
+import copy
 import json
 import random
 import re
-import copy
+import threading
+import time
 from collections import defaultdict
-from unittest.mock import patch
-import tcod
 from datetime import datetime
 from queue import Queue
+from unittest.mock import patch
 
-from ..llm.calibration_manager import CalibrationManager
-from ..llm.llm_api import execute_task
-from ..common.game_state import GameState, GenerationState, MapArtist
-from ..worldgen.map_architect import MapArchitect
-from ..worldgen.map_architect_v2 import MapArchitectV2
-from ..worldgen.map_architect_v3 import MapArchitectV3
-from ..common import file_io, utils, command_parser
-from ..common.config_loader import config
+import tcod
+
 from .app_states import AppState
 from .ui_framework import DynamicTextBox
-from .views.game_view import GameView
 from .views.character_generation_test_view import CharacterGenerationTestView
+from .views.game_view import GameView
+from ..common import file_io, utils, command_parser
+from ..common.config_loader import config
+from ..common.game_state import GameState, GenerationState
 from ..components import game_functions, character_factory
+from ..llm.calibration_manager import CalibrationManager
+from ..llm.llm_api import execute_task
+from ..worldgen.map_architect_v3 import MapArchitectV3
 
 
 class SpecialModeManager:

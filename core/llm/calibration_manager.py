@@ -1,15 +1,15 @@
 # /core/llm/calibration_manager.py
 
 import json
-import numpy as np
 import re
+
+import numpy as np
 from scipy import stats
-from . import llm_api
+
 from core.common import file_io, utils
 from core.common.config_loader import config
 from core.engine.prometheus_manager import parse_and_log_tool_decisions
-
-from sentence_transformers.util import cos_sim
+from . import llm_api
 
 
 class CalibrationManager:

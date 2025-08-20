@@ -1,10 +1,10 @@
 # /core/ui/player_input_handlers.py
 
+from .input_handler import TextInputHandler
+from .views import TextInputView, PrometheusView
 from ..common.config_loader import config
 from ..common.localization import loc
-from ..common.utils import get_text_from_messages, serialize_character_for_prompt
-from .views import TextInputView, PrometheusView
-from .input_handler import TextInputHandler
+from ..common.utils import get_text_from_messages
 
 
 def create_default_takeover_view(ui_manager, on_submit, **handler_kwargs):

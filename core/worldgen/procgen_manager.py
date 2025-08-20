@@ -1,12 +1,11 @@
-# /core/procgen_manager.py
+# /core/worldgen/procgen_manager.py
 
-from ..common import file_io, utils
 from core.common.config_loader import config
-from core.llm.llm_api import execute_task
 from core.common.game_state import GenerationState
 from .map_architect import MapArchitect
 from .map_architect_v2 import MapArchitectV2
 from .map_architect_v3 import MapArchitectV3
+from ..common import utils
 
 
 class ProcGenManager:

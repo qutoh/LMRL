@@ -1,11 +1,12 @@
 # /core/worldgen/v3_components/placement.py
 
-import numpy as np
 import random
 from typing import List, Tuple, Dict, Optional
 
-from .feature_node import FeatureNode
+import numpy as np
+
 from core.common import utils
+from .feature_node import FeatureNode
 from ...common.config_loader import config
 
 # --- Algorithm Constants ---

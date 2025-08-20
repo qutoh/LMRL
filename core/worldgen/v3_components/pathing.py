@@ -3,13 +3,10 @@
 import random
 from typing import List, Dict, Tuple
 
-import numpy as np
-import tcod
-
-from .feature_node import FeatureNode
 from core.common import utils
 from core.common.game_state import GameMap
 from core.worldgen.procgen_utils import UnionFind
+from .feature_node import FeatureNode
 from ...common.config_loader import config
 from ...components import game_functions
 

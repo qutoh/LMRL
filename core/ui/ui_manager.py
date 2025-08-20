@@ -1,9 +1,10 @@
 # /core/ui/ui_manager.py
 
+from multiprocessing import Process, Queue
+
+import numpy as np
 import tcod
 import tcod.constants
-import numpy as np
-from multiprocessing import Process, Queue
 
 try:
     from windows_toasts import WindowsToaster, Toast

@@ -1,15 +1,16 @@
 # /core/components/roster_manager.py
 
-import random
 import ast
-from ..common.config_loader import config
-from ..common import utils
+import random
+
+from . import character_factory
 from ..common import file_io
+from ..common import utils
+from ..common.config_loader import config
 from ..common.game_state import Entity
 from ..common.localization import loc
 from ..common.utils import log_message
 from ..llm.llm_api import execute_task
-from . import character_factory
 
 
 def get_or_create_character_from_concept(engine, char_concept: dict | str, location_context: dict) -> tuple[

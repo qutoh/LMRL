@@ -1,19 +1,17 @@
 # /core/worldgen/map_architect.py
 
-import random
 from typing import Callable
 
-from .v3_components.v3_llm import V3_LLM
-from .v3_components.placement import Placement
-from .v3_components.map_ops import MapOps
-from .v3_components.interior import Interior
-from .v3_components.pathing import Pathing
 from .v3_components.converter import Converter
 from .v3_components.feature_node import FeatureNode
-
-from ..common.game_state import GenerationState, MapArtist
-from ..common.config_loader import config
+from .v3_components.interior import Interior
+from .v3_components.map_ops import MapOps
+from .v3_components.pathing import Pathing
+from .v3_components.placement import Placement
+from .v3_components.v3_llm import V3_LLM
 from ..common import utils
+from ..common.config_loader import config
+from ..common.game_state import GenerationState, MapArtist
 
 
 class MapArchitect:
@@ -79,7 +77,13 @@ class MapArchitect:
         shrink_factor = 0.1
 
         while features_placed < max_features:
-            narrative_beat = self.llm.get_next_narrative_beat(self.narrative_log)
+            other_features_context_list = [
+                f"({branch.feature_type} - \"{branch.narrative_log}...\")"
+                for branch in self.initial_feature_branches
+            ]
+            other_features_context = "\n".join(other_features_context_list) if other_features_context_list else "None."
+            
+            narrative_beat = self.llm.get_next_narrative_beat(self.narrative_log, other_features_context)
             if not narrative_beat: break
             self.narrative_log += " " + narrative_beat
             utils.log_message('story', f"-> {narrative_beat}")

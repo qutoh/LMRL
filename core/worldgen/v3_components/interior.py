@@ -5,11 +5,11 @@ from typing import Generator, Tuple
 
 import numpy as np
 
-from .feature_node import FeatureNode
-from .placement import Placement
 from core.common import utils
 from core.common.game_state import GenerationState
 from core.worldgen.procgen_utils import check_for_overlap
+from .feature_node import FeatureNode
+from .placement import Placement
 
 
 class Interior:

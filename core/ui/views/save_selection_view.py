@@ -1,9 +1,11 @@
 # /core/ui/views/save_selection_view.py
 
 from typing import Callable
+
 import tcod
 
 from ..ui_framework import VBox, Button, Frame, View
+
 
 class SaveSelectionView(View):
     """A view for selecting a specific save game to load."""

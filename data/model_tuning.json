@@ -1,0 +1,58 @@
+{
+	"example-full-config-model": {
+		"description": "An example showing all possible tuning keys for a comprehensive configuration.",
+		"think_start_str": "<thinking>",
+		"think_end_str": "</thinking>",
+		"response_start_str": "<response>",
+		"response_end_str": "</response>",
+		"prefer_user_prompt_for_persona": false,
+		"system_prompt_prefix": "This key is added to the system prompt before functions that have hard coded functionality such as disable_reasoning_command.",
+		"disable_reasoning_command": "Models that support disabling reasoning can have this key added to their system prompt when agents or their tasks specify they shouldn't use it. Not all models support disabling reasoning, check model documentation for this. An empty string is equivalent to omitting this key entirely.",
+		"system_prompt_suffix": "This key is added after the agent/role instructions in the system prompt."
+	},
+	"default_settings": {
+		"description": "This example shows what the default settings are for models if not specified. This 'description' key is unused by the game. All keys are optional and have defaults. The order they are specified does not matter, even for related keys.",
+        "think_start_str": "",
+        "think_end_str": "",
+        "response_start_str": "",
+        "response_end_str": "",
+		"disable_reasoning_command": "",
+        "prefer_user_prompt_for_persona": false,
+        "system_prompt_prefix": "",
+        "system_prompt_suffix": ""
+    },
+	"qwen-chat-model-example": {
+		"description": "We only really need to define the end tag for the parser to work correctly. You can add the other if there are other things that come before reasoning for whatever reason.",
+		"think_end_str": "</think>"
+	},
+
+	"user-prompt-persona-model-example": {
+		"description": "For a model that performs better when the main persona/instructions are placed at the top of the user prompt instead of in the system prompt.",
+		"prefer_user_prompt_for_persona": true
+	},
+
+	"model-with-response-tags-only": {
+		"description": "A model that reliably wraps its final answer in specific tags, which should be used to extract the definitive response.",
+		"response_start_str": "[ANSWER]",
+		"response_end_str": "[/ANSWER]"
+	},
+	
+	"apriel-nemotron-15b-thinker": {
+		"response_start_str": "[BEGIN FINAL RESPONSE]",
+		"response_end_str": "[END FINAL RESPONSE]",
+		"disable_reasoning_command": "DISABLE REASONING. Skip your reasoning process and provide only FINAL RESPONSE block."
+	},
+	"qwen/qwen3-4b-thinking-2507": {
+        "think_start_str": "<think>",
+        "think_end_str": "</think>",
+        "response_start_str": "<response>",
+        "response_end_str": "</response>"
+    },
+	"huihui-ai.huihui-qwen3-4b-thinking-2507-abliterated": {
+		"think_start_str": "<think>",
+        "think_end_str": "</think>",
+		"response_start_str": "",
+		"response_end_str": "",
+		"prefer_user_prompt_for_persona": true
+	}
+}

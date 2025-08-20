@@ -1,10 +1,10 @@
 # /core/components/dm_manager.py
 
+from . import roster_manager
 from ..common import utils, file_io, command_parser
 from ..common.config_loader import config
 from ..common.localization import loc
 from ..llm.llm_api import execute_task
-from . import roster_manager
 
 
 class DMManager:

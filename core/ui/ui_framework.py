@@ -1,11 +1,12 @@
-# /core/ui_framework.py
+# /core/ui/ui_framework.py
 
+import textwrap
+from math import sqrt
 from typing import Callable, Optional, Tuple
+
 import tcod
 import tcod.event
 from tcod import libtcodpy
-import textwrap
-from math import sqrt
 
 
 class Widget:

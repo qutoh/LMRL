@@ -1,9 +1,9 @@
-# /core/summary_manager.py
+# /core/components/summary_manager.py
 
-from core.llm.llm_api import execute_task
-from core.common.utils import log_message, count_tokens
-from core.common.localization import loc
 from core.common import utils
+from core.common.localization import loc
+from core.common.utils import log_message, count_tokens
+from core.llm.llm_api import execute_task
 
 
 class SummaryManager:

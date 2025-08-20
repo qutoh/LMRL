@@ -1,6 +1,7 @@
 # /core/ui/views/prometheus_view.py
 
 from typing import Callable, Optional
+
 import tcod
 
 from ..ui_framework import View, DynamicTextBox

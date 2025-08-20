@@ -1,9 +1,11 @@
 # /core/ui/views/world_selection_view.py
 
 from typing import Callable
+
 import tcod
 
 from ..ui_framework import VBox, Button, Frame, View, DynamicTextBox
+
 
 class WorldSelectionView(View):
     """The main menu view for selecting a world or other options."""

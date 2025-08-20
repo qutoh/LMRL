@@ -1,10 +1,12 @@
 # /core/ui/views/text_input_view.py
 
 from typing import Callable
+
 import tcod
 
-from ..ui_framework import View
 from ..input_handler import TextInputHandler
+from ..ui_framework import View
+
 
 class TextInputView(View):
     """A modal view that renders the state of a TextInputHandler."""

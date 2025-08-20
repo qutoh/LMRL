@@ -1,8 +1,9 @@
 # /core/worldgen/v3_components/v3_llm.py
 
-from typing import List
-import random
 import json
+import random
+from typing import List
+
 from core.common import command_parser, utils
 from core.common.config_loader import config
 from core.llm.llm_api import execute_task
@@ -144,6 +145,7 @@ class V3_LLM:
         example_response = self._generate_dynamic_example(allowed_strategies, 2, 'list')
 
         kwargs = {
+            "world_theme": self.world_theme,
             "scene_prompt": self.scene_prompt,
             "type_list_str": type_list_str,
             "example_response": example_response
@@ -153,25 +155,27 @@ class V3_LLM:
                                     task_prompt_kwargs=kwargs)
 
         command = command_parser.parse_structured_command(
-            self.engine, raw_response, 'LEVEL_GENERATOR', 'CH_FIX_PEG_V3_JSON', {'type_list_str': type_list_str}
+            self.engine, raw_response, 'LEVEL_GENERATOR',
+            fallback_task_key='CH_FIX_PEG_V3_JSON',
+            fallback_prompt_kwargs={'type_list_str': type_list_str}
         )
 
         if command and isinstance(command.get('features'), list) and command['features']:
-            utils.log_message('debug', "[PEGv3] Single-shot successful.")
             return command['features']
 
+        # If the primary method fails, fall back to the stepwise generation.
         return self._get_initial_features_stepwise()
 
     def get_narrative_seed(self, area_name: str) -> str:
         """Gets the initial descriptive sentence for a top-level area."""
-        seed_kwargs = {"scene_prompt": self.scene_prompt, "area_name": area_name}
+        seed_kwargs = {"world_theme": self.world_theme, "scene_prompt": self.scene_prompt, "area_name": area_name}
         return execute_task(self.engine, self.level_generator, 'PEG_V3_GET_NARRATIVE_SEED', [],
                             task_prompt_kwargs=seed_kwargs)
 
-    def get_next_narrative_beat(self, context: str) -> str:
+    def get_next_narrative_beat(self, context: str, other_features_context: str) -> str:
         """Continues a narrative description by one sentence."""
         return execute_task(self.engine, self.level_generator, 'PROCGEN_GENERATE_NARRATIVE_BEAT', [],
-                              task_prompt_kwargs={"context": context})
+                              task_prompt_kwargs={"world_theme": self.world_theme, "context": context, "other_features_context": other_features_context})
 
     def choose_parent_feature(self, narrative_log: str, new_feature_sentence: str, parent_options_list: str) -> str:
         """Asks the LLM to choose a parent for a new sub-feature from a list of options."""

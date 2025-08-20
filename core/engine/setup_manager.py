@@ -1,14 +1,15 @@
-# /core/setup_manager.py
+# /core/engine/setup_manager.py
 
 from datetime import datetime
+
 from core.common import file_io, utils
-from core.components import roster_manager
-from core.worldgen.procgen_manager import ProcGenManager
 from core.common.game_state import GenerationState, MapArtist, LayoutGraph
 from core.common.localization import loc
-from core.components.memory_manager import MemoryManager
-from core.components import position_manager
 from core.components import character_factory
+from core.components import position_manager
+from core.components import roster_manager
+from core.components.memory_manager import MemoryManager
+from core.worldgen.procgen_manager import ProcGenManager
 
 
 class SetupManager:
@@ -176,10 +177,13 @@ class SetupManager:
 
         if self.game_state:
             roster_manager.spawn_entities_from_roster(self.engine, self.game_state)
+            
+            placed_characters_for_context = []
             for character in self.engine.characters:
                 if character.get('is_positional'):
                     position_manager.place_character_contextually(self.engine, self.game_state, character,
-                                                                  generation_state)
+                                                                  generation_state, placed_characters_for_context)
+                    placed_characters_for_context.append(character)
 
         # Build a descriptive summary of the entire generated level for the player.
         level_description_sentences = []

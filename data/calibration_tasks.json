@@ -13,10 +13,10 @@
             },
             "semantic_exemplar": "{\"action\": \"UPDATE\", \"new_instructions\": \"You are a cunning rogue who now possesses a strange gemstone. Your goal is to discover its secrets while still acquiring wealth.\"}",
             "creative_fields": ["new_instructions"],
-            "validation": {
-                "type": "json",
+            "validation": { 
+                "type": "json", 
                 "temperature_reward_factor": 0.15,
-                "mutually_exclusive_actions": ["UPDATE", "REMOVE", "LOAD", "UNFUSE_DM"],
+                "mutually_exclusive_actions": ["UPDATE", "REMOVE", "LOAD", "UNFUSE_DM"], 
                 "rules": [
                     { "check": "has_key", "key": "action" },
                     { "check": "key_value_in", "key": "action", "values": ["UPDATE", "REMOVE", "LOAD", "UNFUSE_DM"] },
@@ -61,9 +61,9 @@
         },
         {
             "calibration_id": "LOGICAL_KEYWORD_VALIDATION",
-            "target_task_key": "DIRECTOR_CHECK_NPC_SURVIVAL",
-            "target_task_prompt_key": "task_prompt_director_npc_survival",
-            "prompt_args": { "context": "The party spoke briefly with Silas the Merchant to buy some rope, then descended into the crypt, leaving him at the entrance.", "npc_name": "Silas the Merchant", "npc_description": "A portly, jovial merchant." },
+            "target_task_key": "DIRECTOR_CONFIRM_NPC_SAVE",
+            "target_task_prompt_key": "task_prompt_director_npc_save_confirmation",
+            "prompt_args": { "npc_name": "Silas the Merchant", "npc_description": "A portly, jovial merchant who was a minor character." },
             "validation": { "type": "exact_keyword", "valid_keywords": ["YES", "NO"] }
         }
     ],

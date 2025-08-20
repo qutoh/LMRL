@@ -1,10 +1,11 @@
 # /core/ui/views/settings_view.py
 
 from typing import Callable, Optional
+
 import tcod
 
-from ..ui_framework import View
 from ..input_handler import TextInputHandler
+from ..ui_framework import View
 from ...common.config_loader import config
 
 

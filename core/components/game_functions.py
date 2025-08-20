@@ -1,11 +1,12 @@
 # /core/components/game_functions.py
 
-import tcod
 import numpy as np
-from ..common.game_state import GameState, GameMap
-from ..common import utils
+import tcod
+
 from ..common import file_io
+from ..common import utils
 from ..common.config_loader import config
+from ..common.game_state import GameState
 
 VALID_RELATIONS = {
     "NEXT_TO", "STRIKING_RANGE", "LONG_RANGE", "BEHIND",

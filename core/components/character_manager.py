@@ -1,8 +1,8 @@
 # /core/components/character_manager.py
 
+from . import position_manager
 from ..common import utils
 from ..llm import llm_api
-from . import position_manager
 
 
 class CharacterManager:

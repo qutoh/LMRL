@@ -1,12 +1,12 @@
 # /core/components/character_factory.py
 
-from ..common.config_loader import config
-from ..llm.llm_api import execute_task
-from ..common.utils import log_message
-from ..common.localization import loc
-from ..common import utils
-from ..common import file_io
 from ..common import command_parser
+from ..common import file_io
+from ..common import utils
+from ..common.config_loader import config
+from ..common.localization import loc
+from ..common.utils import log_message
+from ..llm.llm_api import execute_task
 
 
 def _prepare_physical_description_task(base_kwargs: dict, role_hint: str, scene_context: str) -> tuple[str, dict]:

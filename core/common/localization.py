@@ -1,4 +1,4 @@
-# /core/localization.py
+# /core/common/localization.py
 
 from core.common import file_io
 
@@ -53,6 +53,17 @@ class Localization:
             print(f"FATAL ERROR: Language directory not found at {lang_dir}")
             exit()
 
+    def get_raw(self, key, default=None):
+        """Retrieves a raw value (string, list, dict) by key without formatting."""
+        value = self.strings.get(key)
+        if value is None:
+            if key not in self.logged_missing_keys:
+                print(f"LOC_KEY_NOT_FOUND: '{key}' (logging to file)")
+                file_io.log_localization_error(key)
+                self.logged_missing_keys.add(key)
+            return default if default is not None else {}
+        return value
+
     def get(self, key, **kwargs):
         """Retrieves a string by key and formats it."""
         template = self.strings.get(key)
@@ -65,16 +76,21 @@ class Localization:
 
         try:
             return template.format(**kwargs)
-        except KeyError as e:
+        except (KeyError, TypeError) as e:
+            # TypeError can happen if the value is not a string (e.g., a dict from the new file)
             error_key = f"{key} (Format Error)"
             if error_key not in self.logged_missing_keys:
-                print(f"LOC_FORMAT_ERROR: Missing key {e} for '{key}' (logging to file)")
-                file_io.log_localization_error(f"{key} - Formatting failed, missing placeholder: {e}")
+                print(f"LOC_FORMAT_ERROR: Missing key {e} for '{key}' or value is not a string. (logging to file)")
+                file_io.log_localization_error(f"{key} - Formatting failed, missing placeholder: {e} or not a string.")
                 self.logged_missing_keys.add(error_key)
-            return f"LOC_FORMAT_ERROR: Missing key {e} for '{key}'"
+            return f"LOC_FORMAT_ERROR: for '{key}'"
 
 
 _localization_instance = Localization()
+
+
+def loc_raw(key, default=None):
+    return _localization_instance.get_raw(key, default=default)
 
 
 def loc(key, **kwargs):

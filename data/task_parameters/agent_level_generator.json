@@ -27,10 +27,12 @@
   },
   "PEG_V3_CHOOSE_PARENT": {
     "task_prompt_key": "task_prompt_peg_v3_choose_parent",
+	"model_override": "",
     "source_agent": "LEVEL_GENERATOR"
   },
   "PEG_V3_GET_INITIAL_FEATURES_JSON": {
     "task_prompt_key": "task_prompt_peg_v3_get_initial_features_json",
+	"model_override": "",
     "source_agent": "LEVEL_GENERATOR"
   },
   "PEG_V3_GET_NARRATIVE_SEED": {

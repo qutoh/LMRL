@@ -1,12 +1,13 @@
 # /core/ui/ui_callbacks.py
 
-import random
 import copy
+import random
+
 from .app_states import AppState
 from ..common import file_io
 from ..common.config_loader import config
-from ..worldgen.atlas_manager import AtlasManager
 from ..llm.llm_api import execute_task
+from ..worldgen.atlas_manager import AtlasManager
 
 
 class UICallbacks:
@@ -68,10 +69,16 @@ class UICallbacks:
             ui.event_log.add_message("World creation models are loading, please wait...", (255, 255, 100))
             ui.app_state = AppState.WORLD_SELECTION
             return
+            
+        # Ensure the atlas_engine has the loaded embedding model before use.
+        ui.atlas_engine.embedding_model = ui.model_manager.embedding_model
 
         if not theme_text:
-            ui.world_theme = execute_task(ui.atlas_engine, config.agents['ATLAS'], 'WORLDGEN_CREATE_THEME',
-                                          []) or "A generic fantasy world."
+            atlas = AtlasManager(ui.atlas_engine)
+            ui.world_theme = atlas.content_generator.get_world_name(
+                execute_task(ui.atlas_engine, config.agents['ATLAS'], 'WORLDGEN_CREATE_THEME',
+                             []) or "A generic fantasy world."
+            )
         else:
             ui.world_theme = theme_text
 
@@ -80,13 +87,17 @@ class UICallbacks:
     def _continue_to_game_start(self, is_newly_written_scene: bool):
         """Helper function to handle the final steps before starting the game engine process."""
         ui = self.ui_manager
+        
+        # Ensure the atlas_engine has the loaded embedding model before use.
+        ui.atlas_engine.embedding_model = ui.model_manager.embedding_model
+        
         if ui.starting_location is None:
             atlas = AtlasManager(ui.atlas_engine)
             ui.event_log.add_message("Finding a home for your scene...", (200, 200, 255))
             ui.starting_location, ui.location_breadcrumb = atlas.find_or_create_location_for_scene(
                 ui.selected_world_name, ui.world_theme, ui.scene_prompt
             )
-            if is_newly_written_scene:
+            if is_newly_written_scene and ui.starting_location:
                 scenes_path = file_io.join_path(ui.atlas_engine.config.data_dir, 'worlds', ui.selected_world_name,
                                                 'generated_scenes.json')
                 all_scenes = file_io.read_json(scenes_path, default=[])
