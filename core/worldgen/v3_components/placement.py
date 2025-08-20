@@ -1,7 +1,5 @@
-# /core/worldgen/v3_components/placement.py
-
 import random
-from typing import List, Tuple, Dict, Optional
+from typing import List, Tuple, Dict, Optional, Generator
 
 import numpy as np
 
@@ -11,6 +9,13 @@ from ...common.config_loader import config
 
 # --- Algorithm Constants ---
 MIN_FEATURE_SIZE = 3
+
+# --- Growth Algorithm Constants ---
+GROWTH_COVERAGE_THRESHOLD = 0.40  # Stop when 40% of the map is filled
+MAX_GROWTH_ITERATIONS = 200  # Safety break for the growth loop (per tick)
+SIZE_TIER_TARGET_AREA_FACTOR = {'large': 0.15, 'medium': 0.08, 'small': 0.04}
+# Predefined W:H integer ratios for the 'rectangle' shape
+RECTANGLE_ASPECT_RATIOS = [(4, 3), (3, 2), (5, 3), (16, 9), (2, 1), (3, 4), (2, 3), (3, 5), (9, 16), (1, 2)]
 
 # A map to easily find the opposite direction for scaling.
 OPPOSITE_DIRECTION_MAP = {
@@ -30,11 +35,25 @@ class Placement:
         self.map_width = map_width
         self.map_height = map_height
 
-    def _get_temp_grid(self, all_branches: List[FeatureNode]) -> np.ndarray:
-        """Renders all currently placed features to a simple grid for collision detection."""
+    def _get_temp_grid(self, all_branches: List[FeatureNode], exclude_node: Optional[FeatureNode] = None) -> np.ndarray:
+        """
+        Renders all currently placed features to a simple grid for collision detection.
+        Optionally excludes one node (and its entire branch) from the grid.
+        """
         grid = np.zeros((self.map_height, self.map_width), dtype=int)
-        all_nodes = [node for branch in all_branches for node in branch.get_all_nodes_in_branch()]
-        for node in all_nodes:
+        nodes_to_draw = []
+        if exclude_node:
+            exclude_branch_root = exclude_node
+            # Find the root of the branch to which the excluded node belongs
+            while exclude_branch_root.parent:
+                exclude_branch_root = exclude_branch_root.parent
+            for branch in all_branches:
+                if branch is not exclude_branch_root:
+                    nodes_to_draw.extend(branch.get_all_nodes_in_branch())
+        else:
+            nodes_to_draw = [node for branch in all_branches for node in branch.get_all_nodes_in_branch()]
+
+        for node in nodes_to_draw:
             x, y, w, h = node.get_rect()
             x1, y1 = max(0, x), max(0, y)
             x2, y2 = min(self.map_width, x + w), min(self.map_height, y + h)
@@ -50,6 +69,129 @@ class Placement:
         if np.any(temp_grid[y:y + h, x:x + w] == 1):
             return False
         return True
+
+    def _attempt_aspect_aware_growth(self, node: FeatureNode, all_branches: List[FeatureNode]) -> bool:
+        """
+        Calculates the node's next size based on its aspect ratio and attempts to find a valid
+        position for the new, larger rectangle that contains the original rectangle.
+        """
+        ratio_w, ratio_h = node.target_aspect_ratio
+        next_k = node.growth_multiplier + 1
+        prop_w, prop_h = int(ratio_w * next_k), int(ratio_h * next_k)
+
+        if prop_w == node.current_abs_width and prop_h == node.current_abs_height:
+            next_k += 1  # If rounding results in no change, try the next multiplier
+            prop_w, prop_h = int(ratio_w * next_k), int(ratio_h * next_k)
+            if prop_w == node.current_abs_width and prop_h == node.current_abs_height:
+                return False  # No actual growth would occur
+
+        old_x, old_y, old_w, old_h = node.get_rect()
+        dw, dh = prop_w - old_w, prop_h - old_h
+
+        possible_x_starts = list(range(old_x - dw, old_x + 1))
+        possible_y_starts = list(range(old_y - dh, old_y + 1))
+        random.shuffle(possible_x_starts)
+        random.shuffle(possible_y_starts)
+
+        temp_grid = self._get_temp_grid(all_branches, exclude_node=node)
+
+        for x in possible_x_starts:
+            for y in possible_y_starts:
+                if self._is_placement_valid((x, y, prop_w, prop_h), temp_grid):
+                    node.current_x, node.current_y = x, y
+                    node.current_abs_width, node.current_abs_height = prop_w, prop_h
+                    node.growth_multiplier = next_k
+                    return True
+
+        return False
+
+    def place_and_grow_initial_features(self, feature_specs: List[Dict]) -> Generator[
+        List[FeatureNode], None, List[FeatureNode]]:
+        """
+        Robustly places initial features using a growth algorithm. Features start as 1x1 seeds
+        and iteratively expand while maintaining a target aspect ratio, relocating if they get stuck.
+        Yields the state after each "tick" where all active features have attempted to grow.
+        """
+        if not feature_specs:
+            yield []
+            return
+
+        initial_feature_branches: List[FeatureNode] = []
+        total_map_area = self.map_width * self.map_height
+
+        # --- 1. Seeding Phase ---
+        start_x = self.map_width // 2 - len(feature_specs) // 2
+        start_y = self.map_height // 2
+
+        for i, spec in enumerate(feature_specs):
+            node = FeatureNode(spec['name'], spec['type'], 0.0, 0.0, 1, 1, start_x + i, start_y)
+
+            # --- Assign dynamic properties for the growth algorithm ---
+            node.target_area = total_map_area * SIZE_TIER_TARGET_AREA_FACTOR.get(spec.get('size_tier'), 0.08)
+            node.size_tier = spec.get('size_tier', 'medium')
+            node.is_stuck = False
+            node.growth_multiplier = 1
+
+            feature_def = config.features.get(spec['type'], {})
+            shape = feature_def.get('default_shape', 'rectangle')
+            if shape == 'rectangle':
+                node.target_aspect_ratio = random.choice(RECTANGLE_ASPECT_RATIOS)
+            else:  # Square, circle, etc.
+                node.target_aspect_ratio = (1, 1)
+
+            initial_feature_branches.append(node)
+
+        yield initial_feature_branches  # Yield the initial seeded state
+
+        # --- 2. Growth Loop ---
+        for i in range(MAX_GROWTH_ITERATIONS):
+            # --- Check termination conditions ---
+            current_area = sum(n.current_abs_width * n.current_abs_height for n in initial_feature_branches)
+            if (current_area / total_map_area) >= GROWTH_COVERAGE_THRESHOLD:
+                utils.log_message('debug',
+                                  f"[PEGv3 Growth] Reached coverage threshold ({GROWTH_COVERAGE_THRESHOLD:.0%}).")
+                break
+
+            growable_features = [n for n in initial_feature_branches if
+                                 not n.is_stuck and (n.current_abs_width * n.current_abs_height) < n.target_area]
+            if not growable_features:
+                utils.log_message('debug', "[PEGv3 Growth] All features are grown or stuck.")
+                break
+
+            random.shuffle(growable_features)
+            tick_changed = False
+
+            # --- Inner Loop: A single "tick" where every feature gets a turn ---
+            for feature in growable_features:
+                if self._attempt_aspect_aware_growth(feature, initial_feature_branches):
+                    tick_changed = True
+                    continue
+
+                # --- If growth fails, attempt to relocate ---
+                temp_grid_others = self._get_temp_grid(initial_feature_branches, exclude_node=feature)
+                other_branches = [b for b in initial_feature_branches if b is not feature]
+                w, h = feature.current_abs_width, feature.current_abs_height
+
+                relocation_spots = self._find_valid_placements(w, h, temp_grid_others, other_branches)
+                if relocation_spots:
+                    new_x, new_y, _, _ = random.choice(relocation_spots)
+                    feature.current_x, feature.current_y = new_x, new_y
+                    utils.log_message('full', f"  Relocated stuck feature '{feature.name}'.")
+                    tick_changed = True
+                else:
+                    feature.is_stuck = True  # Permanently stuck for this tick
+                    utils.log_message('debug', f"  Feature '{feature.name}' is now stuck.")
+
+            if tick_changed:
+                yield initial_feature_branches
+            else:
+                # If a full tick completes with no successful growths or relocations, the process is done.
+                utils.log_message('debug', "[PEGv3 Growth] No change in a full tick. Finalizing layout.")
+                break
+        else:
+            utils.log_message('debug', f"[PEGv3 Growth] Reached max iterations ({MAX_GROWTH_ITERATIONS}).")
+
+        return initial_feature_branches
 
     def _find_valid_placements(self, w: int, h: int, temp_grid: np.ndarray, all_branches: List[FeatureNode]) -> list:
         """Finds all valid (non-overlapping) positions adjacent to existing features."""

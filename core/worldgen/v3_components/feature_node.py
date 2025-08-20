@@ -23,6 +23,14 @@ class FeatureNode:
         self.interior_features_to_place: List[dict] = []
         self.placed_interior_features: List[dict] = []
 
+        # --- Growth Algorithm Attributes ---
+        self.target_area: float = 0.0
+        self.size_tier: str = "medium"
+        self.is_stuck: bool = False
+        self.growth_multiplier: int = 1
+        self.target_aspect_ratio: Tuple[int, int] = (1, 1)
+
+
     def get_all_nodes_in_branch(self) -> List['FeatureNode']:
         """Recursively gets all nodes in this feature's branch, including itself."""
         nodes = [self]

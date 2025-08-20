@@ -65,9 +65,11 @@ class MapArchitectV3:
             yield "FINAL", gen_state
             return
 
-        self.initial_feature_branches = self.placement.place_initial_features(initial_specs)
-        update_and_draw_no_delay()
-        yield "INITIAL_PLACEMENT", gen_state
+        growth_generator = self.placement.place_and_grow_initial_features(initial_specs)
+        for growing_branches in growth_generator:
+            self.initial_feature_branches = growing_branches
+            update_and_draw_with_delay()  # Use delay to make growth visible
+            yield "INITIAL_GROWTH_STEP", gen_state
 
         shrink_factor = 0.1
         for i in range(MAX_SUBFEATURES_TO_PLACE):
