@@ -24,10 +24,11 @@ from ..engine.setup_manager import SetupManager
 from ..common import file_io
 from ..common.config_loader import config
 from ..common import utils
+from ..common.localization import loc
 
 from ..common.game_state import GameState
 from .views import WorldSelectionView, GameView, SceneSelectionView, TextInputView, LoadOrNewView, SaveSelectionView, \
-    SettingsView, MenuView, PrometheusView, CalibrationView
+    TabbedSettingsView, MenuView, PrometheusView, CalibrationView
 from .input_handler import TextInputHandler
 from ..llm.model_manager import ModelManager
 
@@ -75,24 +76,25 @@ class UIManager:
         self.calibration_update_queue = Queue()
 
         self.help_texts = {
-            "DEFAULT": "[UP/DOWN] Navigate | [ENTER] Select | [ESC] Back/Exit",
-            AppState.WORLD_SELECTION: "[UP/DOWN] Navigate Worlds | [ENTER] Select | [ESC] Exit Application",
-            AppState.SETTINGS: "[UP/DOWN] Navigate | [ENTER] Edit | [ESC] Back & Save",
-            "SETTINGS_EDIT": "[ENTER] Confirm | [ESC] Restore Default | [LEFT/RIGHT] Cycle Keywords",
-            AppState.LOAD_OR_NEW: "[UP/DOWN] Navigate | [ENTER] Select | [ESC] Back to World Selection",
-            AppState.LOAD_GAME_SELECTION: "[UP/DOWN] Navigate Saves | [ENTER] Load | [ESC] Back",
-            AppState.SCENE_SELECTION: "[UP/DOWN] Navigate Scenes | [ENTER] Start | [ESC] Back",
-            AppState.AWAITING_THEME_INPUT: "[ENTER] Submit Theme | [ESC] Cancel | [CTRL+V] Paste",
-            AppState.AWAITING_SCENE_INPUT: "[ENTER] Submit Scene | [ESC] Cancel | [CTRL+V] Paste",
-            "PLAYER_TAKEOVER": "[ENTER] Submit Response | [ESC] Cancel/Let AI Handle It | [CTRL+V] Paste",
-            "PROMETHEUS_TAKEOVER": "[UP/DOWN] Select Tool | [LEFT/RIGHT] Toggle | [ENTER] Submit | [ESC] Cancel",
-            AppState.GAME_RUNNING: "[F7] Cast Manager | [F8] Flag Response | [F9] Player Takeover | [F10/ESC] Save & Exit",
-            "IN_GAME_INPUT": "[ENTER] Submit Action | [ESC] Skip Action | [CTRL+V] Paste",
-            "IN_GAME_MENU": "[UP/DOWN] Navigate | [ENTER] Select | [ESC] Cancel",
-            AppState.CALIBRATING: "[ESC] Stop Calibration",
-            AppState.PEG_V3_TEST: "[ENTER] Next Step | [SPACE] Fast-Forward | [LEFT/RIGHT] Change Scenario | [ESC] Back",
-            AppState.CHARACTER_GENERATION_TEST: "[ESC] Stop Test & Return to Menu",
-            AppState.SHUTTING_DOWN: "Shutting down, please wait..."
+            "DEFAULT": "help_bar_default",
+            AppState.WORLD_SELECTION: "help_bar_world_select",
+            AppState.SETTINGS: "help_bar_settings_nav",
+            "SETTINGS_EDIT": "help_bar_settings_edit",
+            "SETTINGS_CONFIRM": "help_bar_settings_confirm_exit",
+            AppState.LOAD_OR_NEW: "help_bar_load_or_new",
+            AppState.LOAD_GAME_SELECTION: "help_bar_load_game",
+            AppState.SCENE_SELECTION: "help_bar_scene_select",
+            AppState.AWAITING_THEME_INPUT: "help_bar_text_input",
+            AppState.AWAITING_SCENE_INPUT: "help_bar_text_input",
+            "PLAYER_TAKEOVER": "help_bar_player_takeover",
+            "PROMETHEUS_TAKEOVER": "help_bar_prometheus",
+            AppState.GAME_RUNNING: "help_bar_game_running",
+            "IN_GAME_INPUT": "help_bar_ingame_input",
+            "IN_GAME_MENU": "help_bar_ingame_menu",
+            AppState.CALIBRATING: "help_bar_calibrating",
+            AppState.PEG_V3_TEST: "help_bar_peg_test",
+            AppState.CHARACTER_GENERATION_TEST: "help_bar_char_gen_test",
+            AppState.SHUTTING_DOWN: "help_bar_shutting_down"
         }
         self.help_bar = HelpBar(help_texts=self.help_texts)
 
@@ -133,7 +135,7 @@ class UIManager:
                     self.app_state = AppState.WORLD_SELECTION
                     self.active_view = None
 
-                self.active_view = SettingsView(on_back=on_settings_back, console_height=self.root_console.height)
+                self.active_view = TabbedSettingsView(on_back=on_settings_back, console_width=self.root_console.width, console_height=self.root_console.height)
 
             elif self.app_state == AppState.AWAITING_THEME_INPUT:
                 user_prompt = "Enter a theme for the new world (or leave blank for a generated one)."
@@ -386,12 +388,18 @@ class UIManager:
             elif self.app_state in [AppState.AWAITING_THEME_INPUT, AppState.AWAITING_SCENE_INPUT]:
                 context_key = self.app_state
 
+        elif isinstance(self.active_view, TabbedSettingsView):
+            if self.active_view.show_exit_confirmation:
+                context_key = "SETTINGS_CONFIRM"
+            elif getattr(self.active_view.pages[self.active_view.active_page_index], 'is_editing', False):
+                context_key = "SETTINGS_EDIT"
+            else:
+                context_key = AppState.SETTINGS
+
         elif isinstance(self.active_view, PrometheusView):
             context_key = "PROMETHEUS_TAKEOVER"
         elif isinstance(self.active_view, MenuView):
             context_key = "IN_GAME_MENU"
-        elif isinstance(self.active_view, SettingsView) and self.active_view.is_editing:
-            context_key = "SETTINGS_EDIT"
 
         self.help_bar.set_context(context_key)
 
@@ -426,9 +434,11 @@ class UIManager:
             self.active_view.sdl_primitives.clear()
 
     def _sync_text_input_state(self):
-        is_text_view = (isinstance(self.active_view, TextInputView)) or \
-                       (isinstance(self.active_view,
-                                   SettingsView) and self.active_view.is_editing and self.active_view.edit_handler is not None)
+        if not isinstance(self.active_view, TabbedSettingsView):
+            is_text_view = isinstance(self.active_view, TextInputView)
+        else:
+            active_page = self.active_view.pages[self.active_view.active_page_index]
+            is_text_view = getattr(active_page, 'is_editing', False)
 
         if is_text_view and not self.text_input_active:
             if self.context.sdl_window: self.context.sdl_window.start_text_input()

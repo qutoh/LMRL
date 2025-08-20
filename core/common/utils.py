@@ -272,8 +272,15 @@ def get_chosen_name_from_response(response_text):
 
 
 def is_valid_filename(filename):
+    """Checks if a filename is valid for profile saving."""
     if not filename:
         return False
+    # Disallow file system characters
     if re.search(r'[<>:"/\\|?*]', filename):
         return False
-    return 1 <= len(filename.split()) <= 4
+    # Enforce a reasonable length and word count
+    if not (1 <= len(filename) <= 50):
+        return False
+    if not (1 <= len(filename.split()) <= 5):
+        return False
+    return True

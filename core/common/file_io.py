@@ -12,6 +12,7 @@ _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 _CORE_DIR = os.path.dirname(_CURRENT_DIR)
 PROJECT_ROOT = os.path.dirname(_CORE_DIR)
 SAVE_DATA_ROOT = os.path.join(PROJECT_ROOT, "save_data")
+SETTINGS_PROFILES_ROOT = os.path.join(PROJECT_ROOT, "data", "settings_profiles")
 IDEATION_LOG_PATH = os.path.join(PROJECT_ROOT, "ideation_log.txt")
 PEG_RECONCILIATION_LOG_PATH = os.path.join(PROJECT_ROOT, "peg_reconciliation_log.txt")
 LOCALIZATION_ERROR_LOG_PATH = os.path.join(PROJECT_ROOT, "localization_errors.log")
@@ -20,8 +21,46 @@ WORLD_PREFIX_PATH = os.path.join(PROJECT_ROOT, "res", "world_name_prefix.txt")
 WORLD_SUFFIX_PATH = os.path.join(PROJECT_ROOT, "res", "world_name_suffix.txt")
 
 
-# ---
+# --- Settings Profile I/O ---
 
+def list_settings_profiles() -> list[str]:
+    """Lists all .json files in the settings profiles directory."""
+    create_directory(SETTINGS_PROFILES_ROOT)
+    try:
+        profiles = [
+            os.path.splitext(f)[0] for f in os.listdir(SETTINGS_PROFILES_ROOT)
+            if f.endswith('.json')
+        ]
+        return sorted(profiles)
+    except OSError:
+        return []
+
+def read_settings_profile(name: str) -> dict | None:
+    """Reads a specific settings profile JSON file."""
+    clean_name = sanitize_filename(name)
+    path = os.path.join(SETTINGS_PROFILES_ROOT, f"{clean_name}.json")
+    return read_json(path, default=None)
+
+def write_settings_profile(name: str, data: dict) -> bool:
+    """Writes data to a settings profile JSON file."""
+    clean_name = sanitize_filename(name)
+    path = os.path.join(SETTINGS_PROFILES_ROOT, f"{clean_name}.json")
+    return write_json(path, data)
+
+def delete_settings_profile(name: str) -> bool:
+    """Deletes a settings profile file."""
+    clean_name = sanitize_filename(name)
+    path = os.path.join(SETTINGS_PROFILES_ROOT, f"{clean_name}.json")
+    if path_exists(path):
+        try:
+            os.remove(path)
+            return True
+        except OSError:
+            return False
+    return False
+
+
+# --- World / Save I/O ---
 def get_random_world_name() -> str:
     """Reads from prefix and suffix files to generate a random world name."""
     try:

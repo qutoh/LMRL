@@ -8,6 +8,8 @@ import tcod
 import tcod.event
 from tcod import libtcodpy
 
+from ..common.localization import loc
+
 
 class Widget:
     """Base class for all UI elements."""
@@ -283,7 +285,8 @@ class HelpBar(Widget):
         self.current_context = context_key
 
     def render(self, console: tcod.console.Console):
-        help_text = self.help_texts.get(self.current_context, self.help_texts.get("DEFAULT", ""))
+        help_key = self.help_texts.get(self.current_context, self.help_texts.get("DEFAULT", "help_bar_default"))
+        help_text = loc(help_key)
 
         self.x = 0
         self.y = console.height - 1

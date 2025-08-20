@@ -8,7 +8,7 @@ from .menu_view import MenuView
 from .prometheus_view import PrometheusView
 from .save_selection_view import SaveSelectionView
 from .scene_selection_view import SceneSelectionView
-from .settings_view import SettingsView
+from .tabbed_settings_view import TabbedSettingsView
 from .text_input_view import TextInputView
 from .world_selection_view import WorldSelectionView
 
@@ -19,7 +19,7 @@ __all__ = [
     "SaveSelectionView",
     "GameView",
     "TextInputView",
-    "SettingsView",
+    "TabbedSettingsView",
     "MenuView",
     "PrometheusView",
     "CharacterGenerationTestView",
