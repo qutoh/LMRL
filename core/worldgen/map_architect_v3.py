@@ -303,9 +303,9 @@ class MapArchitectV3:
                     f"- {b.name}: {b.narrative_log}" for b in self.initial_feature_branches if b.narrative_log)
                 new_nearby_sentence = self.llm.get_nearby_feature_sentence(all_areas_narrative)
 
-                if not new_nearby_sentence:
+                if not new_nearby_sentence or 'none' in new_nearby_sentence.lower():
                     utils.log_message('debug',
-                                      "[PEGv3 Architect] LLM failed to create new nearby area narrative. Generation complete.")
+                                      "[PEGv3 Architect] LLM decided the scene is complete. Generation finished.")
                     break  # No new areas, end generation
 
                 new_feature_data = self.llm.define_feature_from_sentence(new_nearby_sentence)
@@ -338,7 +338,7 @@ class MapArchitectV3:
                 parent_branch.narrative_log = self.llm.get_narrative_seed(parent_branch.name) or ""
 
             other_features_context_list = [
-                f"({branch.name})"
+                f"({branch.feature_type} - \"{branch.name}\")"
                 for branch in self.initial_feature_branches  # Use all initial branches for context
                 if branch is not parent_branch
             ]
