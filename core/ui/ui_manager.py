@@ -24,8 +24,6 @@ from ..engine.setup_manager import SetupManager
 from ..common import file_io
 from ..common.config_loader import config
 from ..common import utils
-from ..common.localization import loc
-
 from ..common.game_state import GameState
 from .views import WorldSelectionView, GameView, SceneSelectionView, TextInputView, LoadOrNewView, SaveSelectionView, \
     TabbedSettingsView, MenuView, PrometheusView, CalibrationView
@@ -45,6 +43,7 @@ def engine_process(render_queue: Queue, input_queue: Queue, load_path: str, worl
         engine.run()
     else:
         render_queue.put(None)
+
 
 
 class UIManager:
@@ -479,34 +478,23 @@ class UIManager:
                             current_app_state = self.app_state
                             self.special_modes.stop_peg_patches()
                             if key == tcod.event.KeySym.LEFT:
-                                self.special_modes.peg_v3_scenario_index = (
-                                                                                   self.special_modes.peg_v3_scenario_index - 1) % len(
-                                    self.special_modes.peg_v3_scenarios)
+                                self.special_modes.peg_v3_scenario_index = (self.special_modes.peg_v3_scenario_index - 1) % len(self.special_modes.peg_v3_scenarios)
                             elif key == tcod.event.KeySym.RIGHT:
-                                self.special_modes.peg_v3_scenario_index = (
-                                                                                   self.special_modes.peg_v3_scenario_index + 1) % len(
-                                    self.special_modes.peg_v3_scenarios)
+                                self.special_modes.peg_v3_scenario_index = (self.special_modes.peg_v3_scenario_index + 1) % len(self.special_modes.peg_v3_scenarios)
                             elif key == tcod.event.KeySym.ESCAPE:
                                 self.app_state = AppState.WORLD_SELECTION
                                 self.active_view = None
                                 continue
-
                             self.app_state = current_app_state
                             self.active_view = None
                             continue
 
-                        if phase in ('DONE', 'FINAL') and key in (tcod.event.KeySym.RETURN, tcod.event.KeySym.KP_ENTER):
-                            self.active_view = None
-                        elif phase == 'INITIAL_PLACEMENT' and key in (tcod.event.KeySym.RETURN,
-                                                                      tcod.event.KeySym.KP_ENTER):
-                            self.special_modes.advance_peg_test_step(key)
-                        elif phase in ('SUBFEATURE_STEP', 'INTERIOR_PLACEMENT_STEP') and key in (
-                                tcod.event.KeySym.RETURN, tcod.event.KeySym.KP_ENTER, tcod.event.KeySym.SPACE):
-                            self.special_modes.advance_peg_test_step(key)
-                        elif phase in ('PRE_JITTER', 'PRE_INTERIOR_PLACEMENT', 'PRE_CONNECT',
-                                       'POST_CONNECT') and key in (tcod.event.KeySym.SPACE, tcod.event.KeySym.RETURN,
-                                                                   tcod.event.KeySym.KP_ENTER):
-                            self.special_modes.advance_peg_test_step(key)
+                        # Simplified key handling: any valid progression key calls advance_peg_test_step.
+                        if key in (tcod.event.KeySym.RETURN, tcod.event.KeySym.KP_ENTER, tcod.event.KeySym.SPACE):
+                            if phase in ('DONE', 'FINAL'):
+                                self.active_view = None # Trigger regeneration
+                            else:
+                                self.special_modes.advance_peg_test_step(key)
 
                     elif self.special_mode_active == "CHAR_GEN_TEST":
                         if converted_event.sym == tcod.event.KeySym.ESCAPE:

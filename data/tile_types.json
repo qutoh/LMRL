@@ -1,43 +1,129 @@
 {
-    "DEFAULT_FLOOR": {
-        "description": "A basic, walkable floor surface.",
-        "movement_cost": 1.0,
-        "is_transparent": true,
-        "materials": ["ROCK"],
-        "pass_methods": ["GROUND", "FLYING"],
-        "colors": [[100, 100, 100]],
-        "characters": ["."]
-    },
-    "DEFAULT_WALL": {
-        "description": "An impassable barrier.",
-        "movement_cost": 1.0,
-        "is_transparent": false,
-        "materials": ["ROCK"],
-        "pass_methods": ["PASS_WALL", "PHASING"],
-        "colors": [[150, 150, 150]],
-        "characters": ["#"]
-    },
-    "DEFAULT_DOOR": {
-        "description": "A standard door or portal.",
-        "movement_cost": 1.0,
-        "is_transparent": false,
-        "materials": ["WOOD", "METAL"],
-        "pass_methods": ["GROUND", "FLYING", "PHASING"],
-        "colors": [[200, 150, 50]],
-        "characters": ["+"]
-    },
-    "WATER": {
-        "description": "Shimmering water, difficult to traverse.",
-        "movement_cost": 2.0,
-        "is_transparent": true,
-        "materials": ["LIQUID"],
-        "pass_methods": ["SWIM", "FLYING", "PHASING"],
-        "colors": [
-            [50, 50, 180],
-            [60, 60, 190],
-            [70, 70, 200],
-            [60, 60, 190]
-        ],
-        "characters": ["≈", "~"]
-    }
+"DEFAULT_FLOOR": {
+"description": "A basic, walkable floor surface.",
+"movement_cost": 1.0,
+"is_transparent": true,
+"materials": ["ROCK"],
+"pass_methods": ["GROUND", "FLYING"],
+"colors": [[100, 100, 100]],
+"characters": ["."]
+},
+"GRASS": {
+"description": "Basic, walkable vegetation.",
+"movement_cost": 1.2,
+"is_transparent": true,
+"materials": ["VEGETATION"],
+"pass_methods": ["GROUND", "FLYING"],
+"colors": [[64, 115, 75]],
+"characters": [","]
+},
+"WOOD": {
+"description": "An impassable section of wood.",
+"movement_cost": 1.0,
+"is_transparent": false,
+"materials": ["WOOD"],
+"pass_methods": ["PASS_WALL", "PHASING"],
+"colors": [[43, 38, 25]],
+"characters": ["&"]
+},
+"DEFAULT_BRIGHT_FLOOR": {
+"description": "A walkable floor surface.",
+"movement_cost": 1.0,
+"is_transparent": true,
+"materials": ["ROCK"],
+"pass_methods": ["GROUND", "FLYING"],
+"colors": [[153, 149, 132]],
+"characters": ["."]
+},
+"PATH_FLOOR": {
+"description": "A worn path.",
+"movement_cost": 1.0,
+"is_transparent": true,
+"materials": ["DIRT", "GRAVEL", "SAND", "VEGETATION"],
+"pass_methods": ["GROUND", "FLYING"],
+"colors": [[166, 145, 55]],
+"characters": ["·"]
+},
+"PATH_DIRT": {
+"description": "A dirt path.",
+"movement_cost": 1.1,
+"is_transparent": true,
+"materials": ["DIRT", "GRAVEL", "SAND", "VEGETATION"],
+"pass_methods": ["GROUND", "FLYING"],
+"colors": [[77, 66, 40]],
+"characters": ["·"]
+},
+"DEFAULT_WALL": {
+"description": "An impassable barrier.",
+"movement_cost": 1.0,
+"is_transparent": false,
+"materials": ["ROCK"],
+"pass_methods": ["PASS_WALL", "PHASING"],
+"colors": [[150, 150, 150]],
+"characters": ["#"]
+},
+"DEFAULT_DOOR": {
+"description": "A standard door or portal.",
+"movement_cost": 1.0,
+"is_transparent": false,
+"materials": ["WOOD", "METAL"],
+"pass_methods": ["GROUND", "FLYING", "PHASING"],
+"colors": [[200, 150, 50]],
+"characters": ["+"]
+},
+"WATER": {
+"description": "Shimmering water, difficult to traverse.",
+"movement_cost": 2.0,
+"is_transparent": true,
+"materials": ["WATER_UNSAFE"],
+"pass_methods": ["SWIM", "FLYING", "PHASING"],
+"colors": [
+[42, 42, 112]
+],
+"characters": ["≈"]
+},
+"WATER_RAPIDS": {
+"description": "Rapidly flowing water, difficult to traverse.",
+"movement_cost": 3.0,
+"is_transparent": true,
+"materials": ["WATER_UNSAFE"],
+"pass_methods": ["SWIM", "FLYING", "PHASING"],
+"colors": [
+[135, 104, 212]
+],
+"characters": ["≈"]
+},
+"WATER_SHALLOW": {
+"description": "Shimmering water, shallow enough to walk through.",
+"movement_cost": 1.5,
+"is_transparent": true,
+"materials": ["WATER_UNSAFE"],
+"pass_methods": ["GROUND", "SWIM", "FLYING", "PHASING"],
+"colors": [
+[50, 50, 180]
+],
+"characters": ["~"]
+},
+"WATER_TREATED": {
+"description": "Clean, drinkable, difficult to traverse.",
+"movement_cost": 2.0,
+"is_transparent": true,
+"materials": ["WATER_SAFE"],
+"pass_methods": ["SWIM", "FLYING", "PHASING"],
+"colors": [
+[50, 50, 180]
+],
+"characters": ["≈"]
+},
+"WATER_TREATED_SHALLOW": {
+"description": "Clean, drinkable, shallow enough to walk through.",
+"movement_cost": 2.0,
+"is_transparent": true,
+"materials": ["WATER_SAFE"],
+"pass_methods": ["SWIM", "FLYING", "PHASING"],
+"colors": [
+[50, 50, 180]
+],
+"characters": ["~"]
+}
 }

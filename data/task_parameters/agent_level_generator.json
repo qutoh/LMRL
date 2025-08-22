@@ -40,6 +40,22 @@
     "source_agent": "LEVEL_GENERATOR",
     "default_adjustment": 0.1
   },
+  "PEG_V3_CHOOSE_PATH_TARGET": {
+    "task_prompt_key": "task_prompt_peg_v3_choose_path_target",
+    "calibration_group": "peg_choice",
+    "enable_reasoning": false,
+    "description": "Asks the LLM to choose a destination for a new path from a list of options."
+  },
+  "PEG_V3_CREATE_NEARBY_FEATURE_SENTENCE": {
+    "task_prompt_key": "task_prompt_peg_v3_create_nearby_feature_sentence",
+    "source_agent": "LEVEL_GENERATOR",
+    "default_adjustment": 0.1
+  },
+  "PEG_V3_CHOOSE_EXTERIOR_TILE": {
+    "task_prompt_key": "task_prompt_peg_v3_choose_exterior_tile",
+    "source_agent": "LEVEL_GENERATOR",
+    "enable_reasoning": false
+  },
   "PROCGEN_GENERATE_NARRATIVE_BEAT": {
     "task_prompt_key": "task_prompt_peg_narrative_beat",
     "source_agent": "LEVEL_GENERATOR",

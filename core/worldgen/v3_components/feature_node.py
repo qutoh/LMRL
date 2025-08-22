@@ -22,6 +22,7 @@ class FeatureNode:
         self.narrative_log: str = ""  # Only used for root nodes of a branch
         self.interior_features_to_place: List[dict] = []
         self.placed_interior_features: List[dict] = []
+        self.sentence_count: int = 0
 
         # --- Growth Algorithm Attributes ---
         self.target_area: float = 0.0
@@ -29,7 +30,11 @@ class FeatureNode:
         self.is_stuck: bool = False
         self.growth_multiplier: int = 1
         self.target_aspect_ratio: Tuple[int, int] = (1, 1)
+        self.target_growth_rect: Optional[Tuple[int, int, int, int]] = None
+        self.relocation_history: set = set()
 
+        # --- Pathing Attribute ---
+        self.path_coords: Optional[List[Tuple[int, int]]] = None
 
     def get_all_nodes_in_branch(self) -> List['FeatureNode']:
         """Recursively gets all nodes in this feature's branch, including itself."""
@@ -39,5 +44,17 @@ class FeatureNode:
         return nodes
 
     def get_rect(self) -> Tuple[int, int, int, int]:
-        """Returns the current absolute position and size as a tuple (x, y, w, h)."""
+        """
+        Returns the feature's bounding box. For standard features, it's the stored
+        rectangle. For path features, it's calculated from the path coordinates.
+        """
+        if self.path_coords:
+            if not self.path_coords:
+                return 0, 0, 0, 0
+            min_x = min(c[0] for c in self.path_coords)
+            max_x = max(c[0] for c in self.path_coords)
+            min_y = min(c[1] for c in self.path_coords)
+            max_y = max(c[1] for c in self.path_coords)
+            return min_x, min_y, (max_x - min_x) + 1, (max_y - min_y) + 1
+
         return self.current_x, self.current_y, self.current_abs_width, self.current_abs_height

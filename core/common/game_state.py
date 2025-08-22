@@ -32,6 +32,7 @@ class GenerationState:
         self.placed_features = {}
         self.character_creation_queue = []
         self.door_locations = []
+        self.exterior_tile_type = "DEFAULT_FLOOR" # Default fallback
 
 
 graphic_dt = np.dtype(
@@ -48,7 +49,7 @@ tile_dt = np.dtype(
         ("transparent", np.bool_),
         ("graphic", graphic_dt),
         ("movement_cost", np.float32),
-        ("terrain_type", np.int8)  # Maps to an index in config.tile_type_map
+        ("terrain_type", np.int8)
     ]
 )
 
@@ -70,12 +71,37 @@ class Entity:
 
 class MapArtist:
     """
-    Translates a completed GenerationState object into a tile-based map
-    on a GameMap instance.
+    Translates a GenerationState into a tile-based map and handles rendering of visual effects.
     """
 
+    def __init__(self):
+        self._color_cache = {}
+
+    def _get_color_for_feature(self, feature_name: str) -> tuple[int, int, int]:
+        if feature_name in self._color_cache:
+            return self._color_cache[feature_name]
+
+        seed = hash(feature_name)
+        r = (seed & 0xFF0000) >> 16
+        g = (seed & 0x00FF00) >> 8
+        b = seed & 0x0000FF
+        r, g, b = max(128, r), max(128, g), max(128, b)
+        color = (r, g, b)
+        self._color_cache[feature_name] = color
+        return color
+
+    def draw_feature_trails(self, renderer, generation_state: 'GenerationState'):
+        for feature_data in generation_state.placed_features.values():
+            name = feature_data.get('name', 'unknown')
+            rect = feature_data.get('bounding_box')
+            if not rect: continue
+
+            color = self._get_color_for_feature(name)
+            x, y, w, h = rect
+
+            renderer.draw_rect(x=x, y=y, width=w, height=h, bg=(*color, 255))
+
     def _get_tile_data_from_type(self, tile_type_key: str) -> tuple | None:
-        """Helper to convert a tile type from JSON into a numpy-compatible tuple."""
         tile_def = config.tile_types.get(tile_type_key)
         if not tile_def:
             return None
@@ -95,31 +121,60 @@ class MapArtist:
             terrain_type_index
         )
 
+    def _draw_path_feature(self, game_map: 'GameMap', path_coords: set, feature_def: dict):
+        """Draws a path feature with a border and floor using a two-pass method."""
+        floor_tile_type = feature_def.get('tile_type', 'PATH_FLOOR')
+        border_tile_type = feature_def.get('border_tile_type', 'DEFAULT_WALL')
+
+        floor_tile_data = self._get_tile_data_from_type(floor_tile_type)
+        border_tile_data = self._get_tile_data_from_type(border_tile_type)
+
+        if not floor_tile_data or not border_tile_data:
+            return
+
+        # Pass 1: Draw the entire path with its floor tile.
+        for x, y in path_coords:
+            if game_map.is_in_bounds(x, y):
+                game_map.tiles[x, y] = floor_tile_data
+
+        # Pass 2: Draw the border on any adjacent tile that is NOT part of the path.
+        for x, y in path_coords:
+            for nx in range(x - 1, x + 2):
+                for ny in range(y - 1, y + 2):
+                    if (nx, ny) == (x, y):
+                        continue
+                    if game_map.is_in_bounds(nx, ny) and (nx, ny) not in path_coords:
+                        # This neighbor is outside the path, so it's a border wall.
+                        game_map.tiles[nx, ny] = border_tile_data
+
     def draw_map(self, game_map: 'GameMap', generation_state: 'GenerationState', features_definitions: dict):
-        """
-        Renders the entire map from the generation state's placed_features using a two-pass system:
-        1. Fill map with default background (e.g., walkable floor).
-        2. Draw all features (floors and interior walls).
-        3. Overlay pathfinding doors.
-        """
         if not generation_state or not features_definitions:
             return
 
-        # 1. Initialize the entire map with a default floor
-        default_floor_data = self._get_tile_data_from_type("DEFAULT_FLOOR")
-        if not default_floor_data:
-            print("FATAL ERROR: 'DEFAULT_FLOOR' not found in tile_types.json")
+        # Step 1: Initialize the entire map with primordial, unwalkable space.
+        void_space_data = self._get_tile_data_from_type("VOID_SPACE")
+        if not void_space_data:
+            print("FATAL ERROR: 'VOID_SPACE' not found in tile_types.json")
             exit()
-        game_map.tiles[...] = default_floor_data
+        game_map.tiles[...] = void_space_data
 
-        # 2. Draw each feature, including its floor and border
+        # Step 2: Draw all placed features onto the map.
         for feature_tag, feature_data in generation_state.placed_features.items():
-            bounds = feature_data.get('bounding_box')
             feature_type_key = feature_data.get('type')
-            if not feature_type_key or feature_type_key not in features_definitions or not bounds:
+            if not feature_type_key or feature_type_key not in features_definitions:
+                continue
+            feature_def = features_definitions[feature_type_key]
+
+            if path_tiles := feature_data.get("path_tiles"):
+                # When loaded from JSON, path_tiles will be a list of lists.
+                # It must be converted to a set of tuples to be hashable and for fast lookups.
+                path_coords_set = set(map(tuple, path_tiles))
+                self._draw_path_feature(game_map, path_coords_set, feature_def)
                 continue
 
-            feature_def = features_definitions[feature_type_key]
+            bounds = feature_data.get('bounding_box')
+            if not bounds: continue
+
             x1, y1, w, h = [int(c) for c in bounds]
             x2, y2 = x1 + w, y1 + h
 
@@ -127,13 +182,11 @@ class MapArtist:
             x2, y2 = min(game_map.width, x2), min(game_map.height, y2)
             if x1 >= x2 or y1 >= y2: continue
 
-            # --- Draw Floor ---
             floor_tile_type = feature_def.get('tile_type', 'DEFAULT_FLOOR')
             floor_tile_data = self._get_tile_data_from_type(floor_tile_type)
             if floor_tile_data:
                 game_map.tiles[x1:x2, y1:y2] = floor_tile_data
 
-            # --- Draw Border ---
             border_thickness = feature_def.get('border_thickness', 1)
             if border_thickness > 0:
                 border_tile_type = feature_def.get('border_tile_type', 'DEFAULT_WALL')
@@ -147,7 +200,7 @@ class MapArtist:
                     game_map.tiles[x1:x1 + effective_border, y1:y2] = border_tile_data
                     game_map.tiles[x2 - effective_border:x2, y1:y2] = border_tile_data
 
-        # 3. Overlay pathfinding doors
+        # Step 3: Draw doors.
         door_tile_data = self._get_tile_data_from_type("DEFAULT_DOOR")
         if door_tile_data and generation_state.door_locations:
             valid_coords = [(x, y) for x, y in generation_state.door_locations if game_map.is_in_bounds(x, y)]
@@ -155,13 +208,21 @@ class MapArtist:
                 door_xs, door_ys = zip(*valid_coords)
                 game_map.tiles[door_xs, door_ys] = door_tile_data
 
+        # Step 4: Post-processing to replace any remaining void space with the chosen exterior tile.
+        exterior_tile_name = getattr(generation_state, 'exterior_tile_type', 'DEFAULT_FLOOR')
+        exterior_tile_data = self._get_tile_data_from_type(exterior_tile_name)
+        if exterior_tile_data:
+            void_space_index = config.tile_type_map.get("VOID_SPACE", -1)
+            void_mask = game_map.tiles["terrain_type"] == void_space_index
+            game_map.tiles[void_mask] = exterior_tile_data
+
 
 class GameMap:
     def __init__(self, width: int, height: int):
         self.width = width
         self.height = height
         self.tiles = np.zeros((width, height), dtype=tile_dt, order="F")
-        self.tiles["transparent"] = True  # Start with all transparent
+        self.tiles["transparent"] = True
 
     def is_in_bounds(self, x: int, y: int) -> bool:
         return 0 <= x < self.width and 0 <= y < self.height

@@ -23,6 +23,10 @@ class Config:
 
         self.features = self._load_json('features.json', default={})
         self.tile_types = self._load_json('tile_types.json', default={})
+
+        # --- Programmatically ensure core definitions exist ---
+        self._ensure_core_definitions()
+
         self.tile_type_map = {name: i for i, name in enumerate(self.tile_types.keys())}
         self.tile_type_map_reverse = {i: name for name, i in self.tile_type_map.items()}
 
@@ -39,6 +43,27 @@ class Config:
 
         self._apply_defaults_to_agents()
         self._apply_api_keys()
+
+    def _ensure_core_definitions(self):
+        """Ensures that critical, hard-coded features and tiles exist."""
+        if "VOID_SPACE" not in self.tile_types:
+            self.tile_types["VOID_SPACE"] = {
+                "description": "The primordial, unformed space of the map before generation.",
+                "movement_cost": 1.0,
+                "is_transparent": True,
+                "materials": ["NONE"],
+                "pass_methods": [],  # Not walkable
+                "colors": [[10, 0, 10]],
+                "characters": [" "]
+            }
+
+        if "CHARACTER" not in self.features:
+            self.features["CHARACTER"] = {
+                "display_name": "A character or creature.",
+                "feature_type": "CHARACTER",
+                "placement_strategy": "SPECIAL_FUNC",
+                "border_thickness": 0
+            }
 
     def _load_task_parameters(self) -> dict:
         """Loads and merges all task parameter JSON files from the dedicated directory."""

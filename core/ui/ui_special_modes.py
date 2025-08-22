@@ -38,9 +38,9 @@ class SpecialModeManager:
             ("Bookshelf", "GENERIC_INTERACTABLE"), ("Small Alcove", "GENERIC_CONTAINER"),
             ("Weapon Rack", "GENERIC_INTERACTABLE"), ("Fireplace", "GENERIC_INTERACTABLE"),
             ("Archway", "GENERIC_PORTAL"), ("Window", "GENERIC_PORTAL"),
-            ("Storage Closet", "GENERIC_CONTAINER"), ("Support Pillar", "SOLID_BARRIER")
+            ("Storage Closet", "GENERIC_CONTAINER"), ("Support Pillar", "SOLID_BARRIER"),
+            ("Connecting Tunnel", "GENERIC_PATH")
         ]
-        # PEG Test attributes
         self.peg_test_generator = None
         self.current_peg_phase = 'INIT'
         self.active_patchers = []
@@ -48,8 +48,6 @@ class SpecialModeManager:
         self.last_peg_state = None
         self.last_path_tracer = []
         self.original_find_path = None
-
-        # Character Generation Test attributes
         self.char_gen_context = None
         self.char_gen_thread = None
         self.char_gen_queue = None
@@ -255,63 +253,57 @@ class SpecialModeManager:
 
     def _mock_execute_task_for_peg(self, engine, agent, task_key, messages, **kwargs):
         """A stateful mock function to replace llm_api.execute_task for the PEG tests."""
+        utils.log_message('debug', f"[MOCK] Received call for task: {task_key}")
         response_data = None
 
-        log_message = f"[MOCK] Received call for task: {task_key}"
-        utils.log_message('debug', log_message)
-
-        # --- Mocks for V2 & V3 Initial Phase ---
-        if task_key == 'PEG_V2_DEFINE_AREA_DATA':
-            area_name = kwargs['task_prompt_kwargs']['area_name']
-            response_data = self.mock_data_source[task_key].get(area_name)
-
-        # --- Mocks for V3 Conversational Subfeature Phase ---
-        elif task_key == 'PEG_V3_GET_NARRATIVE_SEED':
-            area_name = kwargs['task_prompt_kwargs']['area_name']
-            response_data = f"The {area_name} is a vast and open space, defining the center of the complex."
-
-        elif task_key == 'PROCGEN_GENERATE_NARRATIVE_BEAT':
-            # This now picks from a combined list of generic and scenario-specific features for stress testing.
+        # --- DYNAMIC RESPONSE TASKS ---
+        # These tasks generate a response and do not read from the mock file.
+        if task_key == 'PROCGEN_GENERATE_NARRATIVE_BEAT':
             combined_features = self.plausible_subfeatures + self.scenario_subfeatures
             feature_name, _ = random.choice(combined_features)
-
             self.call_counters[feature_name] += 1
             unique_name = f"{feature_name} {self.call_counters[feature_name]}"
-            response_data = f"Nearby, there is a {unique_name} that is medium-sized."
+            response_data = f"There is a {unique_name} here."
 
         elif task_key == 'PEG_CREATE_FEATURE_JSON':
             sentence = kwargs['task_prompt_kwargs']['sentence']
-            match = re.search(r'there is a (.+?) that is', sentence)
+            match = re.search(r'is a (.+?) here\.', sentence)
             if not match:
-                return json.dumps({})
+                response_data = {}
+            else:
+                feature_name = match.group(1).strip()
+                base_name = re.sub(r'\s\d+$', '', feature_name)
+                all_feature_types = self.plausible_subfeatures + self.scenario_subfeatures
+                feature_type = next((ftype for name, ftype in all_feature_types if name == base_name),
+                                    "GENERIC_CONTAINER")
+                feature_def = config.features.get(feature_type, {})
+                response_data = {
+                    "name": feature_name,
+                    "description": f"A standard {base_name.lower()} as described.",
+                    "type": feature_type,
+                    "dimensions": "1x1 tile" if feature_def.get('feature_type') == "INTERACTABLE" else "medium"
+                }
 
-            feature_name = match.group(1).strip()
-            base_name = re.sub(r'\s\d+$', '', feature_name)
-
-            all_feature_types = self.plausible_subfeatures + self.scenario_subfeatures
-            feature_type = "GENERIC_CONTAINER"  # Default
-            for name, f_type in all_feature_types:
-                if name == base_name:
-                    feature_type = f_type
-                    break
-
-            feature_def = config.features.get(feature_type, {})
-            mock_json = {
-                "name": feature_name,
-                "description": f"A standard {base_name.lower()} as described.",
-                "type": feature_type,
-                "dimensions": "1x1 tile" if feature_def.get('feature_type') == "INTERACTABLE" else "medium"
-            }
-            response_data = mock_json
-
-        elif task_key == 'PEG_V3_CHOOSE_PARENT':
-            parent_list_str = kwargs['task_prompt_kwargs']['parent_options_list']
-            options = [line.strip().lstrip('- ') for line in parent_list_str.split('\n') if line.strip()]
+        elif task_key in ['PEG_V3_CHOOSE_PARENT', 'PEG_V3_CHOOSE_PATH_TARGET']:
+            option_list_str = kwargs['task_prompt_kwargs'].get('parent_options_list') or kwargs[
+                'task_prompt_kwargs'].get('target_options_list', '')
+            options = [line.strip().lstrip('- ') for line in option_list_str.split('\n') if line.strip()]
             response_data = random.choice(options) if options else "NONE"
 
-        # --- Default V2/V3 mocks ---
+        # --- STATIC RESPONSE TASKS ---
+        # These tasks read their response directly from the mock data file.
         else:
-            response_data = self.mock_data_source.get(task_key)
+            mock_response_template = self.mock_data_source.get(task_key)
+            if mock_response_template is None:
+                utils.log_message('debug', f"  [MOCK WARNING] No mock data found for task: {task_key}")
+                return ""
+
+            if task_key in ['PEG_V3_GET_NARRATIVE_SEED', 'PEG_V2_DEFINE_AREA_DATA']:
+                area_name = kwargs['task_prompt_kwargs']['area_name']
+                if isinstance(mock_response_template, dict):
+                    response_data = mock_response_template.get(area_name)
+            else:
+                response_data = mock_response_template
 
         utils.log_message('debug', f"  [MOCK] Responding for {task_key} with: {response_data}")
         if response_data is None: return ""
@@ -328,25 +320,20 @@ class SpecialModeManager:
             for i in range(len(path) - 1):
                 start_tx, start_ty = path[i]
                 end_tx, end_ty = path[i + 1]
-
                 start_px = start_tx * tile_w + tile_w // 2
                 start_py = start_ty * tile_h + tile_h // 2
                 end_px = end_tx * tile_w + tile_w // 2
                 end_py = end_ty * tile_h + tile_h // 2
-
                 self.ui_manager.active_view.add_line((start_px, start_py), (end_px, end_py), (255, 255, 0))
         return path
 
     def _start_peg_patches(self):
         """Starts and tracks manual mock patches for the PEG test modes."""
         self.stop_peg_patches()
-        # Patch LLM calls
         llm_patcher = patch('core.worldgen.v3_components.v3_llm.execute_task',
                             side_effect=self._mock_execute_task_for_peg)
         llm_patcher.start()
         self.active_patchers.append(llm_patcher)
-
-        # Monkey-patch the pathfinding function to intercept its results
         if self.original_find_path is None:
             self.original_find_path = game_functions.find_path
             game_functions.find_path = self._find_path_wrapper
@@ -356,12 +343,9 @@ class SpecialModeManager:
         for p in self.active_patchers:
             p.stop()
         self.active_patchers.clear()
-
-        # Restore the original pathfinding function
         if self.original_find_path:
             game_functions.find_path = self.original_find_path
             self.original_find_path = None
-
         self.peg_test_generator = None
         self.current_peg_phase = 'INIT'
 
@@ -419,8 +403,11 @@ class SpecialModeManager:
                 'nodes': gen_state.layout_graph.nodes,
                 'edges': gen_state.layout_graph.edges
             }
+
         if gen_state.physics_layout:
             level_data_to_cache['physics_layout'] = gen_state.physics_layout
+        else:
+            level_data_to_cache['physics_layout'] = {"bodies": [], "joints": []}  # Placeholder for safety
 
         levels_cache[DEBUG_SCENE_PROMPT] = level_data_to_cache
         file_io.write_json(levels_path, levels_cache)
@@ -456,12 +443,12 @@ class SpecialModeManager:
         self.last_path_tracer.clear()
 
         if not hasattr(self, 'peg_v3_scenarios'):
-            scenarios_path = file_io.join_path(config.data_dir, 'peg_v2_test_scenarios.json')
+            scenarios_path = file_io.join_path(config.data_dir, 'peg_v3_test_scenarios.json')
             self.peg_v3_scenarios = file_io.read_json(scenarios_path, default=[])
             self.peg_v3_scenario_index = 0
 
         if not self.peg_v3_scenarios:
-            ui.event_log.add_message("peg_v2_test_scenarios.json not found or empty.", (255, 100, 100))
+            ui.event_log.add_message("peg_v3_test_scenarios.json not found or empty.", (255, 100, 100))
             ui.app_state = AppState.WORLD_SELECTION
             return
 
@@ -477,7 +464,6 @@ class SpecialModeManager:
 
         game_state = GameState()
         architect = MapArchitectV3(ui.atlas_engine, game_state.game_map, "PEG V3 Test", scenario['name'])
-        title = "PEG V3 (Iterative Placement) Debug"
 
         ui.active_view = GameView(ui.event_log, None, is_debug_mode=True)
         ui.active_view.update_state(game_state)
@@ -492,64 +478,70 @@ class SpecialModeManager:
         self.advance_peg_test_step()
 
     def advance_peg_test_step(self, key_sym=None):
-        """Runs the next step of the current PEG test generator, driven by user input."""
-        ui = self.ui_manager
+        """
+        Runs the PEG generator, looping internally until it hits a "pause" state
+        (an animation frame or a major decision point).
+        """
         if self.peg_test_generator is None:
             return
 
-        # Handle fast-forwarding
-        if self.current_peg_phase in ('SUBFEATURE_STEP',
-                                      'INTERIOR_PLACEMENT_STEP') and key_sym == tcod.event.KeySym.SPACE:
-            target_phase = self.current_peg_phase
-            while self.current_peg_phase == target_phase:
-                try:
-                    phase, state = next(self.peg_test_generator)
-                    self.current_peg_phase = phase
-                    self.last_peg_state = state
-                except StopIteration:
-                    self.current_peg_phase = 'DONE'
-                    break
-        else:
-            # Handle a normal single step
+        # Phases that are animation frames and should always cause a pause
+        animation_phases = ['INITIAL_GROWTH_STEP', 'SUBFEATURE_GROWTH_STEP', 'PATH_DRAW_STEP']
+        # Major phases that require explicit user confirmation to proceed
+        major_decision_phases = ['POST_GROWTH', 'PRE_JITTER', 'PRE_INTERIOR_PLACEMENT', 'PRE_CONNECT', 'POST_CONNECT']
+
+        # The main loop that drives the generator forward.
+        for _ in range(500):  # Safety break to prevent infinite loops
             try:
                 phase, state = next(self.peg_test_generator)
                 self.current_peg_phase = phase
                 self.last_peg_state = state
             except StopIteration:
                 self.current_peg_phase = 'DONE'
+                break
 
-        # Determine the prompt text based on the new phase
+            # If we hit an animation frame, break to render it.
+            if self.current_peg_phase in animation_phases:
+                break
+
+            # If fast-forwarding, only stop for major decisions.
+            if key_sym == tcod.event.KeySym.SPACE:
+                if self.current_peg_phase in major_decision_phases:
+                    break
+            # If single-stepping, stop for major decisions too.
+            elif self.current_peg_phase in major_decision_phases:
+                break
+
+        # After the loop, update the UI prompt based on the final phase we paused on.
         scenario = self.peg_v3_scenarios[self.peg_v3_scenario_index]
         title_str = "PEG V3 (Iterative)"
         base_text = f"Scenario: {scenario['name']} | [LEFT/RIGHT] Change | [ESC] Back"
-        prompt_text = ""
+        prompt_text = f"\nPhase: {self.current_peg_phase}"
 
-        if self.current_peg_phase == 'INITIAL_PLACEMENT':
-            prompt_text = "\n[ENTER] Begin placing sub-features"
-        elif self.current_peg_phase == 'SUBFEATURE_STEP':
-            prompt_text = "\n[ENTER] Place next sub-feature | [SPACE] Skip to Jitter"
-        elif self.current_peg_phase == 'PRE_JITTER':
-            prompt_text = "\n[ENTER] Apply Jitter"
-        elif self.current_peg_phase == 'PRE_INTERIOR_PLACEMENT':
-            prompt_text = "\n[ENTER] Begin placing interior features"
-        elif self.current_peg_phase == 'INTERIOR_PLACEMENT_STEP':
-            prompt_text = "\n[ENTER] Place next interior feature | [SPACE] Skip to Connections"
-        elif self.current_peg_phase == 'PRE_CONNECT':
-            prompt_text = "\n[ENTER] Create Connections"
-        elif self.current_peg_phase == 'POST_CONNECT':
-            prompt_text = "\nConnections complete. [ENTER] to finalize."
-        else:  # FINAL or DONE
+        phase_prompts = {
+            'INITIAL_GROWTH_STEP': "Growing initial features... [ENTER] Step | [SPACE] Fast-forward",
+            'POST_GROWTH': "Initial placement complete. [ENTER] to begin placing subfeatures.",
+            'SUBFEATURE_GROWTH_STEP': "Growing sub-feature... [ENTER] Step | [SPACE] Fast-forward",
+            'PATH_DRAW_STEP': "Drawing path... [ENTER] Step | [SPACE] Fast-forward",
+            'PRE_JITTER': "[ENTER] Apply Jitter",
+            'PRE_INTERIOR_PLACEMENT': "[ENTER] Begin placing interior features",
+            'INTERIOR_PLACEMENT_STEP': "[ENTER] Place next interior feature | [SPACE] Fast-forward",
+            'PRE_CONNECT': "[ENTER] Create Connections",
+            'POST_CONNECT': "Connections complete. [ENTER] to finalize.",
+        }
+
+        prompt_text += f"\n{phase_prompts.get(self.current_peg_phase, '[ENTER] Next Step')}"
+
+        if self.current_peg_phase in ('FINAL', 'DONE', 'VERTEX_DATA'):
             prompt_text = "\nGeneration Complete. [ENTER] to regenerate."
             self.stop_peg_patches()
             if self.last_peg_state:
                 self._save_peg_test_output(self.last_peg_state, scenario['name'])
 
-        # Update the UI
-        log_text = f"{title_str}: {base_text}{prompt_text}"
         game_log_box = DynamicTextBox(
-            title=title_str, text=log_text,
-            x=0, y=ui.root_console.height - 10, max_width=ui.root_console.width, max_height=9
+            title=title_str, text=f"{title_str}: {base_text}{prompt_text}",
+            x=0, y=self.ui_manager.root_console.height - 10, max_width=self.ui_manager.root_console.width, max_height=9
         )
-        if ui.active_view:
-            ui.active_view.game_log_box = game_log_box
-            ui.active_view.widgets = [game_log_box]
+        if self.ui_manager.active_view:
+            self.ui_manager.active_view.game_log_box = game_log_box
+            self.ui_manager.active_view.widgets = [game_log_box]

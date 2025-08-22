@@ -1,3 +1,6 @@
+# /core/worldgen/v3_components/placement.py
+
+import math
 import random
 from typing import List, Tuple, Dict, Optional, Generator
 
@@ -34,40 +37,92 @@ class Placement:
     def __init__(self, map_width: int, map_height: int):
         self.map_width = map_width
         self.map_height = map_height
+        self.void_space_index = config.tile_type_map.get("VOID_SPACE", -1)
 
     def _get_temp_grid(self, all_branches: List[FeatureNode], exclude_node: Optional[FeatureNode] = None) -> np.ndarray:
         """
-        Renders all currently placed features to a simple grid for collision detection.
-        Optionally excludes one node (and its entire branch) from the grid.
+        Renders all currently placed features to a grid containing their terrain_type index.
         """
-        grid = np.zeros((self.map_height, self.map_width), dtype=int)
-        nodes_to_draw = []
-        if exclude_node:
-            exclude_branch_root = exclude_node
-            # Find the root of the branch to which the excluded node belongs
-            while exclude_branch_root.parent:
-                exclude_branch_root = exclude_branch_root.parent
-            for branch in all_branches:
-                if branch is not exclude_branch_root:
-                    nodes_to_draw.extend(branch.get_all_nodes_in_branch())
-        else:
-            nodes_to_draw = [node for branch in all_branches for node in branch.get_all_nodes_in_branch()]
+        grid = np.full((self.map_height, self.map_width), self.void_space_index, dtype=np.int8)
+        all_nodes = [node for branch in all_branches for node in branch.get_all_nodes_in_branch()]
 
-        for node in nodes_to_draw:
-            x, y, w, h = node.get_rect()
-            x1, y1 = max(0, x), max(0, y)
-            x2, y2 = min(self.map_width, x + w), min(self.map_height, y + h)
-            if x2 > x1 and y2 > y1:
-                grid[y1:y2, x1:x2] = 1
+        for node in all_nodes:
+            if node is exclude_node:
+                continue
+
+            feature_def = config.features.get(node.feature_type, {})
+
+            if node.path_coords:
+                path_set = set(map(tuple, node.path_coords))
+                tile_type_name = feature_def.get('tile_type', 'DEFAULT_FLOOR')
+                tile_type_index = config.tile_type_map.get(tile_type_name, self.void_space_index)
+                border_type_name = feature_def.get('border_tile_type')
+                border_type_index = config.tile_type_map.get(border_type_name) if border_type_name else -1
+
+                for x, y in path_set:
+                    if 0 <= y < self.map_height and 0 <= x < self.map_width:
+                        grid[y, x] = tile_type_index
+                    if border_type_index != -1:
+                        for nx in range(x - 1, x + 2):
+                            for ny in range(y - 1, y + 2):
+                                if (nx, ny) == (x, y): continue
+                                if 0 <= ny < self.map_height and 0 <= nx < self.map_width:
+                                    if (nx, ny) not in path_set:
+                                        grid[ny, nx] = border_type_index
+
+            else:
+                tile_type_name = feature_def.get('tile_type', 'DEFAULT_FLOOR')
+                tile_type_index = config.tile_type_map.get(tile_type_name, self.void_space_index)
+                x, y, w, h = node.get_rect()
+                x1, y1 = max(0, x), max(0, y)
+                x2, y2 = min(self.map_width, x + w), min(self.map_height, y + h)
+                if x2 > x1 and y2 > y1:
+                    grid[y1:y2, x1:x2] = tile_type_index
+
+                border_thickness = feature_def.get('border_thickness', 0)
+                if border_thickness > 0:
+                    border_tile_type = feature_def.get('border_tile_type')
+                    if border_tile_type and border_tile_type in config.tile_type_map:
+                        border_tile_index = config.tile_type_map[border_tile_type]
+                        effective_border = min(border_thickness, (x2 - x1) // 2, (y2 - y1) // 2)
+                        if effective_border > 0:
+                            grid[y1:y1 + effective_border, x1:x2] = border_tile_index
+                            grid[y2 - effective_border:y2, x1:x2] = border_tile_index
+                            grid[y1:y2, x1:x1 + effective_border] = border_tile_index
+                            grid[y1:y2, x2 - effective_border:x2] = border_tile_index
+
         return grid
 
-    def _is_placement_valid(self, rect_to_check: tuple, temp_grid: np.ndarray) -> bool:
-        """Checks if a rectangle is within bounds and doesn't overlap existing features on a grid."""
+    def _is_placement_valid(self, rect_to_check: tuple, terrain_grid: np.ndarray, feature_def: dict) -> bool:
+        """
+        Checks if a rectangle's placement is valid based on terrain intersection rules,
+        using fast, vectorized NumPy operations. Overlaps are only allowed if explicitly
+        defined in the feature's 'intersects_ok' list.
+        """
         x, y, w, h = rect_to_check
+        # 1. Boundary Check
         if not (x >= 1 and y >= 1 and (x + w) <= (self.map_width - 1) and (y + h) <= (self.map_height - 1)):
             return False
-        if np.any(temp_grid[y:y + h, x:x + w] == 1):
+
+        # 2. Build the set of allowed intersection tile indices. By default, only VOID_SPACE is allowed.
+        allowed_indices = {self.void_space_index}
+
+        # Add indices ONLY from the 'intersects_ok' list.
+        for rule in feature_def.get('intersects_ok', []):
+            if intersect_type := rule.get('type'):
+                if intersect_type in config.tile_type_map:
+                    allowed_indices.add(config.tile_type_map[intersect_type])
+
+        # 3. Perform the vectorized collision check
+        placement_slice = terrain_grid[y:y + h, x:x + w]
+        # `invert=True` creates a mask where `True` means the tile is NOT in the allowed list.
+        # This gives us a mask of invalid collisions.
+        invalid_collisions_mask = np.isin(placement_slice, list(allowed_indices), invert=True)
+
+        # 4. If any invalid collision is found, the placement is invalid.
+        if np.any(invalid_collisions_mask):
             return False
+
         return True
 
     def _attempt_aspect_aware_growth(self, node: FeatureNode, all_branches: List[FeatureNode]) -> bool:
@@ -80,10 +135,10 @@ class Placement:
         prop_w, prop_h = int(ratio_w * next_k), int(ratio_h * next_k)
 
         if prop_w == node.current_abs_width and prop_h == node.current_abs_height:
-            next_k += 1  # If rounding results in no change, try the next multiplier
+            next_k += 1
             prop_w, prop_h = int(ratio_w * next_k), int(ratio_h * next_k)
             if prop_w == node.current_abs_width and prop_h == node.current_abs_height:
-                return False  # No actual growth would occur
+                return False
 
         old_x, old_y, old_w, old_h = node.get_rect()
         dw, dh = prop_w - old_w, prop_h - old_h
@@ -94,10 +149,11 @@ class Placement:
         random.shuffle(possible_y_starts)
 
         temp_grid = self._get_temp_grid(all_branches, exclude_node=node)
+        feature_def = config.features.get(node.feature_type, {})
 
         for x in possible_x_starts:
             for y in possible_y_starts:
-                if self._is_placement_valid((x, y, prop_w, prop_h), temp_grid):
+                if self._is_placement_valid((x, y, prop_w, prop_h), temp_grid, feature_def):
                     node.current_x, node.current_y = x, y
                     node.current_abs_width, node.current_abs_height = prop_w, prop_h
                     node.growth_multiplier = next_k
@@ -119,33 +175,27 @@ class Placement:
         initial_feature_branches: List[FeatureNode] = []
         total_map_area = self.map_width * self.map_height
 
-        # --- 1. Seeding Phase ---
         start_x = self.map_width // 2 - len(feature_specs) // 2
         start_y = self.map_height // 2
 
         for i, spec in enumerate(feature_specs):
             node = FeatureNode(spec['name'], spec['type'], 0.0, 0.0, 1, 1, start_x + i, start_y)
-
-            # --- Assign dynamic properties for the growth algorithm ---
             node.target_area = total_map_area * SIZE_TIER_TARGET_AREA_FACTOR.get(spec.get('size_tier'), 0.08)
             node.size_tier = spec.get('size_tier', 'medium')
             node.is_stuck = False
             node.growth_multiplier = 1
-
+            node.relocation_history.add((start_x + i, start_y))
             feature_def = config.features.get(spec['type'], {})
             shape = feature_def.get('default_shape', 'rectangle')
             if shape == 'rectangle':
                 node.target_aspect_ratio = random.choice(RECTANGLE_ASPECT_RATIOS)
-            else:  # Square, circle, etc.
+            else:
                 node.target_aspect_ratio = (1, 1)
-
             initial_feature_branches.append(node)
 
-        yield initial_feature_branches  # Yield the initial seeded state
+        yield initial_feature_branches
 
-        # --- 2. Growth Loop ---
         for i in range(MAX_GROWTH_ITERATIONS):
-            # --- Check termination conditions ---
             current_area = sum(n.current_abs_width * n.current_abs_height for n in initial_feature_branches)
             if (current_area / total_map_area) >= GROWTH_COVERAGE_THRESHOLD:
                 utils.log_message('debug',
@@ -161,31 +211,39 @@ class Placement:
             random.shuffle(growable_features)
             tick_changed = False
 
-            # --- Inner Loop: A single "tick" where every feature gets a turn ---
             for feature in growable_features:
                 if self._attempt_aspect_aware_growth(feature, initial_feature_branches):
                     tick_changed = True
+                    feature.relocation_history.clear()
+                    feature.relocation_history.add((feature.current_x, feature.current_y))
                     continue
 
-                # --- If growth fails, attempt to relocate ---
                 temp_grid_others = self._get_temp_grid(initial_feature_branches, exclude_node=feature)
                 other_branches = [b for b in initial_feature_branches if b is not feature]
                 w, h = feature.current_abs_width, feature.current_abs_height
+                feature_def = config.features.get(feature.feature_type, {})
 
-                relocation_spots = self._find_valid_placements(w, h, temp_grid_others, other_branches)
-                if relocation_spots:
-                    new_x, new_y, _, _ = random.choice(relocation_spots)
+                all_relocation_spots = self._find_valid_placements(w, h, temp_grid_others, other_branches, feature_def)
+
+                unvisited_spots = [
+                    spot for spot in all_relocation_spots
+                    if (spot[0], spot[1]) not in feature.relocation_history
+                ]
+
+                if unvisited_spots:
+                    new_x, new_y, _, _ = random.choice(unvisited_spots)
                     feature.current_x, feature.current_y = new_x, new_y
-                    utils.log_message('full', f"  Relocated stuck feature '{feature.name}'.")
+                    feature.relocation_history.add((new_x, new_y))
+                    utils.log_message('full', f"  Relocated stuck feature '{feature.name}' to {new_x},{new_y}.")
                     tick_changed = True
                 else:
-                    feature.is_stuck = True  # Permanently stuck for this tick
-                    utils.log_message('debug', f"  Feature '{feature.name}' is now stuck.")
+                    feature.is_stuck = True
+                    utils.log_message('debug',
+                                      f"  Feature '{feature.name}' is permanently stuck after trying all relocation options.")
 
             if tick_changed:
                 yield initial_feature_branches
             else:
-                # If a full tick completes with no successful growths or relocations, the process is done.
                 utils.log_message('debug', "[PEGv3 Growth] No change in a full tick. Finalizing layout.")
                 break
         else:
@@ -193,7 +251,8 @@ class Placement:
 
         return initial_feature_branches
 
-    def _find_valid_placements(self, w: int, h: int, temp_grid: np.ndarray, all_branches: List[FeatureNode]) -> list:
+    def _find_valid_placements(self, w: int, h: int, temp_grid: np.ndarray, all_branches: List[FeatureNode],
+                               feature_def_to_place: dict) -> list:
         """Finds all valid (non-overlapping) positions adjacent to existing features."""
         placements = []
         all_nodes = [node for branch in all_branches for node in branch.get_all_nodes_in_branch()]
@@ -206,7 +265,7 @@ class Placement:
                 'E': (px + pw, py + (ph - h) // 2),
             }
             for face, (x, y) in positions_to_check.items():
-                if self._is_placement_valid((x, y, w, h), temp_grid):
+                if self._is_placement_valid((x, y, w, h), temp_grid, feature_def_to_place):
                     placements.append((x, y, parent, face))
         return placements
 
@@ -235,10 +294,11 @@ class Placement:
             placement_found = False
             current_shrink_factor = 0.25
             max_retries = 5
+            feature_def = config.features.get(spec['type'], {})
 
             for retry_count in range(max_retries):
                 temp_grid = self._get_temp_grid(initial_feature_branches)
-                valid_placements = self._find_valid_placements(w, h, temp_grid, initial_feature_branches)
+                valid_placements = self._find_valid_placements(w, h, temp_grid, initial_feature_branches, feature_def)
                 if valid_placements:
                     x, y, adjacent_node, face = random.choice(valid_placements)
                     new_node = FeatureNode(spec['name'], spec['type'], rel_dim, rel_dim, w, h, x, y)
@@ -261,35 +321,47 @@ class Placement:
     def find_and_place_subfeature(self, feature_data: dict, parent_branch: FeatureNode, all_branches: List[FeatureNode],
                                   chosen_parent_name: str, shrink_factor: float) -> Optional[FeatureNode]:
         """
-        Finds a valid spot for a new subfeature, creates its node, attaches it,
-        and shrinks the parent branch.
+        Finds a valid spot for a new subfeature, creates its node as a 1x1 'seed' on the anchor face,
+        attaches it, and shrinks the parent branch. The final bounding box is stored on the
+        node for the architect to animate its growth.
         """
         temp_grid = self._get_temp_grid(all_branches)
         possible_placements = []
         size_tier_map = {'large': 0.75, 'medium': 0.5, 'small': 0.25}
         size_ratio = size_tier_map.get(feature_data.get('size_tier', 'medium'), 0.5)
 
+        feature_def = config.features.get(feature_data['type'], {})
+        shape = feature_def.get('default_shape', 'rectangle')
+        if shape == 'rectangle':
+            aspect_ratio = random.choice(RECTANGLE_ASPECT_RATIOS)
+        else:
+            aspect_ratio = (1, 1)
+        rw, rh = aspect_ratio
+
         for node_in_branch in parent_branch.get_all_nodes_in_branch():
             px, py, pw, ph = node_in_branch.get_rect()
-            sub_w = max(MIN_FEATURE_SIZE, int(pw * size_ratio))
-            sub_h = sub_w
+
+            parent_area = pw * ph
+            target_sub_area = parent_area * size_ratio
+
+            sub_w = max(MIN_FEATURE_SIZE, round(math.sqrt(target_sub_area * rw / rh)))
+            sub_h = max(MIN_FEATURE_SIZE, round(math.sqrt(target_sub_area * rh / rw)))
+
             if sub_w < pw:
                 for x_offset in range(pw - sub_w + 1):
-                    rect_n = (px + x_offset, py - sub_h - 1, sub_w, sub_h)
-                    if self._is_placement_valid(rect_n, temp_grid): possible_placements.append(
+                    rect_n = (px + x_offset, py - sub_h, sub_w, sub_h)
+                    if self._is_placement_valid(rect_n, temp_grid, feature_def): possible_placements.append(
                         {'parent': node_in_branch, 'face': 'N', 'rect': rect_n})
-                    rect_s = (px + x_offset, py + ph + 1, sub_w, sub_h)
-                    if self._is_placement_valid(rect_s, temp_grid): possible_placements.append(
+                    rect_s = (px + x_offset, py + ph, sub_w, sub_h)
+                    if self._is_placement_valid(rect_s, temp_grid, feature_def): possible_placements.append(
                         {'parent': node_in_branch, 'face': 'S', 'rect': rect_s})
-            sub_h = max(MIN_FEATURE_SIZE, int(ph * size_ratio))
-            sub_w = sub_h
             if sub_h < ph:
                 for y_offset in range(ph - sub_h + 1):
-                    rect_w = (px - sub_w - 1, py + y_offset, sub_w, sub_h)
-                    if self._is_placement_valid(rect_w, temp_grid): possible_placements.append(
+                    rect_w = (px - sub_w, py + y_offset, sub_w, sub_h)
+                    if self._is_placement_valid(rect_w, temp_grid, feature_def): possible_placements.append(
                         {'parent': node_in_branch, 'face': 'W', 'rect': rect_w})
-                    rect_e = (px + pw + 1, py + y_offset, sub_w, sub_h)
-                    if self._is_placement_valid(rect_e, temp_grid): possible_placements.append(
+                    rect_e = (px + pw, py + y_offset, sub_w, sub_h)
+                    if self._is_placement_valid(rect_e, temp_grid, feature_def): possible_placements.append(
                         {'parent': node_in_branch, 'face': 'E', 'rect': rect_e})
 
         if not possible_placements: return None
@@ -298,21 +370,36 @@ class Placement:
                                               p['parent'].name.lower() in chosen_parent_name.lower()]
         if not valid_placements_for_chosen_parent:
             chosen_parent_node = next((p['parent'] for p in possible_placements), None)
+            if not chosen_parent_node: return None
             valid_placements_for_chosen_parent = [p for p in possible_placements if p['parent'] == chosen_parent_node]
 
         if not valid_placements_for_chosen_parent: return None
 
         placement = random.choice(valid_placements_for_chosen_parent)
         parent_node = placement['parent']
-        x, y, w, h = placement['rect']
-        new_subfeature = FeatureNode(feature_data['name'], feature_data['type'], 0.0, 0.0, w, h, x, y,
-                                     parent=parent_node, anchor_face=placement['face'])
+        anchor_face = placement['face']
+        final_x, final_y, final_w, final_h = placement['rect']
+
+        if anchor_face == 'N':
+            seed_x, seed_y = final_x + final_w // 2, final_y + final_h - 1
+        elif anchor_face == 'S':
+            seed_x, seed_y = final_x + final_w // 2, final_y
+        elif anchor_face == 'W':
+            seed_x, seed_y = final_x + final_w - 1, final_y + final_h // 2
+        else:
+            seed_x, seed_y = final_x, final_y + final_h // 2
+
+        new_subfeature = FeatureNode(feature_data['name'], feature_data['type'], 0.0, 0.0, 1, 1, seed_x, seed_y,
+                                     parent=parent_node, anchor_face=anchor_face)
+
+        new_subfeature.target_growth_rect = (final_x, final_y, final_w, final_h)
+
         parent_node.subfeatures.append(new_subfeature)
 
         parent_def = config.features.get(parent_node.feature_type, {})
         if parent_def.get('is_shrinkable', True):
             self._apply_shrink_transform_to_branch(parent_node,
-                                                   OPPOSITE_DIRECTION_MAP.get(placement['face'], placement['face']),
+                                                   OPPOSITE_DIRECTION_MAP.get(anchor_face, anchor_face),
                                                    shrink_factor)
 
         return new_subfeature

@@ -10,6 +10,7 @@ from core.components import position_manager
 from core.components import roster_manager
 from core.components.memory_manager import MemoryManager
 from core.worldgen.procgen_manager import ProcGenManager
+from core.worldgen.v3_components.v3_llm import V3_LLM
 
 
 class SetupManager:
@@ -94,7 +95,8 @@ class SetupManager:
 
         level_data_to_cache = {
             "placed_features": serializable_features,
-            "narrative_log": generation_state.narrative_log
+            "narrative_log": generation_state.narrative_log,
+            "exterior_tile_type": getattr(generation_state, 'exterior_tile_type', 'DEFAULT_FLOOR')
         }
 
         if hasattr(generation_state, 'layout_graph') and generation_state.layout_graph:
@@ -132,6 +134,7 @@ class SetupManager:
             generation_state = GenerationState(self.game_state.game_map)
             generation_state.placed_features = cached_level.get("placed_features", {})
             generation_state.narrative_log = cached_level.get("narrative_log", "")
+            generation_state.exterior_tile_type = cached_level.get("exterior_tile_type", "DEFAULT_FLOOR")
             generation_state.physics_layout = cached_level.get("physics_layout")
             if 'layout_graph' in cached_level:
                 graph_data = cached_level['layout_graph']
@@ -139,18 +142,33 @@ class SetupManager:
                 generation_state.layout_graph.nodes = graph_data.get('nodes', {})
                 generation_state.layout_graph.edges = graph_data.get('edges', [])
         else:
+            # --- New: LLM chooses exterior tile ---
+            llm = V3_LLM(self.engine)
+            walkable_tiles = {
+                name: data for name, data in self.engine.config.tile_types.items()
+                if "GROUND" in data.get("pass_methods", []) and name != "VOID_SPACE"
+            }
+            tile_options_str = "\n".join(
+                f"- `{name}`: {data.get('description', 'No description.')}" for name, data in walkable_tiles.items()
+            )
+            chosen_tile = llm.choose_exterior_tile(scene_prompt, tile_options_str)
+            if chosen_tile not in walkable_tiles:
+                chosen_tile = "DEFAULT_FLOOR"  # Fallback
+
+            utils.log_message('debug', f"[PEG Setup] LLM chose '{chosen_tile}' as the exterior tile.")
+
             procgen = ProcGenManager(self.engine)
 
             def redraw_and_update_ui(gen_state):
                 map_artist = MapArtist()
                 map_artist.draw_map(self.game_state.game_map, gen_state, self.engine.config.features)
                 self.engine.render_queue.put(self.game_state)
-                # Small delay to make the generation visible
                 import time
                 time.sleep(0.05)
 
             generation_state = procgen.generate(scene_prompt, self.game_state.game_map,
                                                 ui_callback=redraw_and_update_ui)
+            generation_state.exterior_tile_type = chosen_tile
             self._cache_newly_generated_level(scene_prompt, generation_state)
 
         self.engine.generation_state = generation_state
@@ -160,24 +178,20 @@ class SetupManager:
         map_artist.draw_map(self.game_state.game_map, generation_state, self.engine.config.features)
 
         # --- Character and Casting Phase ---
-        # 1. Load characters specified by the scene file (from casting) and the location's persistent inhabitants.
         roster_manager.load_characters_from_scene(self.engine, chosen_scene)
 
-        # 2. Create and persist any NPCs generated during level creation (e.g., CHARACTER features).
         for char_data in generation_state.character_creation_queue:
             if new_npc := character_factory.create_npc_from_generation_sentence(self.engine, char_data):
                 roster_manager.decorate_and_add_character(self.engine, new_npc, 'npc')
 
-        # 3. Director establishes the ephemeral lead characters for this specific run.
         location_summary = f"{chosen_scene['source_location'].get('Name', '')}: {chosen_scene['source_location'].get('Description', '')}"
         self.engine.director_manager.establish_initial_cast(scene_prompt, location_summary)
 
-        # 4. Final setup before game starts.
         self._determine_context_limit()
 
         if self.game_state:
             roster_manager.spawn_entities_from_roster(self.engine, self.game_state)
-            
+
             placed_characters_for_context = []
             for character in self.engine.characters:
                 if character.get('is_positional'):
@@ -226,6 +240,7 @@ class SetupManager:
                 generation_state = GenerationState(self.game_state.game_map)
                 generation_state.placed_features = cached_level.get("placed_features", {})
                 generation_state.narrative_log = cached_level.get("narrative_log", "")
+                generation_state.exterior_tile_type = cached_level.get("exterior_tile_type", "DEFAULT_FLOOR")
                 generation_state.physics_layout = cached_level.get("physics_layout")
                 if 'layout_graph' in cached_level:
                     graph_data = cached_level['layout_graph']

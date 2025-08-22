@@ -1,10 +1,10 @@
 {
-  "GENERIC_CONTAINER": {
+  "GENERIC_ROOM": {
     "display_name": "A room, cave, or other enclosed space.",
     "feature_type": "CONTAINER",
     "placement_strategy": "EXTERIOR",
     "is_shrinkable": true,
-    "tile_type": "DEFAULT_FLOOR",
+    "tile_type": "DEFAULT_BRIGHT_FLOOR",
     "border_tile_type": "DEFAULT_WALL",
     "default_shape": "rectangle",
     "min_dimensions_ft": [10, 10],
@@ -14,20 +14,216 @@
     "state": "default",
     "description_on_block": "The {name} is impassable."
   },
+  "GENERIC_SPACE": {
+    "display_name": "An open but defined space with artificial surface, like a market square or outdoor stage.",
+    "feature_type": "CONTAINER",
+    "placement_strategy": "EXTERIOR",
+    "is_shrinkable": true,
+    "tile_type": "DEFAULT_BRIGHT_FLOOR",
+    "border_tile_type": "DEFAULT_FLOOR",
+    "default_shape": "rectangle",
+    "min_dimensions_ft": [10, 10],
+    "min_dimensions_tiles": [2, 2],
+    "border_thickness": 1,
+    "max_dimensions_ft": [100, 100],
+    "state": "default",
+    "description_on_block": "The {name} is impassable. You cannot walk or fly."
+  },
+  "GENERIC_FIELD": {
+    "display_name": "An open but defined space with vegetation, like a field or meadow.",
+    "feature_type": "CONTAINER",
+    "placement_strategy": "EXTERIOR",
+    "is_shrinkable": true,
+    "tile_type": "GRASS",
+    "border_tile_type": "GRASS",
+    "default_shape": "rectangle",
+    "min_dimensions_ft": [10, 10],
+    "min_dimensions_tiles": [2, 2],
+    "border_thickness": 1,
+    "max_dimensions_ft": [100, 100],
+    "state": "default",
+    "description_on_block": "The {name} is impassable."
+  },
   "GENERIC_PATH": {
-    "display_name": "A hallway, tunnel, or path connecting two areas.",
+    "display_name": "A path connecting two areas with artificial surface, like a road.",
     "feature_type": "PATH",
-    "placement_strategy": "CONNECTOR",
+    "placement_strategy": "PATHING",
+    "is_shrinkable": true,
+    "tile_type": "PATH_FLOOR",
+    "border_tile_type": "DEFAULT_BRIGHT_FLOOR",
+    "default_shape": "path",
+    "min_dimensions_ft": [5, 10],
+    "min_dimensions_tiles": [1, 2],
+    "border_thickness": 1,
+    "max_dimensions_ft": [10, 80],
+	"intersects_ok": [
+      { "type": "PATH_FLOOR", "cost_mod": 1.5 },
+	  { "type": "DEFAULT_BRIGHT_FLOOR", "cost_mod": 1.5 },
+	  { "type": "PATH_DIRT", "cost_mod": 2.0 },
+      { "type": "GRASS", "cost_mod": 2.0 },
+	  { "type": "WATER", "cost_mod": 2.0 },
+      { "type": "WATER_SHALLOW", "cost_mod": 2.0 },
+	  { "type": "WATER_RAPIDS", "cost_mod": 4.0 }
+    ],
+    "state": "default",
+    "description_on_block": "The {name} is blocked."
+  },
+  "GENERIC_HALL": {
+    "display_name": "A hallway, tunnel, cooridor, or other enclosed path connecting two areas.",
+    "feature_type": "PATH",
+    "placement_strategy": "PATHING",
     "is_shrinkable": true,
     "tile_type": "DEFAULT_FLOOR",
     "border_tile_type": "DEFAULT_WALL",
-    "default_shape": "rectangle",
+    "default_shape": "path",
     "min_dimensions_ft": [5, 10],
     "min_dimensions_tiles": [1, 2],
     "border_thickness": 1,
     "max_dimensions_ft": [10, 80],
     "state": "default",
     "description_on_block": "The {name} is blocked."
+  },
+  "GENERIC_TRAIL": {
+    "display_name": "A path connecting two areas with natural surface, like a trail through the wild.",
+    "feature_type": "PATH",
+    "placement_strategy": "PATHING",
+    "is_shrinkable": true,
+    "tile_type": "PATH_DIRT",
+    "border_tile_type": "GRASS",
+    "default_shape": "path",
+    "min_dimensions_ft": [5, 10],
+    "min_dimensions_tiles": [1, 2],
+	"intersects_ok": [
+      { "type": "PATH_DIRT", "cost_mod": 1.1 },
+      { "type": "GRASS", "cost_mod": 1.1 },
+	  { "type": "WATER", "cost_mod": 2.0 },
+      { "type": "WATER_SHALLOW", "cost_mod": 2.0 },
+	  { "type": "WATER_RAPIDS", "cost_mod": 4.0 }
+	],
+    "border_thickness": 1,
+    "max_dimensions_ft": [10, 80],
+    "state": "default",
+    "description_on_block": "The {name} is blocked."
+  },
+  "GENERIC_RIVER": {
+    "display_name": "A river or waterway connecting two areas that would be impossible to traverse without swimming.",
+    "feature_type": "PATH",
+    "placement_strategy": "PATHING",
+    "is_shrinkable": true,
+    "tile_type": "WATER",
+    "border_tile_type": "WATER_RAPIDS",
+    "default_shape": "path",
+	"intersects_ok": [
+      { "type": "GRASS", "cost_mod": 1.2 },
+      { "type": "WATER", "cost_mod": 0.5 },
+      { "type": "WATER_SHALLOW", "cost_mod": 0.5 },
+      { "type": "WATER_RAPIDS", "cost_mod": 0.5 }
+    ],
+    "min_dimensions_ft": [5, 10],
+    "min_dimensions_tiles": [1, 2],
+    "border_thickness": 1,
+    "max_dimensions_ft": [10, 80],
+    "state": "default",
+    "description_on_block": "{name} is in the way and you can't swim."
+  },
+  "GENERIC_STREAM": {
+    "display_name": "A stream or creek connecting two areas that's shallow enough to walk through.",
+    "feature_type": "PATH",
+    "placement_strategy": "PATHING",
+    "is_shrinkable": true,
+    "tile_type": "WATER_SHALLOW",
+    "border_tile_type": "WATER_SHALLOW",
+    "default_shape": "path",
+    "min_dimensions_ft": [5, 10],
+    "min_dimensions_tiles": [1, 2],
+	"intersects_ok": [
+      { "type": "GRASS", "cost_mod": 1.2 },
+      { "type": "WATER", "cost_mod": 0.5 },
+      { "type": "WATER_SHALLOW", "cost_mod": 0.5 },
+      { "type": "WATER_RAPIDS", "cost_mod": 0.5 }
+    ],
+    "border_thickness": 1,
+    "max_dimensions_ft": [10, 80],
+    "state": "default",
+    "description_on_block": "{name} is in the way and you can't swim."
+  },
+  "GENERIC_LAKE": {
+    "display_name": "A lake, or pool of water that is natural and which you would need to swim to pass.",
+    "feature_type": "CONTAINER",
+    "placement_strategy": "BLOCKING",
+    "is_shrinkable": true,
+    "tile_type": "WATER",
+    "border_tile_type": "WATER_SHALLOW",
+    "default_shape": "rectangle",
+    "min_dimensions_ft": [5, 10],
+    "min_dimensions_tiles": [1, 2],
+	"intersects_ok": [
+      { "type": "GRASS", "cost_mod": 1.2 },
+      { "type": "WATER", "cost_mod": 0.2 },
+      { "type": "WATER_SHALLOW", "cost_mod": 0.2 },
+      { "type": "WATER_RAPIDS", "cost_mod": 0.2 }
+    ],
+    "border_thickness": 1,
+    "max_dimensions_ft": [10, 80],
+    "state": "default",
+    "description_on_block": "{name} is in the way and you can't swim."
+  },
+  "GENERIC_PUDDLE": {
+    "display_name": "A puddle or pond that is shallow enough to walk through.",
+    "feature_type": "CONTAINER",
+    "placement_strategy": "EXTERIOR",
+    "is_shrinkable": true,
+    "tile_type": "WATER_SHALLOW",
+    "border_tile_type": "WATER_SHALLOW",
+    "default_shape": "rectangle",
+    "min_dimensions_ft": [5, 10],
+    "min_dimensions_tiles": [1, 2],
+	"intersects_ok": [
+      { "type": "GRASS", "cost_mod": 1.2 },
+      { "type": "WATER", "cost_mod": 0.2 },
+      { "type": "WATER_SHALLOW", "cost_mod": 0.2 },
+      { "type": "WATER_RAPIDS", "cost_mod": 0.2 }
+    ],
+    "border_thickness": 1,
+    "max_dimensions_ft": [10, 80],
+    "state": "default",
+    "description_on_block": "{name} is in the way and you can't swim."
+  },
+  "POOL": {
+    "display_name": "A pool of water with artificial surface around it, like a well or swimming pool.",
+    "feature_type": "CONTAINER",
+    "placement_strategy": "BLOCKING",
+    "is_shrinkable": true,
+    "tile_type": "WATER_TREATED",
+    "border_tile_type": "DEFAULT_BRIGHT_FLOOR",
+    "default_shape": "rectangle",
+    "min_dimensions_ft": [5, 10],
+    "min_dimensions_tiles": [1, 2],
+	"intersects_ok": [
+      { "type": "GRASS", "cost_mod": 1.2 },
+      { "type": "WATER", "cost_mod": 0.2 },
+      { "type": "WATER_SHALLOW", "cost_mod": 0.2 },
+      { "type": "WATER_RAPIDS", "cost_mod": 0.2 }
+    ],
+    "border_thickness": 1,
+    "max_dimensions_ft": [10, 80],
+    "state": "default",
+    "description_on_block": "{name} is in the way and you can't swim."
+  },
+  "POOL_SHALLOW": {
+    "display_name": "A pool of water with artificial surface around it that you could walk through.",
+    "feature_type": "CONTAINER",
+    "placement_strategy": "EXTERIOR",
+    "is_shrinkable": true,
+    "tile_type": "WATER_TREATED_SHALLOW",
+    "border_tile_type": "DEFAULT_BRIGHT_FLOOR",
+    "default_shape": "rectangle",
+    "min_dimensions_ft": [5, 10],
+    "min_dimensions_tiles": [1, 2],
+    "border_thickness": 1,
+    "max_dimensions_ft": [10, 80],
+    "state": "default",
+    "description_on_block": "{name} is in the way and you can't swim."
   },
   "SOLID_BARRIER": {
     "display_name": "An impassable wall or obstacle.",
@@ -44,12 +240,27 @@
     "state": "default",
     "description_on_block": "You cannot pass the {name}."
   },
+  "TREE": {
+    "display_name": "A tree or very dense vegetation you would need to cut through to pass.",
+    "feature_type": "BARRIER",
+    "placement_strategy": "BLOCKING",
+    "is_shrinkable": false,
+    "tile_type": "WOOD",
+    "border_tile_type": "GRASS",
+    "default_shape": "rectangle",
+    "min_dimensions_ft": [5, 5],
+    "min_dimensions_tiles": [1, 1],
+    "border_thickness": 1,
+    "max_dimensions_ft": [200, 200],
+    "state": "default",
+    "description_on_block": "You cannot pass the {name}."
+  },
   "GENERIC_PORTAL": {
       "display_name": "A door, archway, or other transition point that is larger than a single tile.",
       "feature_type": "PORTAL",
       "placement_strategy": "CONNECTOR",
       "is_shrinkable": true,
-      "tile_type": "DEFAULT_DOOR",
+      "tile_type": "DEFAULT_BRIGHT_FLOOR",
       "border_tile_type": "DEFAULT_WALL",
       "default_shape": "rectangle",
       "min_dimensions_ft": [5, 5],
@@ -74,11 +285,5 @@
       "max_dimensions_ft": [5, 5],
       "state": "default",
       "description_on_block": "The {name} is in your way."
-  },
-  "CHARACTER": {
-      "display_name": "A character or creature.",
-      "feature_type": "CHARACTER",
-      "placement_strategy": "SPECIAL_FUNC",
-      "border_thickness": 0
   }
 }

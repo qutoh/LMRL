@@ -75,7 +75,7 @@ class UICallbacks:
 
         if not theme_text:
             atlas = AtlasManager(ui.atlas_engine)
-            ui.world_theme = atlas.content_generator.get_world_name(
+            ui.world_theme = atlas.world_generator.content_generator.get_world_theme(
                 execute_task(ui.atlas_engine, config.agents['ATLAS'], 'WORLDGEN_CREATE_THEME',
                              []) or "A generic fantasy world."
             )

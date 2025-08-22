@@ -7,6 +7,7 @@ import tiktoken
 
 from .config_loader import config
 from .localization import loc
+import numpy as np
 
 LOG_HIERARCHY = {'game': 0, 'story': 1, 'debug': 2, 'full': 3}
 
@@ -260,6 +261,96 @@ def count_tokens(text):
 
 def get_text_from_messages(messages):
     return "\n".join(f"[{msg.get('role', '')}] {msg.get('content', '')}" for msg in messages)
+
+
+def print_ascii_local_view(title: str, grid: np.ndarray, center_x: int, center_y: int, radius: int,
+                           other_markers: dict = None) -> str:
+    """
+    Generates a string containing a simple ASCII representation of a local grid area for debugging.
+
+    Args:
+        title: The title to print above the grid.
+        grid: A 2D numpy array where different integer values represent different object types.
+        center_x: The x-coordinate of the center of the view.
+        center_y: The y-coordinate of the center of the view.
+        radius: The radius of the view (e.g., radius 2 creates a 5x5 view).
+        other_markers: A dict of {(x, y): char} for additional markers.
+
+    Returns:
+        A formatted, multi-line string representing the local view.
+    """
+    if other_markers is None:
+        other_markers = {}
+
+    char_map = {
+        0: '.',  # Empty space
+        1: '#',  # Generic obstacle
+        2: 'P',  # Parent feature
+        3: 'T'  # Target feature
+    }
+
+    header = f"--- {title} at ({center_x}, {center_y}) ---"
+    lines = [header]
+
+    start_y, end_y = center_y - radius, center_y + radius
+    start_x, end_x = center_x - radius, center_x + radius
+
+    for y in range(start_y, end_y + 1):
+        line = ""
+        for x in range(start_x, end_x + 1):
+            if x == center_x and y == center_y:
+                line += "@"
+                continue
+            if (x, y) in other_markers:
+                line += other_markers[(x, y)]
+                continue
+
+            if 0 <= y < grid.shape[0] and 0 <= x < grid.shape[1]:
+                value = grid[y, x]
+                line += char_map.get(value, '?')
+            else:
+                line += ' '  # Out of bounds
+        lines.append(line)
+
+    lines.append("-" * len(header))
+    return "\n".join(lines)
+
+def print_ascii_cost_grid(title: str, cost_grid_yx: np.ndarray, start_xy: tuple, end_xy: tuple) -> str:
+    """
+    Generates a string containing a simple ASCII representation of a float cost grid for debugging.
+    Used to visualize what a pathfinder sees.
+    Args:
+        title: The title to print above the grid.
+        cost_grid_yx: A 2D numpy array of floats with (height, width) shape, where np.inf is an obstacle.
+        start_xy: The (x, y) start coordinate.
+        end_xy: The (x, y) end coordinate.
+
+    Returns:
+        A formatted, multi-line string representing the cost grid.
+    """
+
+
+    header = f"--- {title} ---"
+    lines = [header]
+    height, width = cost_grid_yx.shape
+    start_x, start_y = start_xy
+    end_x, end_y = end_xy
+
+    for y in range(height):
+        line = ""
+        for x in range(width):
+            if x == start_x and y == start_y:
+                line += "S"
+            elif x == end_x and y == end_y:
+                line += "E"
+            else:
+                # Corrected Indexing: Use [y, x] for the (height, width) array
+                cost = cost_grid_yx[y, x]
+                line += "#" if np.isinf(cost) else "."
+        lines.append(line)
+
+    lines.append("-" * len(header))
+    return "\n".join(lines)
 
 
 def get_chosen_name_from_response(response_text):
