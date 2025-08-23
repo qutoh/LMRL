@@ -64,6 +64,7 @@ class PrometheusManager:
 
         self.tool_dispatch_table = {
             "is_refusal": "_call_handle_refusal",
+            "is_role_break": "_call_handle_role_break",  # NEW TOOL
             "summarize_for_memory": "_call_summarize_for_memory",
             "remove_character": "_call_remove_character",
             "new_character": "_call_create_character",
@@ -78,11 +79,11 @@ class PrometheusManager:
             return []
 
         equipment_agent = config.agents['EQUIPMENT_MANAGER']
-        
+
         # Filter for only positional characters BEFORE asking the LLM to identify targets.
         all_positional_chars = [c for c in roster_manager.get_all_characters(self.engine) if c.get('is_positional')]
         char_list_str = "; ".join([c['name'] for c in all_positional_chars])
-        
+
         if not char_list_str:
             return []
 
@@ -96,7 +97,8 @@ class PrometheusManager:
         affected_names = [name.strip() for name in targets_response.split(';') if name.strip()]
         final_affected = []
         for name in affected_names:
-            target_char = next((char['name'] for char in all_positional_chars if name.lower() in char['name'].lower()), None)
+            target_char = next((char['name'] for char in all_positional_chars if name.lower() in char['name'].lower()),
+                               None)
             if target_char:
                 utils.log_message('debug', f"[PROMETHEUS] Dispatching equipment modification for '{target_char}'.")
                 self.engine.item_manager.modify_character_equipment(target_char, dialogue_entry['content'])
@@ -112,11 +114,32 @@ class PrometheusManager:
         new_prose = utility_tasks.reprompt_after_refusal(self.engine, original_actor, 'GENERIC_TURN',
                                                          original_messages)
         if new_prose:
+            # Re-analyze the corrected prose to see if other tools should fire.
             new_dialogue_entry = {'speaker': original_actor['name'], 'content': new_prose}
             next_actor_name, events = self.analyze_and_dispatch(
                 new_prose, new_dialogue_entry, kwargs.get('unacted_roles', []), original_messages, is_reprompt=True
             )
-            return {'status': 'REPROMPTED', 'new_prose': new_prose, 'next_actor_name': next_actor_name, 'events': events}
+            return {'status': 'REPROMPTED', 'new_prose': new_prose, 'next_actor_name': next_actor_name,
+                    'events': events}
+        return {'status': 'REPROMPT_FAILED'}
+
+    # NEW: Handler for the role_break tool
+    def _call_handle_role_break(self, dialogue_entry: dict, **kwargs) -> dict:
+        """Dispatches to the utility task that handles rewriting after a role-break."""
+        utils.log_message('debug', "[PROMETHEUS] Activating tool: is_role_break.")
+        original_actor = roster_manager.find_character(self.engine, dialogue_entry['speaker'])
+        if not original_actor: return {'status': 'FAILED', 'reason': 'Original actor not found.'}
+
+        new_prose = utility_tasks.reprompt_after_role_break(self.engine, original_actor, dialogue_entry['content'])
+
+        if new_prose:
+            # Re-analyze the corrected prose to see if other tools should fire.
+            new_dialogue_entry = {'speaker': original_actor['name'], 'content': new_prose}
+            next_actor_name, events = self.analyze_and_dispatch(
+                new_prose, new_dialogue_entry, kwargs.get('unacted_roles', []), [], is_reprompt=True
+            )
+            return {'status': 'REPROMPTED', 'new_prose': new_prose, 'next_actor_name': next_actor_name,
+                    'events': events}
         return {'status': 'REPROMPT_FAILED'}
 
     def _call_summarize_for_memory(self, dialogue_entry: dict, **kwargs):
@@ -147,7 +170,7 @@ class PrometheusManager:
         director_agent = config.agents.get('DIRECTOR')
         active_chars = roster_manager.get_all_characters(self.engine)
         char_list_str = ", ".join([f"'{c['name']}'" for c in active_chars])
-        
+
         # Step 1: Identify the name of the new character from the recent dialogue.
         prompt_kwargs_identify = {"recent_events": dialogue_entry.get('content', ''), "character_list": char_list_str}
         new_char_name = execute_task(self.engine, director_agent, 'DIRECTOR_IDENTIFY_NEW_CHARACTER', [],
@@ -155,7 +178,8 @@ class PrometheusManager:
 
         if new_char_name and new_char_name.strip().upper() != 'NONE':
             # Step 2: Use the identified name and correct context to create the full profile.
-            if new_npc := character_factory.create_temporary_npc(self.engine, director_agent, new_char_name, self.engine.dialogue_log):
+            if new_npc := character_factory.create_temporary_npc(self.engine, director_agent, new_char_name,
+                                                                 self.engine.dialogue_log):
                 roster_manager.decorate_and_add_character(self.engine, new_npc, 'npc')
                 return new_npc.get('name')
         return None
@@ -171,7 +195,7 @@ class PrometheusManager:
                          "unacted_roles_list": unacted_roles_str}
         director_agent = config.agents.get('DIRECTOR')
         choice_response = execute_task(self.engine, director_agent, 'DIRECTOR_CHOOSE_NEXT_ACTOR', [],
-                                      task_prompt_kwargs=prompt_kwargs)
+                                       task_prompt_kwargs=prompt_kwargs)
         if choice_response and choice_response.strip().upper() != 'NONE':
             cleaned_response = choice_response.strip().lower()
             for character in unacted_roles:
@@ -207,30 +231,32 @@ class PrometheusManager:
         valid_tool_names = list(self.tool_dispatch_table.keys())
         tool_decisions, _, _ = parse_and_log_tool_decisions(raw_response, valid_tool_names, context=recent_prose)
 
+        # MODIFIED: Simplified this check. If no tools fired, assume it might be a quality issue.
         if not tool_decisions and not is_reprompt:
-            # Handle potential refusal with a single re-prompt
-            return None, {'refusal': True}
+            tool_decisions['is_role_break'] = True
 
         if not raw_response: return None, {}
         utils.log_message('debug', f"[PROMETHEUS RESPONSE]\n{raw_response}\n")
 
-        # --- Prioritized Tool Execution and Event Logging ---
-        # NOTE FOR FUTURE DEVS: If you add a new tool, consider if its execution order matters
-        # or if it affects the context for the character_state update. Add its logic here.
         events = {}
         next_actor_name = None
 
+        # --- REWRITING AND CORRECTION STAGE ---
+        # We prioritize corrections before executing other tools.
         if tool_decisions.get('is_refusal') and not is_reprompt:
-            return None, {'refusal': True}
+            return None, {'refusal': True}  # Return refusal event to TurnManager
 
+        if tool_decisions.get('is_role_break') and not is_reprompt:
+            return None, {'role_break': True}  # Return role_break event to TurnManager
+
+        # --- STANDARD TOOL EXECUTION ---
+        # This part only runs if the prose is considered clean.
         if tool_decisions.get('modify_equipment'):
             affected_chars = self._call_modify_equipment(dialogue_entry)
             if affected_chars: events['equipment_changed'] = affected_chars
 
         if tool_decisions.get('summarize_for_memory'):
             self._call_summarize_for_memory(dialogue_entry)
-            # This action implies time has passed, which is handled by TurnManager.
-            # We just need to ensure the event is logged for the state update.
             duration = utility_tasks.get_duration_for_action(self.engine, dialogue_entry['content'])
             if duration > 0: events['time_passed_seconds'] = duration
 

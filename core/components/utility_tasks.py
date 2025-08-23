@@ -30,9 +30,9 @@ def reprompt_after_refusal(engine, original_actor: dict, original_task_key: str,
         if modified_messages[i].get('role') == 'user':
             modified_messages[i]['content'] = reminder + modified_messages[i]['content']
             break
-    else: # Fallback if no user message is found (highly unlikely)
+    else:  # Fallback if no user message is found (highly unlikely)
         modified_messages.append({"role": "user", "content": reminder + "Please respond."})
-    
+
     # 3. Re-execute the original task with the modified messages.
     raw_response = execute_task(
         engine,
@@ -49,6 +49,39 @@ def reprompt_after_refusal(engine, original_actor: dict, original_task_key: str,
     return new_prose
 
 
+# NEW: A specialized function to handle immersion-breaking "AI garbage".
+def reprompt_after_role_break(engine, original_actor: dict, original_prose: str) -> str:
+    """
+    Handles immersion-breaking output by asking the model to rewrite it, removing the OOC text.
+    """
+    # 1. Annotate the failure.
+    engine.annotation_manager.annotate_last_log_as_failure(
+        "LLM_ROLE_BREAK",
+        f"Actor: {original_actor.get('name', 'N/A')} produced out-of-character text."
+    )
+    utils.log_message('debug', "[SYSTEM] LLM role-break detected. Re-prompting for a rewrite.")
+
+    # 2. Re-execute with the 'REWRITE_FOR_ROLE_COMPLIANCE' task.
+    #    This task is designed to take faulty text and fix it.
+    corrected_response = execute_task(
+        engine,
+        original_actor,
+        'REWRITE_FOR_ROLE_COMPLIANCE',
+        [{"role": "user", "content": original_prose}],
+        task_prompt_kwargs={"original_response": original_prose}
+    )
+
+    if corrected_response and corrected_response.strip() != original_prose.strip():
+        utils.log_message('full',
+                          f"--- REWRITE STAGE ---\n[ORIGINAL]\n{original_prose}\n\n[CORRECTED]\n{corrected_response}\n--- END REWRITE ---")
+        utils.log_message('debug', '[SYSTEM] Rewrite successful.')
+        return corrected_response.strip()
+
+    # If the rewrite fails or produces the same garbage, return nothing.
+    utils.log_message('debug', '[SYSTEM] Rewrite failed to produce a different response.')
+    return ""
+
+
 def get_duration_for_action(engine, action_text: str) -> int:
     """
     Calls the Timekeeper agent to estimate the duration of a narrative action.
@@ -58,23 +91,24 @@ def get_duration_for_action(engine, action_text: str) -> int:
         return 0
 
     timekeeper_agent = config.agents['TIMEKEEPER']
-    
+
     raw_response = execute_task(
         engine,
         timekeeper_agent,
         'ESTIMATE_ACTION_DURATION',
         [{"role": "user", "content": action_text}]
     )
-    
+
     cleaned_json_str = utils.clean_json_from_llm(raw_response)
     if not cleaned_json_str:
-        log_message('debug', f"[TIMEKEEPER WARNING] Could not find any JSON in response: '{raw_response}'. Defaulting to 30s.")
+        log_message('debug',
+                    f"[TIMEKEEPER WARNING] Could not find any JSON in response: '{raw_response}'. Defaulting to 30s.")
         return 30
 
     try:
         data = json.loads(cleaned_json_str)
         total_seconds = 0
-        
+
         conversions = {
             "duration_in_seconds": 1,
             "duration_in_minutes": 60,
@@ -88,12 +122,13 @@ def get_duration_for_action(engine, action_text: str) -> int:
                     total_seconds += value * multiplier
                 except (ValueError, TypeError):
                     continue
-        
+
         if total_seconds > 0:
             return max(1, total_seconds)
 
     except json.JSONDecodeError:
         pass
 
-    log_message('debug', f"[TIMEKEEPER WARNING] Failed to parse duration from response: '{raw_response}'. Defaulting to 30s.")
+    log_message('debug',
+                f"[TIMEKEEPER WARNING] Failed to parse duration from response: '{raw_response}'. Defaulting to 30s.")
     return 30

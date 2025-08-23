@@ -1,13 +1,13 @@
 # /core/engine/turn_manager.py
 
-import re
+
 import random
 
 from ..common import command_parser
 from ..common import utils
 from ..components import position_manager
 from ..components import roster_manager
-from ..components import utility_tasks
+
 from ..llm import llm_api
 
 
@@ -38,7 +38,8 @@ class TurnManager:
         npcs_to_cull = position_manager.get_npcs_to_cull(self.engine, self.game_state)
 
         if npcs_to_cull:
-            utils.log_message('debug', f"[TURN MANAGER] Culling distant NPCs from turn order: {', '.join(npcs_to_cull)}")
+            utils.log_message('debug',
+                              f"[TURN MANAGER] Culling distant NPCs from turn order: {', '.join(npcs_to_cull)}")
             turn_queue = [char for char in current_roster if char['name'] not in npcs_to_cull]
         else:
             turn_queue = current_roster[:]
@@ -59,7 +60,8 @@ class TurnManager:
             return
 
         visible_locations = {
-            data.get('name', tag) for tag, data in self.engine.generation_state.placed_features.items() if tag in visible_tags
+            data.get('name', tag) for tag, data in self.engine.generation_state.placed_features.items() if
+            tag in visible_tags
         }
         visible_locations_list_str = "\n".join(f"- {name}" for name in sorted(list(visible_locations)))
 
@@ -91,12 +93,14 @@ class TurnManager:
                 location_name = command.get('location_name')
                 utils.log_message('debug', f"[TURN MANAGER] Hydrating NPC '{char_name}' in/near '{location_name}'.")
 
-                location_context = { "world_theme": self.engine.world_theme, "scene_prompt": self.engine.scene_prompt }
-                full_profile, role = roster_manager.get_or_create_character_from_concept(self.engine, concept, location_context)
+                location_context = {"world_theme": self.engine.world_theme, "scene_prompt": self.engine.scene_prompt}
+                full_profile, role = roster_manager.get_or_create_character_from_concept(self.engine, concept,
+                                                                                         location_context)
 
                 if full_profile and role:
                     roster_manager.decorate_and_add_character(self.engine, full_profile, role)
-                    roster_manager.spawn_single_entity(self.engine, self.game_state, full_profile['name'], location_name)
+                    roster_manager.spawn_single_entity(self.engine, self.game_state, full_profile['name'],
+                                                       location_name)
                     self.engine.dehydrated_npcs.remove(concept)
                     hydrated_any = True
 
@@ -104,11 +108,10 @@ class TurnManager:
             # Re-initialize states for all characters to account for new arrivals
             self.engine.character_manager.initialize_all_character_states(self.engine)
 
-
-    def _execute_ai_turn(self, current_actor, unacted_roles) -> str:
+    def _execute_ai_turn(self, current_actor, unacted_roles) -> tuple[str, list]:
         """
-        Executes a full turn for an AI-controlled character. This is now the
-        primary location where full prompt context is built.
+        Generates the prose for an AI-controlled character's turn.
+        Returns the prose string and the message context used to generate it.
         """
         self.game_state.reset_entity_turn_stats(current_actor['name'])
 
@@ -141,49 +144,65 @@ class TurnManager:
         prose = command_parser.post_process_llm_response(self.engine, current_actor, raw_llm_response,
                                                          is_dm_role=current_actor.get('role_type') == 'dm')
 
-        if prose:
-            utils.log_message('story', prose)
-
-        return prose
+        # Do NOT log to story here. Logging happens after validation.
+        return prose, messages
 
     def execute_turn_for(self, current_actor, unacted_roles):
         """Public method to execute a turn for any actor."""
         next_actor = None
         prose = ""
         events = {}
+        messages = []
 
         if current_actor.get("controlled_by") == "human":
             prose = self.player_interface.execute_turn(current_actor)
         else:
-            prose = self._execute_ai_turn(current_actor, unacted_roles)
+            prose, messages = self._execute_ai_turn(current_actor, unacted_roles)
 
         if prose:
+            # Create a temporary entry. It will only be logged if it passes validation.
             dialogue_entry = {"speaker": current_actor['name'], "content": prose,
                               "timestamp": self.engine.current_game_time.isoformat()}
-            self.engine.dialogue_log.append(dialogue_entry)
 
-            # This is now the single point of analysis for all turns.
-            next_actor_name, events = self.engine.prometheus_manager.analyze_and_dispatch(prose, dialogue_entry,
-                                                                                          unacted_roles, [])
+            # Initial analysis by Prometheus
+            next_actor_name, events = self.engine.prometheus_manager.analyze_and_dispatch(
+                prose, dialogue_entry, unacted_roles, messages)
 
+            # --- VALIDATION AND REWRITE STAGE ---
             if events.get('refusal'):
-                 # The turn was handled by the refusal system. Overwrite prose and next_actor.
-                prometheus_result = self.engine.prometheus_manager._call_handle_refusal(dialogue_entry, [],
-                                                                                        unacted_roles=unacted_roles)
-                prose = prometheus_result.get('new_prose', '')
-                next_actor_name = prometheus_result.get('next_actor_name')
-                events = prometheus_result.get('events', {})
-                if prose: # Update dialogue log if reprompt was successful
-                    dialogue_entry['content'] = prose
+                reprompt_result = self.engine.prometheus_manager._call_handle_refusal(dialogue_entry, messages,
+                                                                                      unacted_roles=unacted_roles)
+                prose = reprompt_result.get('new_prose', '')
+                next_actor_name = reprompt_result.get('next_actor_name')
+                events = reprompt_result.get('events', {})
 
+            elif events.get('role_break'):
+                reprompt_result = self.engine.prometheus_manager._call_handle_role_break(dialogue_entry,
+                                                                                         unacted_roles=unacted_roles)
+                prose = reprompt_result.get('new_prose', '')
+                next_actor_name = reprompt_result.get('next_actor_name')
+                events = reprompt_result.get('events', {})
 
-            if current_actor.get('is_positional'):
-                position_manager.handle_turn_movement(self.engine, self.game_state, current_actor['name'], prose)
+            # --- FINAL PROCESSING STAGE ---
+            # This block only executes if we have successful, validated prose.
+            if prose:
+                # Log the final, clean prose to story and dialogue history
+                utils.log_message('story', f"({current_actor['name']}) {prose}")
+                dialogue_entry["content"] = prose
+                self.engine.dialogue_log.append(dialogue_entry)
 
-            if not events.get('refusal'):
+                # Advance game time based on the duration calculated by Prometheus (if any)
+                self.engine.advance_time(events.get('time_passed_seconds', 0))
+
+                # Handle movement as a direct consequence of prose
+                if current_actor.get('is_positional'):
+                    position_manager.handle_turn_movement(self.engine, self.game_state, current_actor['name'], prose)
+
+                # Update character state using the final, comprehensive event log
                 self.engine.character_manager.update_character_state(self.engine, current_actor, dialogue_entry, events)
 
-            if next_actor_name and isinstance(next_actor_name, str):
-                next_actor = roster_manager.find_character(self.engine, next_actor_name)
+                # Determine the next actor
+                if next_actor_name and isinstance(next_actor_name, str):
+                    next_actor = roster_manager.find_character(self.engine, next_actor_name)
 
         return next_actor
