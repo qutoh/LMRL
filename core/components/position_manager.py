@@ -17,6 +17,168 @@ from ..llm import llm_api
 
 FIRST_PERSON_PRONOUNS = {"i", "me", "myself", "my"}
 
+movement_classifiers = {
+    "DASH": r"\b(dash|dashes|dashed|rush|rushes|rushed|charge|charges|charged|sprint|sprints|sprinted|bolt|bolts|bolted)\b",
+    "SNEAK": r"\b(sneak|sneaks|snuck|creep|creeps|crept|stalk|stalks|stalked|sidle|sidles|sidled|tiptoe|tiptoes|tiptoed)\b",
+    "CRAWL": r"\b(crawl|crawls|crawled)\b",
+    "CLIMB": r"\b(climb|climbs|climbed|ascend|ascends|ascended|scrambles up)\b",
+    "SWIM": r"\b(swim|swims|swam|wade|wades|waded)\b",
+    "JUMP": r"\b(jump|jumps|jumped|leap|leaps|leapt)\b",
+    "FALLBACK": r"\b(retreat|retreats|retreated|withdraw|withdraws|withdrew|backs away|backed away|fall back|falls back|fell back)\b",
+    "RUN": r"\b(run|runs|ran)\b",
+    "WALK": r"\b(walk|walks|walked|go|goes|went|move|moves|moved|proceed|proceeds|proceeded|advance|advances|advanced|step|steps|stepped|sets off|set off|position|positions|positioned)\b",
+}
+
+
+def classify_movement_mode(text: str) -> str | None:
+    """Iterates through classifiers to find the dominant movement mode."""
+    for mode, pattern in movement_classifiers.items():
+        if re.search(pattern, text, re.IGNORECASE):
+            return mode
+    return None
+
+
+def handle_turn_movement(engine, game_state: GameState, character_name: str, prose: str):
+    """
+    Classifies movement type from prose and calls the intent processor.
+    This is the main entry point for handling movement during a character's turn.
+    """
+    if movement_mode := classify_movement_mode(prose):
+        process_movement_intent(engine, game_state, character_name, prose, movement_mode)
+
+
+def _get_nearby_feature_tags_for_leads(engine, game_state: GameState) -> set:
+    """Helper to get the set of all feature tags currently visible to any lead character."""
+    leads = [c for c in engine.characters if c.get('role_type') == 'lead' and c.get('is_positional')]
+    visible_tags = set()
+    if not engine.generation_state: return visible_tags
+
+    for lead in leads:
+        entity = game_state.get_entity(lead['name'])
+        if not entity: continue
+
+        current_tag = get_narrative_location_for_position(entity.x, entity.y, engine.generation_state)
+        if current_tag:
+            visible_tags.add(current_tag)
+            # Add adjacent tags
+            if engine.layout_graph:
+                for p, c, _ in engine.layout_graph.edges:
+                    if p == current_tag: visible_tags.add(c)
+                    if c == current_tag: visible_tags.add(p)
+
+    return visible_tags
+
+
+def get_npcs_to_cull(engine, game_state: GameState) -> list[str]:
+    """
+    Returns a list of NPC names that are not in proximity to any lead characters
+    and should be removed from the current turn order.
+    """
+    npcs = [c for c in engine.characters if c.get('role_type') == 'npc' and c.get('is_positional')]
+    if not npcs: return []
+
+    visible_tags = _get_nearby_feature_tags_for_leads(engine, game_state)
+    if not visible_tags: # If no leads are in a defined feature, we can't determine proximity.
+        return []
+
+    cull_list = []
+    for npc in npcs:
+        entity = game_state.get_entity(npc['name'])
+        if not entity: continue
+
+        npc_tag = get_narrative_location_for_position(entity.x, entity.y, engine.generation_state)
+        if npc_tag not in visible_tags:
+            cull_list.append(npc['name'])
+
+    return cull_list
+
+
+def log_character_perspective(engine, game_state: GameState, character_name: str):
+    """
+    Builds a narrative description of a lead character's surroundings and echoes it to the game log.
+    """
+    character = roster_manager.find_character(engine, character_name)
+    if not character:
+        return
+
+    # --- Log character name and description ---
+    utils.log_message('game', f"\n--- {character['name']} ---")
+    if phys_desc := character.get('physical_description'):
+        utils.log_message('game', phys_desc)
+
+    entity = game_state.get_entity(character_name)
+    if not entity or not engine.generation_state:
+        return
+
+    # --- Determine visible features ---
+    features_to_scan = set()
+    current_feature_tag = get_narrative_location_for_position(entity.x, entity.y,
+                                                              engine.generation_state)
+
+    if current_feature_tag:
+        features_to_scan.add(current_feature_tag)
+        if engine.layout_graph:
+            for parent, child, _ in engine.layout_graph.edges:
+                if parent == current_feature_tag:
+                    features_to_scan.add(child)
+                elif child == current_feature_tag:
+                    features_to_scan.add(parent)
+    else:
+        # Character is in an open area, find closest features
+        all_features = engine.generation_state.placed_features
+        if all_features:
+            features_with_dist = []
+            for tag, details in all_features.items():
+                if bounds := details.get('bounding_box'):
+                    x1, y1, w, h = [int(c) for c in bounds]
+                    center_x, center_y = x1 + w / 2, y1 + h / 2
+                    distance = math.dist((entity.x, entity.y), (center_x, center_y))
+                    features_with_dist.append((distance, tag))
+            features_with_dist.sort()
+            for _, tag in features_with_dist[:4]:
+                features_to_scan.add(tag)
+
+    # --- Format and log location description ---
+    if features_to_scan:
+        location_descriptions = []
+        for tag in sorted(list(features_to_scan)):
+            feature_data = engine.generation_state.placed_features.get(tag)
+            if feature_data and feature_data.get('description'):
+                location_descriptions.append(feature_data['description'].strip())
+
+        if location_descriptions:
+            full_description = " ".join(location_descriptions)
+            formatted_location_desc = utils.format_text_with_paragraph_breaks(full_description)
+            utils.log_message('game', formatted_location_desc)
+
+    # --- Find, group, and log nearby characters ---
+    other_entities = [e for e in game_state.entities if e.name != character_name]
+    characters_by_location = {}
+
+    for other_entity in other_entities:
+        occupant_loc_tag = get_narrative_location_for_position(other_entity.x,
+                                                              other_entity.y,
+                                                              engine.generation_state)
+        if occupant_loc_tag and occupant_loc_tag in features_to_scan:
+            loc_data = engine.generation_state.placed_features.get(occupant_loc_tag, {})
+            loc_name = loc_data.get('name', occupant_loc_tag)
+            if loc_name not in characters_by_location:
+                characters_by_location[loc_name] = []
+            characters_by_location[loc_name].append(other_entity.name)
+
+    if characters_by_location:
+        utils.log_message('game', "")  # Newline for spacing
+        for loc_name, char_names in characters_by_location.items():
+            if len(char_names) == 1:
+                char_list_str = char_names[0]
+            elif len(char_names) == 2:
+                char_list_str = f"{char_names[0]} and {char_names[1]}"
+            else:
+                char_list_str = ", ".join(char_names[:-1]) + f" and {char_names[-1]}"
+
+            utils.log_message('game', f"{loc_name}:")
+            utils.log_message('game', f"You see {char_list_str} here.")
+
 
 def get_narrative_location_for_position(x: int, y: int, generation_state) -> str | None:
     """

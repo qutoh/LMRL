@@ -69,16 +69,15 @@ class UICallbacks:
             ui.event_log.add_message("World creation models are loading, please wait...", (255, 255, 100))
             ui.app_state = AppState.WORLD_SELECTION
             return
-            
+
         # Ensure the atlas_engine has the loaded embedding model before use.
         ui.atlas_engine.embedding_model = ui.model_manager.embedding_model
 
         if not theme_text:
-            atlas = AtlasManager(ui.atlas_engine)
-            ui.world_theme = atlas.world_generator.content_generator.get_world_theme(
-                execute_task(ui.atlas_engine, config.agents['ATLAS'], 'WORLDGEN_CREATE_THEME',
-                             []) or "A generic fantasy world."
-            )
+            # This was the bug: it was creating a world here and storing the name as the theme.
+            # Now, it correctly just generates and stores the theme. The UIManager will handle creation.
+            ui.world_theme = execute_task(ui.atlas_engine, config.agents['ATLAS'], 'WORLDGEN_CREATE_THEME',
+                                          []) or "A generic fantasy world."
         else:
             ui.world_theme = theme_text
 
@@ -87,10 +86,10 @@ class UICallbacks:
     def _continue_to_game_start(self, is_newly_written_scene: bool):
         """Helper function to handle the final steps before starting the game engine process."""
         ui = self.ui_manager
-        
+
         # Ensure the atlas_engine has the loaded embedding model before use.
         ui.atlas_engine.embedding_model = ui.model_manager.embedding_model
-        
+
         if ui.starting_location is None:
             atlas = AtlasManager(ui.atlas_engine)
             ui.event_log.add_message("Finding a home for your scene...", (200, 200, 255))

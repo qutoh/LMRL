@@ -144,16 +144,16 @@ class SetupManager:
         else:
             # --- New: LLM chooses exterior tile ---
             llm = V3_LLM(self.engine)
-            walkable_tiles = {
+            tiles = {
                 name: data for name, data in self.engine.config.tile_types.items()
-                if "GROUND" in data.get("pass_methods", []) and name != "VOID_SPACE"
+                if name != "VOID_SPACE"
             }
             tile_options_str = "\n".join(
-                f"- `{name}`: {data.get('description', 'No description.')}" for name, data in walkable_tiles.items()
+                f"- `{name}`: {data.get('description', 'No description.')}" for name, data in tiles.items()
             )
             chosen_tile = llm.choose_exterior_tile(scene_prompt, tile_options_str)
-            if chosen_tile not in walkable_tiles:
-                chosen_tile = "DEFAULT_FLOOR"  # Fallback
+            if chosen_tile not in tiles:
+                chosen_tile = "VOID_SPACE"  # Fallback
 
             utils.log_message('debug', f"[PEG Setup] LLM chose '{chosen_tile}' as the exterior tile.")
 
@@ -178,11 +178,15 @@ class SetupManager:
         map_artist.draw_map(self.game_state.game_map, generation_state, self.engine.config.features)
 
         # --- Character and Casting Phase ---
-        roster_manager.load_characters_from_scene(self.engine, chosen_scene)
+        # Load leads and DMs, but defer inhabitants and proc-gen characters
+        roster_manager.load_characters_from_scene(self.engine, chosen_scene, hydrate_inhabitants=False)
 
-        for char_data in generation_state.character_creation_queue:
-            if new_npc := character_factory.create_npc_from_generation_sentence(self.engine, char_data):
-                roster_manager.decorate_and_add_character(self.engine, new_npc, 'npc')
+        # Store character concepts from world file and proc-gen for later hydration
+        self.engine.dehydrated_npcs.extend(
+            chosen_scene.get('source_location', {}).get('inhabitants', [])
+        )
+        self.engine.dehydrated_npcs.extend(generation_state.character_creation_queue)
+
 
         location_summary = f"{chosen_scene['source_location'].get('Name', '')}: {chosen_scene['source_location'].get('Description', '')}"
         self.engine.director_manager.establish_initial_cast(scene_prompt, location_summary)

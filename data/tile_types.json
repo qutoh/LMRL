@@ -46,7 +46,7 @@
   "WOOD": {
 	"description": "An impassable section of wood.",
 	"movement_cost": 1.0,
-	"is_transparent": false,
+	"is_transparent": true,
 	"materials": [
 	  "WOOD"
 	],
@@ -140,7 +140,7 @@
   "DEFAULT_WALL": {
 	"description": "An impassable barrier.",
 	"movement_cost": 1.0,
-	"is_transparent": false,
+	"is_transparent": true,
 	"materials": [
 	  "ROCK"
 	],
@@ -162,7 +162,7 @@
   "DEFAULT_DOOR": {
 	"description": "A standard door or portal.",
 	"movement_cost": 1.0,
-	"is_transparent": false,
+	"is_transparent": true,
 	"materials": [
 	  "WOOD",
 	  "METAL"

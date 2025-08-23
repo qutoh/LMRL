@@ -56,11 +56,16 @@ def get_or_create_character_from_concept(engine, char_concept: dict | str, locat
     # --- CREATION PHASE: Only if not found anywhere ---
     utils.log_message('debug', f"[ROSTER] Inhabitant concept '{char_name}' not found. Generating full profile.")
 
-    char_data_for_creation = {
-        "name": char_name,
-        "source_sentence": concept_dict.get('description', 'An individual encountered in the scene.')
-    }
-    full_char_profile = character_factory.create_npc_from_generation_sentence(engine, char_data_for_creation)
+    # Check if the concept came from proc-gen, which has richer data
+    if 'source_sentence' in concept_dict:
+        full_char_profile = character_factory.create_npc_from_generation_sentence(engine, concept_dict)
+    else: # It's a simple inhabitant from the world file
+        char_data_for_creation = {
+            "name": char_name,
+            "source_sentence": concept_dict.get('description', 'An individual encountered in the scene.')
+        }
+        full_char_profile = character_factory.create_npc_from_generation_sentence(engine, char_data_for_creation)
+
 
     if not full_char_profile:
         return None, None
@@ -227,8 +232,11 @@ def load_initial_roster(engine):
     for char in initial_npcs: decorate_and_add_character(engine, char, 'npc')
 
 
-def load_characters_from_scene(engine, scene_data):
-    """Loads characters specified in a scene object and from location inhabitants."""
+def load_characters_from_scene(engine, scene_data, hydrate_inhabitants: bool = True):
+    """
+    Loads characters specified in a scene object. Inhabitants from the location
+    can be deferred by setting hydrate_inhabitants to False.
+    """
     if not isinstance(scene_data, dict): return
 
     run_lead_casting_path = file_io.join_path(engine.run_path, 'casting_leads.json')
@@ -259,10 +267,14 @@ def load_characters_from_scene(engine, scene_data):
 
     # 2. Load/Generate characters from the location's "inhabitants" list
     if inhabitants := location_data.get('inhabitants'):
-        for char_concept in inhabitants:
-            full_char_profile, role_type = get_or_create_character_from_concept(engine, char_concept, location_context)
-            if full_char_profile and role_type:
-                decorate_and_add_character(engine, full_char_profile, role_type)
+        if hydrate_inhabitants:
+            for char_concept in inhabitants:
+                full_char_profile, role_type = get_or_create_character_from_concept(engine, char_concept, location_context)
+                if full_char_profile and role_type:
+                    decorate_and_add_character(engine, full_char_profile, role_type)
+        else:
+            # If not hydrating, add them to the engine's dehydrated list for later.
+            engine.dehydrated_npcs.extend(inhabitants)
 
 
 # # NEW: Wrapper function to centralize the create->add flow
@@ -274,28 +286,51 @@ def create_and_add_lead(engine, dialogue_log):
     return None
 
 
+def spawn_single_entity(engine, game_state, character_name: str, target_feature_name: str | None = None):
+    """Creates an Entity for a single character and places it, preferably in a specific feature."""
+    if not game_state or game_state.get_entity(character_name): return
 
-def spawn_entities_from_roster(engine, game_state):
-    """Creates Entity objects in the game_state for all positional characters."""
-    if not game_state: return
-    colors = [(255, 255, 255), (255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255), (0, 255, 255),
-              (128, 0, 128)]
-    color_index = 0
-    for character in engine.characters:
-        if not character.get('is_positional'): continue
-        if game_state.get_entity(character['name']): continue
-        x, y = 0, 0
-        for _ in range(100):
+    character = find_character(engine, character_name)
+    if not character: return
+
+    # Simplified color logic for single spawn
+    colors = [(255, 255, 255), (255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255), (0, 255, 255), (128, 0, 128)]
+    color = colors[len(game_state.entities) % len(colors)]
+    char_visual = character['name'][0].upper()
+
+    x, y = -1, -1
+    # Attempt to place in the target feature
+    if target_feature_name and engine.generation_state:
+        target_tag = next((tag for tag, data in engine.generation_state.placed_features.items() if data.get('name') == target_feature_name), None)
+        if target_tag:
+            bounds = engine.generation_state.placed_features[target_tag].get('bounding_box')
+            if bounds:
+                x1, y1, w, h = [int(c) for c in bounds]
+                for _ in range(100): # 100 attempts to find a free spot
+                    px, py = random.randint(x1, x1 + w - 1), random.randint(y1, y1 + h - 1)
+                    if game_state.game_map.is_walkable(px, py) and not any(e.x == px and e.y == py for e in game_state.entities):
+                        x, y = px, py
+                        break
+
+    # Fallback to random placement if specific placement fails or is not requested
+    if x == -1 and y == -1:
+        for _ in range(200):
             x = random.randint(1, game_state.game_map.width - 2)
             y = random.randint(1, game_state.game_map.height - 2)
             if game_state.game_map.is_walkable(x, y) and not any(e.x == x and e.y == y for e in game_state.entities):
                 break
-        char_visual = character['name'][0].upper()
-        char_color = colors[color_index % len(colors)]
-        color_index += 1
-        entity = Entity(name=character['name'], x=x, y=y, char=char_visual, color=char_color)
-        game_state.add_entity(entity)
-        utils.log_message('debug', loc('system_roster_spawned_entity', entity_name=entity.name, x=entity.x, y=entity.y))
+
+    entity = Entity(name=character['name'], x=x, y=y, char=char_visual, color=color)
+    game_state.add_entity(entity)
+    utils.log_message('debug', loc('system_roster_spawned_entity', entity_name=entity.name, x=entity.x, y=entity.y))
+
+
+def spawn_entities_from_roster(engine, game_state):
+    """Creates Entity objects in the game_state for all positional characters."""
+    if not game_state: return
+    for character in engine.characters:
+        if character.get('is_positional'):
+            spawn_single_entity(engine, game_state, character['name'])
 
 
 def place_entity_by_instruction(game_state: 'GameState', entity_name: str, instruction: dict, placed_features: dict):

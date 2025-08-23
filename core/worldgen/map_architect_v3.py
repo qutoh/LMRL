@@ -338,7 +338,7 @@ class MapArchitectV3:
                 parent_branch.narrative_log = self.llm.get_narrative_seed(parent_branch.name) or ""
 
             other_features_context_list = [
-                f"({branch.feature_type} - \"{branch.name}\")"
+                f"({branch.name} - \"{branch.narrative_log}\")"
                 for branch in self.initial_feature_branches  # Use all initial branches for context
                 if branch is not parent_branch
             ]

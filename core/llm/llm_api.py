@@ -32,7 +32,7 @@ def _parse_and_strip_thinking_block(raw_text: str, model_id: str) -> str:
     # Priority 1: Extract content from a dedicated response block if tags are defined.
     if response_start and response_end:
         # Use a more robust regex that allows for whitespace around tags and content.
-        pattern = re.compile(re.escape(response_start) + r'\s*(.*?)\s*' + re.escape(response_end), re.DOTALL)
+        pattern = re.compile(re.escape(response_start) + r'\s*(.*?)\s*' + re.escape(response_end), re.DOTALL | re.IGNORECASE)
         match = re.search(pattern, raw_text)
         if match:
             return match.group(1).strip()

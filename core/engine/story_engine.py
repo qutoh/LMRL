@@ -33,6 +33,7 @@ class StoryEngine:
         self.characters = []
         self.dialogue_log = []
         self.summaries = []
+        self.dehydrated_npcs = []
         self.current_game_time = datetime(1486, 6, 12, 14, 0, 0)
         self.token_context_limit = 8192
         self.token_summary_threshold = 6192
@@ -180,23 +181,28 @@ class StoryEngine:
                               loc('log_cycle_header', cycle_num=i + 1, max_cycles=self.config.settings['MAX_CYCLES']))
 
             self.summary_manager.check_and_perform_summary()
+
+            # Note: Initial spawn now happens in setup. This call is for any characters added mid-game.
             roster_manager.spawn_entities_from_roster(self, self.game_state)
 
             turn_order = self.characters[:]
-            random.shuffle(turn_order)
+            turn_queue = self.turn_manager.prepare_turn_queue(turn_order)
 
-            if not turn_order:
+            if not turn_queue:
                 utils.log_message('debug', loc('log_no_roles_left'))
                 break
 
-            turn_queue = turn_order[:]
             while turn_queue:
                 self._check_for_interrupts()
                 if self.interrupted or self.player_interrupted or self.cast_manager_interrupted:
                     break
 
                 current_actor = turn_queue.pop(0)
-                next_actor_choice = self.turn_manager.execute_turn_for(current_actor, turn_queue)
+
+                # Filter unacted roles based on the finalized turn queue for this cycle
+                unacted_roles_in_queue = turn_queue[:]
+
+                next_actor_choice = self.turn_manager.execute_turn_for(current_actor, unacted_roles_in_queue)
                 self.render_queue.put(self.game_state)
 
                 if next_actor_choice:

@@ -128,6 +128,11 @@
     "player_takeover_enabled": false,
     "player_takeover_notification": "Help the Director identify a new character."
   },
+  "DIRECTOR_SHOULD_SPAWN_INHABITANT": {
+    "task_prompt_key": "task_prompt_director_should_spawn_inhabitant",
+    "source_agent": "DIRECTOR",
+    "default_adjustment": -0.1
+  },
   "DIRECTOR_TUNE_DM_INSTRUCTIONS": {
     "task_prompt_key": "task_prompt_director_tune_dm_instructions",
     "source_agent": "DIRECTOR",
@@ -142,7 +147,6 @@
     "task_prompt_key": "task_prompt_peg_character_placement",
 	"model_override": "",
     "source_agent": "DIRECTOR",
-    "model_override": "",
     "default_adjustment": 0.0,
     "affects_global_context_limit": false
   },

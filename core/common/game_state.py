@@ -110,7 +110,7 @@ class MapArtist:
         char = tile_def.get("characters", ["?"])[0]
         pass_methods = tile_def.get("pass_methods", [])
         walkable = "GROUND" in pass_methods
-        transparent = tile_def.get("is_transparent", False)
+        transparent = tile_def.get("is_transparent", True)
         movement_cost = tile_def.get("movement_cost", 1.0)
         terrain_type_index = config.tile_type_map.get(tile_type_key, -1)
 
@@ -165,10 +165,12 @@ class MapArtist:
                 continue
             feature_def = features_definitions[feature_type_key]
 
-            if path_tiles := feature_data.get("path_tiles"):
+            # Check for path coordinates from generator ('path_coords') or loaded file ('path_tiles')
+            path_coords = feature_data.get("path_tiles") or feature_data.get("path_coords")
+            if path_coords:
                 # When loaded from JSON, path_tiles will be a list of lists.
                 # It must be converted to a set of tuples to be hashable and for fast lookups.
-                path_coords_set = set(map(tuple, path_tiles))
+                path_coords_set = set(map(tuple, path_coords))
                 self._draw_path_feature(game_map, path_coords_set, feature_def)
                 continue
 
@@ -182,14 +184,14 @@ class MapArtist:
             x2, y2 = min(game_map.width, x2), min(game_map.height, y2)
             if x1 >= x2 or y1 >= y2: continue
 
-            floor_tile_type = feature_def.get('tile_type', 'DEFAULT_FLOOR')
+            floor_tile_type = feature_def.get('tile_type', 'VOID_SPACE')
             floor_tile_data = self._get_tile_data_from_type(floor_tile_type)
             if floor_tile_data:
                 game_map.tiles[x1:x2, y1:y2] = floor_tile_data
 
             border_thickness = feature_def.get('border_thickness', 1)
             if border_thickness > 0:
-                border_tile_type = feature_def.get('border_tile_type', 'DEFAULT_WALL')
+                border_tile_type = feature_def.get('border_tile_type', 'VOID_SPACE')
                 border_tile_data = self._get_tile_data_from_type(border_tile_type)
                 if not border_tile_data: continue
 
