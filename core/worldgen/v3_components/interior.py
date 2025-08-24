@@ -7,7 +7,7 @@ import numpy as np
 
 from core.common import utils
 from core.common.game_state import GenerationState
-from core.worldgen.procgen_utils import check_for_overlap
+
 from .feature_node import FeatureNode
 from .placement import Placement
 from ...common.config_loader import config

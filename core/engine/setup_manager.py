@@ -5,7 +5,6 @@ from datetime import datetime
 from core.common import file_io, utils
 from core.common.game_state import GenerationState, MapArtist, LayoutGraph
 from core.common.localization import loc
-from core.components import character_factory
 from core.components import position_manager
 from core.components import roster_manager
 from core.components.memory_manager import MemoryManager

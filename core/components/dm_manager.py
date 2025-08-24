@@ -94,7 +94,7 @@ class DMManager:
         command = command_parser.parse_structured_command(self.engine, raw_synth_response, 'SUMMARIZER',
                                                           'CH_FIX_SYNTHESIZED_DM_JSON')
 
-        if command and all(k in command for k in ['name', 'description', 'instructions']):
+        if command and all(k in command for k in ['name', 'description', 'instructions', 'persona_description']):
             utils.log_message('game',
                               f"[DIRECTOR] ...synthesis complete. Creating new Game Master: '{command['name']}'.")
 
@@ -163,7 +163,7 @@ class DMManager:
             command = command_parser.parse_structured_command(self.engine, raw_synth_response, 'SUMMARIZER',
                                                               'CH_FIX_SYNTHESIZED_DM_JSON')
 
-            if command and all(k in command for k in ['name', 'description', 'instructions']):
+            if command and all(k in command for k in ['name', 'description', 'instructions', 'persona_description']):
                 meta_dm.update(command)
                 meta_dm['component_dms'] = new_components_full_names
                 meta_dm['fused_personas'][new_cache_key] = command

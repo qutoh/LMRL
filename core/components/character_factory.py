@@ -9,6 +9,15 @@ from ..common.utils import log_message
 from ..llm.llm_api import execute_task
 
 
+def _generate_persona_description(engine, name: str, description: str) -> str:
+    """Generates the simple, first-person persona description for a character."""
+    kwargs = {"character_name": name, "character_description": description}
+    # This requires a new task 'DIRECTOR_CREATE_PERSONA_DESC' to be defined.
+    persona_desc = execute_task(engine, config.agents['DIRECTOR'], 'DIRECTOR_CREATE_PERSONA_DESC', [],
+                                task_prompt_kwargs=kwargs)
+    return persona_desc or f"You are {name}."  # Robust fallback for LLM failure
+
+
 def _prepare_physical_description_task(base_kwargs: dict, role_hint: str, scene_context: str) -> tuple[str, dict]:
     """
     Determines the correct task key and arguments for generating a physical description
@@ -44,7 +53,8 @@ def _create_character_one_shot(engine, agent, task_key, task_kwargs) -> dict | N
         engine, raw_response, agent.get('name', 'DIRECTOR'),
         fallback_task_key=fix_it_key
     )
-    if command and all(k in command for k in ['name', 'description', 'instructions', 'physical_description']):
+    if command and all(k in command for k in
+                       ['name', 'description', 'instructions', 'physical_description', 'persona_description']):
         return command
     return None
 
@@ -78,8 +88,10 @@ def _create_npc_from_generation_sentence_stepwise(engine, char_data: dict) -> di
     physical_description = execute_task(engine, creator_agent, phys_desc_task, [],
                                         task_prompt_kwargs=final_phys_desc_kwargs) or "An unremarkable individual."
 
+    persona_description = _generate_persona_description(engine, npc_name, description)
+
     return {"name": npc_name, "description": description, "instructions": instructions,
-            "physical_description": physical_description}
+            "physical_description": physical_description, "persona_description": persona_description}
 
 
 def _generate_initial_equipment_stepwise(engine, equipment_agent, physical_description: str) -> list[dict]:
@@ -273,8 +285,10 @@ def _create_lead_from_role_and_scene_stepwise(engine, director_agent, scene_prom
     physical_description = execute_task(engine, director_agent, phys_desc_task, [],
                                         task_prompt_kwargs=final_phys_desc_kwargs) or "An unremarkable individual."
 
+    persona_description = _generate_persona_description(engine, new_name, new_description)
+
     return {"name": new_name, "description": new_description, "instructions": new_instructions,
-            "physical_description": physical_description.strip()}
+            "physical_description": physical_description.strip(), "persona_description": persona_description}
 
 
 def _create_temporary_npc_stepwise(engine, director_agent, npc_name, context) -> dict | None:
@@ -302,8 +316,10 @@ def _create_temporary_npc_stepwise(engine, director_agent, npc_name, context) ->
     physical_description = execute_task(engine, director_agent, phys_desc_task, [],
                                         task_prompt_kwargs=final_phys_desc_kwargs) or "An unremarkable individual."
 
+    persona_description = _generate_persona_description(engine, npc_name, description)
+
     return {"name": npc_name, "description": description, "instructions": instructions,
-            "physical_description": physical_description}
+            "physical_description": physical_description, "persona_description": persona_description}
 
 
 def create_temporary_npc(engine, creator_dm, npc_name, dialogue_log):

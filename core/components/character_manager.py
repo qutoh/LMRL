@@ -19,7 +19,6 @@ class CharacterManager:
         if character['name'] in events.get('equipment_changed', []):
             return f"Your appearance or equipment has just changed. You now look like this:\n{character.get('physical_description', 'No description.')}"
 
-        # Default physical context
         phys_desc = character.get('physical_description', 'No description.')
         equipment_lines = [f"- {item['name']}" for item in character.get('equipment', {}).get('equipped', [])]
         equipment_str = "\nYou are carrying/wearing:\n" + "\n".join(equipment_lines) if equipment_lines else ""
@@ -56,11 +55,13 @@ class CharacterManager:
 
         kwargs = {
             "character_name": character.get('name', 'N/A'),
+            "character_instructions": character.get('instructions', 'Behave as described.'),
             "current_state": character.get('character_state', 'I am new to this situation.'),
             "surroundings_context": surroundings,
             "physical_context": physical,
             "events_context": events
         }
+
         new_state = llm_api.execute_task(
             engine,
             character,
@@ -97,16 +98,6 @@ class CharacterManager:
         if not character_to_update or not character_to_update.get('is_positional'):
             return
 
-        # Handle the special case of a newly added character first.
-        if character_to_update['name'] == events.get('character_added'):
-            surroundings = position_manager.get_local_context_for_character(engine, engine.game_state,
-                                                                            character_to_update['name'])
-            physical = self._get_physical_context_for_state_update(engine, character_to_update, events)
-            events_str = self._get_events_context_for_state_update(engine, character_to_update, dialogue_entry, events)
-            self._execute_state_update(engine, character_to_update, surroundings, physical, events_str)
-            return
-
-        # Standard update for the character who just took their turn.
         surroundings = position_manager.get_local_context_for_character(engine, engine.game_state,
                                                                         character_to_update['name'])
         physical = self._get_physical_context_for_state_update(engine, character_to_update, events)

@@ -94,6 +94,8 @@
 		"representative_task": null,
 		"description": "Generates free-form creative text (prose). This group is not calibrated as its output is subjective.",
 		"members": [
+		  	"CHARACTER_TURN",
+            "DM_TURN",
 			"CHARACTER_UPDATE_STATE",
 			"DIRECTOR_CREATE_INSTR_FROM_DESC",
 			"DIRECTOR_CREATE_INSTR_FROM_ROLE",

@@ -88,6 +88,7 @@ class Config:
     def save_settings(self):
         """Saves the current settings dictionary to settings.json."""
         path = file_io.join_path(self.data_dir, 'settings.json')
+        self.settings.remove('GEMINI_API_KEY') # Yeah lol
         return file_io.write_json(path, self.settings)
 
     def load_world_data(self, world_name: str):
@@ -158,7 +159,7 @@ class Config:
     def _apply_api_keys(self):
         """Get API keys from environment variables via the file_io module."""
         gemini_env_var = self.settings.get("GEMINI_API_KEY_ENV_VAR")
-        if gemini_env_var:
+        if gemini_env_var: # This will spill your API key to settings, recommended to leave uncommented but
             self.settings['GEMINI_API_KEY'] = file_io.get_env_variable(gemini_env_var)
 
 

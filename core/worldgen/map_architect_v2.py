@@ -129,7 +129,7 @@ class MapArchitectV2:
             self.converter.populate_generation_state(gen_state, self.initial_feature_branches)
             artist.draw_map(self.game_map, gen_state, config.features)
             ui_callback(gen_state)
-            import time;
+            import time
             time.sleep(0.05)
 
         initial_specs = self.llm.get_initial_features()

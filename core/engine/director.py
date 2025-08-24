@@ -160,8 +160,6 @@ class DirectorManager:
 
     def _get_director_command(self, character):
         """Prepares prompt, gets a response from the Director, and parses it."""
-    def _get_director_command(self, character):
-        """Prepares prompt, gets a response from the Director, and parses it."""
         conversation_str = "\n".join(
             [f"- {entry['speaker']}: {entry['content'][:250]}..." for entry in self.engine.dialogue_log])
         available_chars = roster_manager.get_available_casting_characters(self.engine)

@@ -2,7 +2,7 @@
 
 import os
 import queue
-import random
+from .game_modes.narrative_simulation_mode import NarrativeSimulationMode
 from datetime import datetime, timedelta
 from multiprocessing import Queue
 
@@ -82,6 +82,8 @@ class StoryEngine:
         self.character_manager = CharacterManager()
         self.dm_manager = DMManager(self)
         self.config = config
+
+        self.game_mode = None # NEW ATTRIBUTE
 
         if world_name:
             self.config.load_world_data(world_name)
@@ -176,6 +178,9 @@ class StoryEngine:
         return fallback_name
 
     def run(self):
+        # Initialize the desired game mode. This could be decided by a config setting in the future.
+        self.game_mode = NarrativeSimulationMode(self)
+
         for i in range(self.config.settings['MAX_CYCLES']):
             utils.log_message('debug',
                               loc('log_cycle_header', cycle_num=i + 1, max_cycles=self.config.settings['MAX_CYCLES']))
@@ -185,31 +190,8 @@ class StoryEngine:
             # Note: Initial spawn now happens in setup. This call is for any characters added mid-game.
             roster_manager.spawn_entities_from_roster(self, self.game_state)
 
-            turn_order = self.characters[:]
-            turn_queue = self.turn_manager.prepare_turn_queue(turn_order)
-
-            if not turn_queue:
-                utils.log_message('debug', loc('log_no_roles_left'))
-                break
-
-            while turn_queue:
-                self._check_for_interrupts()
-                if self.interrupted or self.player_interrupted or self.cast_manager_interrupted:
-                    break
-
-                current_actor = turn_queue.pop(0)
-
-                # Filter unacted roles based on the finalized turn queue for this cycle
-                unacted_roles_in_queue = turn_queue[:]
-
-                next_actor_choice = self.turn_manager.execute_turn_for(current_actor, unacted_roles_in_queue)
-                self.render_queue.put(self.game_state)
-
-                if next_actor_choice:
-                    utils.log_message('debug', loc('log_turn_pass', actor_name=current_actor['name'],
-                                                   next_actor_name=next_actor_choice['name']))
-                    turn_queue = [r for r in turn_queue if r.get('name') != next_actor_choice.get('name')]
-                    turn_queue.insert(0, next_actor_choice)
+            # --- DELEGATE CYCLE EXECUTION TO THE GAME MODE ---
+            self.game_mode.run_cycle()
 
             if self.player_interrupted:
                 self.player_interface.initiate_takeover_menu()
@@ -225,6 +207,7 @@ class StoryEngine:
                 break
 
             self.director_manager.execute_phase()
+
 
         initial_name = ""
         if self.load_path:

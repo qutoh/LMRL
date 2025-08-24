@@ -32,7 +32,8 @@ def _parse_and_strip_thinking_block(raw_text: str, model_id: str) -> str:
     # Priority 1: Extract content from a dedicated response block if tags are defined.
     if response_start and response_end:
         # Use a more robust regex that allows for whitespace around tags and content.
-        pattern = re.compile(re.escape(response_start) + r'\s*(.*?)\s*' + re.escape(response_end), re.DOTALL | re.IGNORECASE)
+        pattern = re.compile(re.escape(response_start) + r'\s*(.*?)\s*' + re.escape(response_end),
+                             re.DOTALL | re.IGNORECASE)
         match = re.search(pattern, raw_text)
         if match:
             return match.group(1).strip()
@@ -63,45 +64,43 @@ def _prepare_messages_for_llm(
     """
     tuning_config = config.model_tuning.get(model_id, {})
     system_parts = []
-    
+
     # 1. Add optional prefix
     if prefix := tuning_config.get("system_prompt_prefix"):
         system_parts.append(prefix)
-    
+
     # 2. Handle persona placement
     final_messages = list(messages)
     if tuning_config.get("prefer_user_prompt_for_persona", False):
-        # Find the first user message to prepend the persona.
         user_message_found = False
         for msg in final_messages:
             if msg.get('role') == 'user':
                 msg['content'] = f"{persona}\n\n---\n\n{msg['content']}"
                 user_message_found = True
                 break
-        # If no user message exists, create one with the persona.
         if not user_message_found:
             final_messages.insert(0, {"role": "user", "content": persona})
     else:
-        # Default behavior: persona goes into the system prompt.
         system_parts.append(persona)
-        
+
     # 3. Check for model-specific reasoning disable command
     if not enable_reasoning:
         if disable_cmd := tuning_config.get("disable_reasoning_command"):
             system_parts.append(disable_cmd)
             log_message('full', f"[LLM_API] Injected disable reasoning command for model {model_id}.")
-            
+
     # 4. Add optional suffix
     if suffix := tuning_config.get("system_prompt_suffix"):
         system_parts.append(suffix)
-        
+
     # 5. Assemble final system content
     system_content = "\n\n".join(part for part in system_parts if part)
 
-    # Add the task prompt to the user messages
+    # --- REFINED LOGIC: Reliably create user message from task prompt key ---
     if task_prompt_key:
         task_content = loc(task_prompt_key, **(task_prompt_kwargs or {}))
         final_messages.append({"role": "user", "content": task_content})
+    # --- END REFINEMENT ---
 
     # Final sanity checks
     if not any(msg.get('role') == 'user' for msg in final_messages):
@@ -111,7 +110,7 @@ def _prepare_messages_for_llm(
     final_prompt = []
     if system_content:
         final_prompt.append({"role": "system", "content": system_content})
-    
+
     final_prompt.extend(final_messages)
     return final_prompt
 
@@ -153,7 +152,7 @@ def execute_task(engine, agent_or_character: dict, task_key: str, messages: list
                                                                f"Triggered by task: {task_key}")
 
     model_identifier = agent_or_character.get('model')
-    if task_key != 'GENERIC_TURN' and task_params:
+    if task_key not in ['CHARACTER_TURN', 'DM_TURN'] and task_params:
         model_identifier = task_params.get('model_override', model_identifier)
 
     params = sampling_manager.get_sampling_params(
@@ -165,19 +164,12 @@ def execute_task(engine, agent_or_character: dict, task_key: str, messages: list
     final_top_k = params['top_k']
     final_top_p = params['top_p']
 
-    instructions = agent_or_character.get('instructions', '')
-    if role_type in ['lead', 'npc']:
-        persona = loc('prompt_system_character_wrapper', instructions=instructions)
-    elif role_type == 'dm':
-        persona = loc('prompt_system_dm_wrapper', instructions=instructions)
-    else:  # For agents
-        persona = agent_or_character.get('persona', instructions)
+    if persona_desc := agent_or_character.get('persona_description'):
+        instructions = agent_or_character.get('instructions', '')
+        persona = f"{persona_desc.strip()} {instructions}"
+    else:
+        persona = agent_or_character.get('persona', '')
 
-    # Determine reasoning enablement based on priority:
-    # 1. Task-level enable_reasoning flag (if present)
-    # 2. Agent-level enable_reasoning flag (if present)
-    # 3. Global role-type setting (if present)
-    # 4. Default to True
     enable_reasoning_for_task = task_params.get(
         'enable_reasoning',
         agent_or_character.get(
@@ -186,7 +178,9 @@ def execute_task(engine, agent_or_character: dict, task_key: str, messages: list
         )
     )
 
-    task_prompt_key = task_params.get('task_prompt_key') if task_key != 'GENERIC_TURN' else None
+    # Turn tasks (and any task that builds its messages manually) do not have a prompt key.
+    task_prompt_key = task_params.get('task_prompt_key') if task_key not in ['CHARACTER_TURN', 'DM_TURN'] else None
+
     full_messages = _prepare_messages_for_llm(persona, task_prompt_key, messages, task_prompt_kwargs, model_identifier,
                                               enable_reasoning_for_task)
 
@@ -202,9 +196,7 @@ def execute_task(engine, agent_or_character: dict, task_key: str, messages: list
         "top_p": final_top_p, "top_k": final_top_k, "prompt": full_messages,
         "raw_response": raw_response, "annotation": {"status": "PASS"}
     }
-
     processed_response = _parse_and_strip_thinking_block(raw_response, model_identifier)
-
     log_path = ""
     if role_type in ['lead', 'npc', 'dm'] and hasattr(engine, 'character_log_sessions'):
         sanitized_char_name = file_io.sanitize_filename(agent_name)
@@ -237,7 +229,6 @@ def execute_task(engine, agent_or_character: dict, task_key: str, messages: list
 
     if log_path and hasattr(engine, 'last_interaction_log'):
         engine.last_interaction_log = {"log_id": log_id, "log_path": log_path}
-
     return processed_response
 
 def get_model_context_length(model_identifier):

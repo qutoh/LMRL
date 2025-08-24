@@ -55,6 +55,11 @@
     "source_agent": "DIRECTOR",
     "default_adjustment": 0.0
   },
+  "DIRECTOR_CREATE_PERSONA_DESC": {
+    "task_prompt_key": "task_prompt_director_create_persona_desc",
+    "source_agent": "DIRECTOR",
+    "default_adjustment": 0.05
+  },
   "DIRECTOR_CREATE_LEAD_DESC_FROM_ROLE": {
     "task_prompt_key": "task_prompt_director_create_lead_desc_from_role",
 	"model_override": "",
