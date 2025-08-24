@@ -88,7 +88,7 @@ class Config:
     def save_settings(self):
         """Saves the current settings dictionary to settings.json."""
         path = file_io.join_path(self.data_dir, 'settings.json')
-        self.settings.remove('GEMINI_API_KEY') # Yeah lol
+        self.settings.pop('GEMINI_API_KEY', '') # Yeah lol
         return file_io.write_json(path, self.settings)
 
     def load_world_data(self, world_name: str):
