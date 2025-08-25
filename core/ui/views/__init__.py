@@ -10,6 +10,7 @@ from .save_selection_view import SaveSelectionView
 from .scene_selection_view import SceneSelectionView
 from .tabbed_settings_view import TabbedSettingsView
 from .text_input_view import TextInputView
+from .world_graph_view import WorldGraphView
 from .world_selection_view import WorldSelectionView
 
 __all__ = [
@@ -23,5 +24,6 @@ __all__ = [
     "MenuView",
     "PrometheusView",
     "CharacterGenerationTestView",
-    "CalibrationView"
+    "CalibrationView",
+    "WorldGraphView"
 ]

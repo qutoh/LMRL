@@ -36,6 +36,8 @@ class AtlasManager:
         """Delegates the entire scene placement process to the LocationFinder service."""
         return self.finder.find_or_create_location_for_scene(world_name, world_theme, scene_prompt)
 
-    def create_new_world(self, theme: str, ui_manager=None) -> str | None:
-        """Delegates the entire world creation process to the WorldGenerator service."""
-        return self.world_generator.create_new_world(theme, ui_manager)
+    def create_new_world_generator(self, theme: str):
+        """Delegates the world creation process to the WorldGenerator service, returning a generator."""
+        # Ensure the skip flag is reset before starting a new generation process
+        setattr(self.world_generator, '_skip_exploration', False)
+        return self.world_generator.create_new_world_generator(theme)

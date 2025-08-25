@@ -16,18 +16,21 @@ class WorldGenerator:
         self.engine = engine
         self.content_generator = content_generator
         self.atlas_logic = atlas_logic
+        self._skip_exploration = False
 
-    def create_new_world(self, theme: str, ui_manager=None) -> str | None:
+    def create_new_world_generator(self, theme: str):
+        """A generator that yields after each step of world creation and exploration."""
         utils.log_message('game', f"[ATLAS] Atlas is forging a new world with theme: {theme}")
-        world_name = self.content_generator.get_world_name(theme, ui_manager=ui_manager)
+        world_name = self.content_generator.get_world_name(theme)
         utils.log_message('game', f"[ATLAS] Atlas has named this world: {world_name}")
 
         origin_location = self.content_generator.create_location(theme, [], {"Name": "The Cosmos"})
         if not origin_location:
             utils.log_message('game', "[ATLAS] ERROR: Failed to create origin location.")
-            return None
+            yield {'status': 'complete', 'world_name': None}
+            return
 
-        origin_location.pop("Relationship", None)  # Root has no relationship
+        origin_location.pop("Relationship", None)
         origin_location['theme'] = theme
         utils.log_message('game', f"[ATLAS] The center of the world: {origin_location.get('Name')}")
 
@@ -41,6 +44,8 @@ class WorldGenerator:
         file_io.write_json(file_io.join_path(world_dir, 'casting_npcs.json'), [])
         file_io.write_json(file_io.join_path(world_dir, 'inhabitants.json'), [])
 
+        yield {'status': 'update', 'world_data': world_data}
+
         exploration_steps = config.settings.get("ATLAS_AUTONOMOUS_EXPLORATION_STEPS", 0)
         if exploration_steps > 0:
             utils.log_message('game',
@@ -50,6 +55,10 @@ class WorldGenerator:
             visited_breadcrumbs = [current_breadcrumb]
 
             for i in range(exploration_steps):
+                if self._skip_exploration:
+                    utils.log_message('game', "[ATLAS] Exploration skipped by user.")
+                    break
+
                 current_node = file_io._find_node_by_breadcrumb(config.world, current_breadcrumb)
                 if not current_node:
                     utils.log_message('debug',
@@ -62,7 +71,10 @@ class WorldGenerator:
                 )
 
                 current_breadcrumb = breadcrumb
-                visited_breadcrumbs.append(current_breadcrumb)
+                if current_breadcrumb not in visited_breadcrumbs:
+                    visited_breadcrumbs.append(current_breadcrumb)
+
+                yield {'status': 'update', 'world_data': config.world}
 
                 utils.log_message('game', f'Location: {current_node["Name"]}')
                 utils.log_message('game', f'Description: {current_node["Description"]}')
@@ -73,7 +85,11 @@ class WorldGenerator:
                         current_node, visited_breadcrumbs=visited_breadcrumbs
                     )
                     current_breadcrumb = breadcrumb
-                    visited_breadcrumbs.append(current_breadcrumb)
+                    if current_breadcrumb not in visited_breadcrumbs:
+                        visited_breadcrumbs.append(current_breadcrumb)
+
+                    yield {'status': 'update', 'world_data': config.world}
 
             utils.log_message('game', "--- [ATLAS] Exploration complete. ---\n")
-        return world_name
+
+        yield {'status': 'complete', 'world_name': world_name}

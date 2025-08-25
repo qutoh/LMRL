@@ -5,6 +5,8 @@ from multiprocessing import Process, Queue
 import numpy as np
 import tcod
 import tcod.constants
+# Import the new rendering classes
+from tcod.render import SDLTilesetAtlas, SDLConsoleRender
 
 try:
     from windows_toasts import WindowsToaster, Toast
@@ -26,7 +28,7 @@ from ..common.config_loader import config
 from ..common import utils
 from ..common.game_state import GameState
 from .views import WorldSelectionView, GameView, SceneSelectionView, TextInputView, LoadOrNewView, SaveSelectionView, \
-    TabbedSettingsView, MenuView, PrometheusView, CalibrationView
+    TabbedSettingsView, MenuView, PrometheusView, CalibrationView, WorldGraphView
 from .input_handler import TextInputHandler
 from ..llm.model_manager import ModelManager
 
@@ -43,7 +45,6 @@ def engine_process(render_queue: Queue, input_queue: Queue, load_path: str, worl
         engine.run()
     else:
         render_queue.put(None)
-
 
 
 class UIManager:
@@ -64,6 +65,7 @@ class UIManager:
 
         self.atlas_engine = StoryEngine(world_name=None, ui_manager=self)
         self.atlas_engine.embedding_model = None
+        self.worldgen_generator = None
 
         self.callbacks = UICallbacks(self)
         self.special_modes = SpecialModeManager(self)
@@ -73,6 +75,15 @@ class UIManager:
         self.calibration_jobs = []
         self.current_job_index = 0
         self.calibration_update_queue = Queue()
+
+        # --- NEW: Initialize SDL rendering helpers ---
+        self.atlas = None
+        self.console_render = None
+        # Ensure the renderer exists before trying to create these
+        if self.context.sdl_renderer and self.tileset:
+            self.atlas = SDLTilesetAtlas(self.context.sdl_renderer, self.tileset)
+            self.console_render = SDLConsoleRender(self.atlas)
+        # --- END NEW ---
 
         self.help_texts = {
             "DEFAULT": "help_bar_default",
@@ -121,6 +132,36 @@ class UIManager:
             self._handle_calibration_updates()
             return
 
+        if self.app_state == AppState.WORLD_CREATING:
+            if not self.model_manager.models_loaded.is_set(): return
+
+            if self.worldgen_generator is None:
+                from ..worldgen.atlas_manager import AtlasManager
+                atlas = AtlasManager(self.atlas_engine)
+                self.worldgen_generator = atlas.create_new_world_generator(self.world_theme)
+
+            try:
+                result = next(self.worldgen_generator)
+                if result['status'] == 'update':
+                    self.active_view = WorldGraphView(result['world_data'], self.root_console.width,
+                                                      self.root_console.height, self.tileset)
+                elif result['status'] == 'complete':
+                    self.selected_world_name = result['world_name']
+                    if self.selected_world_name:
+                        config.load_world_data(self.selected_world_name)
+                        self.app_state = AppState.SCENE_SELECTION
+                    else:
+                        self.event_log.add_message("FATAL: World creation failed.", (255, 50, 50))
+                        self.app_state = AppState.WORLD_SELECTION
+                    self.worldgen_generator = None
+                    self.active_view = None
+            except StopIteration:
+                self.worldgen_generator = None
+                self.active_view = None
+                if self.app_state == AppState.WORLD_CREATING:
+                    self.app_state = AppState.WORLD_SELECTION
+            return
+
         if self.active_view is None:
             self.special_mode_active = None
             if self.app_state == AppState.WORLD_SELECTION:
@@ -134,7 +175,8 @@ class UIManager:
                     self.app_state = AppState.WORLD_SELECTION
                     self.active_view = None
 
-                self.active_view = TabbedSettingsView(on_back=on_settings_back, console_width=self.root_console.width, console_height=self.root_console.height)
+                self.active_view = TabbedSettingsView(on_back=on_settings_back, console_width=self.root_console.width,
+                                                      console_height=self.root_console.height)
 
             elif self.app_state == AppState.AWAITING_THEME_INPUT:
                 user_prompt = "Enter a theme for the new world (or leave blank for a generated one)."
@@ -184,19 +226,7 @@ class UIManager:
                                            max_tokens=self._get_default_token_limit())
                 self.active_view = TextInputView(handler=handler, on_submit=on_context_submit)
 
-        if self.app_state == AppState.WORLD_CREATING:
-            if not self.model_manager.models_loaded.is_set(): return
-            self.active_view = None
-            from ..worldgen.atlas_manager import AtlasManager
-            atlas = AtlasManager(self.atlas_engine)
-            self.selected_world_name = atlas.create_new_world(self.world_theme, ui_manager=self)
-            if self.selected_world_name:
-                config.load_world_data(self.selected_world_name)
-                self.app_state = AppState.SCENE_SELECTION
-            else:
-                self.event_log.add_message("FATAL: World creation failed.", (255, 50, 50))
-                self.app_state = AppState.WORLD_SELECTION
-        elif self.app_state == AppState.PEG_V3_TEST:
+        if self.app_state == AppState.PEG_V3_TEST:
             if self.special_modes.peg_test_generator is None:
                 self.active_view = None
                 self.special_modes.run_peg_v3_test()
@@ -403,34 +433,67 @@ class UIManager:
         self.help_bar.set_context(context_key)
 
     def _render(self):
-        """Clears the console and renders the current view or status message."""
+        """Prepares all console content and renders it and all SDL primitives in the correct order."""
+        # --- PHASE 1: Prepare all console content ---
         self.root_console.clear()
         if self.active_view:
             self.active_view.render(self.root_console)
-        elif self.app_state == AppState.WORLD_CREATING:
-            status = "Forging new world..." if self.model_manager.models_loaded.is_set() else "Loading world creation models..."
-            self.root_console.print(self.root_console.width // 2, 20, status, alignment=tcod.constants.CENTER,
-                                    fg=(200, 200, 255))
         elif self.app_state == AppState.LOADING_GAME:
             self.root_console.print(self.root_console.width // 2, 20, "Please Wait... Loading Game Models",
                                     alignment=tcod.constants.CENTER, fg=(200, 200, 255))
         elif self.app_state == AppState.SHUTTING_DOWN:
             self.root_console.print(self.root_console.width // 2, 20, "Story finished. Saving run and exiting...",
                                     alignment=tcod.constants.CENTER, fg=(220, 220, 200))
-
         self.help_bar.render(self.root_console)
-        self.context.present(self.root_console)
 
+        # --- PHASE 2: Full SDL Rendering ---
+        renderer = self.context.sdl_renderer
+        if not renderer or not self.console_render:
+            # Fallback for contexts without a renderer
+            self.context.present(self.root_console)
+            return
+
+        # Step 2.1: Clear the SDL backbuffer
+        renderer.clear()
+
+        # Step 2.2: Render the root_console to a texture and draw it first.
+        # This is now our background layer.
+        root_texture = self.console_render.render(self.root_console)
+        renderer.copy(root_texture)
+
+        # Step 2.3: Draw SDL primitives from the active view ON TOP of the root console.
         if self.active_view and self.active_view.sdl_primitives:
-            with self.context.renderer.color as color:
-                for prim in self.active_view.sdl_primitives:
-                    if prim['type'] == 'line':
-                        color[...] = prim['color']
-                        self.context.renderer.line(
-                            x=np.array([prim['start'][0], prim['end'][0]]),
-                            y=np.array([prim['start'][1], prim['end'][1]])
-                        )
+            lines = [p for p in self.active_view.sdl_primitives if p['type'] == 'line']
+            consoles = [p for p in self.active_view.sdl_primitives if p['type'] == 'console']
+
+            # Draw lines over the background
+            for prim in lines:
+                points = tcod.los.bresenham(prim['start'], prim['end']).tolist()
+                points_array = np.array(points, dtype=np.intc)
+                if points_array.size > 0:
+                    renderer.draw_color = (*prim['color'], 255)
+                    renderer.draw_points(points=points_array)
+
+            # Draw individual node consoles over the lines
+            for prim in consoles:
+                temp_console = prim['console']
+                if temp_console.width <= 0 or temp_console.height <= 0:
+                    continue
+
+                # Use the helper to render the small console to its own texture
+                texture = self.console_render.render(temp_console)
+                texture.blend_mode = tcod.sdl.render.BlendMode.BLEND  # Ensure transparency
+
+                # Copy the node texture to the screen
+                renderer.copy(
+                    texture,
+                    dest=(prim['x'], prim['y'], texture.width, texture.height)
+                )
+
             self.active_view.sdl_primitives.clear()
+
+        # --- PHASE 3: Present the final composed frame to the window ---
+        renderer.present()
 
     def _sync_text_input_state(self):
         if not isinstance(self.active_view, TabbedSettingsView):
@@ -465,6 +528,14 @@ class UIManager:
             for event in tcod.event.get():
                 converted_event = self.context.convert_event(event)
 
+                if isinstance(converted_event, tcod.event.KeyDown):
+                    if converted_event.sym == tcod.event.KeySym.ESCAPE and self.app_state == AppState.WORLD_CREATING:
+                        from ..worldgen.atlas_manager import AtlasManager
+                        atlas = AtlasManager(self.atlas_engine)
+                        setattr(atlas.world_generator, '_skip_exploration', True)
+                        self.event_log.add_message("Skipping autonomous exploration...")
+                        continue
+
                 if self.active_view: self.active_view.handle_event(converted_event)
 
                 if isinstance(converted_event, tcod.event.Quit): self.app_state = AppState.EXITING; break
@@ -478,9 +549,13 @@ class UIManager:
                             current_app_state = self.app_state
                             self.special_modes.stop_peg_patches()
                             if key == tcod.event.KeySym.LEFT:
-                                self.special_modes.peg_v3_scenario_index = (self.special_modes.peg_v3_scenario_index - 1) % len(self.special_modes.peg_v3_scenarios)
+                                self.special_modes.peg_v3_scenario_index = (
+                                                                                   self.special_modes.peg_v3_scenario_index - 1) % len(
+                                    self.special_modes.peg_v3_scenarios)
                             elif key == tcod.event.KeySym.RIGHT:
-                                self.special_modes.peg_v3_scenario_index = (self.special_modes.peg_v3_scenario_index + 1) % len(self.special_modes.peg_v3_scenarios)
+                                self.special_modes.peg_v3_scenario_index = (
+                                                                                   self.special_modes.peg_v3_scenario_index + 1) % len(
+                                    self.special_modes.peg_v3_scenarios)
                             elif key == tcod.event.KeySym.ESCAPE:
                                 self.app_state = AppState.WORLD_SELECTION
                                 self.active_view = None
@@ -492,7 +567,7 @@ class UIManager:
                         # Simplified key handling: any valid progression key calls advance_peg_test_step.
                         if key in (tcod.event.KeySym.RETURN, tcod.event.KeySym.KP_ENTER, tcod.event.KeySym.SPACE):
                             if phase in ('DONE', 'FINAL'):
-                                self.active_view = None # Trigger regeneration
+                                self.active_view = None  # Trigger regeneration
                             else:
                                 self.special_modes.advance_peg_test_step(key)
 
@@ -509,7 +584,9 @@ class UIManager:
                         elif converted_event.sym == tcod.event.KeySym.F9:
                             self.input_queue.put('__INTERRUPT_PLAYER__')
                         elif converted_event.sym in (tcod.event.KeySym.F10, tcod.event.KeySym.ESCAPE):
-                            self.input_queue.put('__INTERRUPT_SAVE__')
+                            if self.app_state == AppState.GAME_RUNNING:
+                                self.input_queue.put('__INTERRUPT_SAVE__')
+
         self.shutdown()
 
     def shutdown(self):

@@ -6,7 +6,6 @@ from typing import Callable, Optional, Tuple
 
 import tcod
 import tcod.event
-from tcod import libtcodpy
 
 from ..common.localization import loc
 
@@ -81,7 +80,7 @@ class Button(Widget):
         display_text = f"{'> ' if self.selected or self.is_focused else ' '}{self.text}{' <' if self.selected or self.is_focused else ' '}"
 
         console.print_box(x=abs_x, y=abs_y, width=self.width, height=1, string=display_text, fg=final_fg, bg=bg,
-                          alignment=libtcodpy.CENTER)
+                          alignment=tcod.CENTER)
 
 
 class VBox(Widget):
@@ -242,14 +241,12 @@ class DynamicTextBox(Widget):
     def _calculate_optimal_box_size(self) -> tuple[int, int, list[str]]:
         if not self.text: return 0, 0, []
 
-        # Try to find a reasonable width
         text_len = len(self.text)
         target_aspect = self.aspect_preference
         target_h = sqrt((text_len * 1.2) / target_aspect) if text_len > 0 else 0
         target_w = target_h * target_aspect
         box_width = min(self.max_width, int(target_w) + 2)
 
-        # Wrap text based on the calculated width, respecting newlines
         wrapped_lines = []
         for paragraph in self.text.split('\n'):
             wrapped_lines.extend(textwrap.wrap(paragraph, width=max(1, box_width - 2), drop_whitespace=True))
@@ -258,7 +255,6 @@ class DynamicTextBox(Widget):
 
         final_lines = wrapped_lines[:max(0, box_height - 2)]
         if final_lines and len(wrapped_lines) > len(final_lines):
-            # Truncate the last visible line if content is cut off
             last_line = final_lines[-1]
             final_lines[-1] = last_line[:max(0, box_width - 5)] + "..."
 
@@ -267,8 +263,9 @@ class DynamicTextBox(Widget):
     def render(self, console: tcod.console.Console):
         if self.width <= 0 or self.height <= 0: return
         abs_x, abs_y = self.get_absolute_pos()
-        console.draw_frame(x=abs_x, y=abs_y, width=self.width, height=self.height, title=self.title, fg=(220, 220, 220),
-                           bg=(0, 0, 0))
+
+        console.draw_frame(x=abs_x, y=abs_y, width=self.width, height=self.height, title=self.title,
+                           fg=(220, 220, 220), bg=(0, 0, 0))
         for i, line in enumerate(self.wrapped_lines):
             console.print(x=abs_x + 1, y=abs_y + 1 + i, string=line, fg=(200, 200, 255))
 
