@@ -21,6 +21,26 @@ class SetupManager:
         self.engine = engine
         self.game_state = engine.game_state
 
+    def _reconstruct_generation_state_from_cache(self, cached_level_data: dict) -> GenerationState | None:
+        """Helper function to build a GenerationState object from cached level data."""
+        if not cached_level_data or "placed_features" not in cached_level_data:
+            return None
+
+        generation_state = GenerationState(self.game_state.game_map)
+        generation_state.placed_features = cached_level_data.get("placed_features", {})
+        generation_state.narrative_log = cached_level_data.get("narrative_log", "")
+        generation_state.exterior_tile_type = cached_level_data.get("exterior_tile_type", "DEFAULT_FLOOR")
+        generation_state.physics_layout = cached_level_data.get("physics_layout")
+        generation_state.feature_embeddings = cached_level_data.get("feature_embeddings", {})
+
+        if 'layout_graph' in cached_level_data:
+            graph_data = cached_level_data['layout_graph']
+            generation_state.layout_graph = LayoutGraph()
+            generation_state.layout_graph.nodes = graph_data.get('nodes', {})
+            generation_state.layout_graph.edges = graph_data.get('edges', [])
+
+        return generation_state
+
     def initialize_run(self) -> bool:
         try:
             import google.generativeai as genai
@@ -95,7 +115,8 @@ class SetupManager:
         level_data_to_cache = {
             "placed_features": serializable_features,
             "narrative_log": generation_state.narrative_log,
-            "exterior_tile_type": getattr(generation_state, 'exterior_tile_type', 'DEFAULT_FLOOR')
+            "exterior_tile_type": getattr(generation_state, 'exterior_tile_type', 'DEFAULT_FLOOR'),
+            "feature_embeddings": getattr(generation_state, 'feature_embeddings', {})
         }
 
         if hasattr(generation_state, 'layout_graph') and generation_state.layout_graph:
@@ -129,18 +150,9 @@ class SetupManager:
 
         # --- Generation Phase ---
         cached_level = self.engine.config.levels.get(scene_prompt)
-        if cached_level and "placed_features" in cached_level:
-            generation_state = GenerationState(self.game_state.game_map)
-            generation_state.placed_features = cached_level.get("placed_features", {})
-            generation_state.narrative_log = cached_level.get("narrative_log", "")
-            generation_state.exterior_tile_type = cached_level.get("exterior_tile_type", "DEFAULT_FLOOR")
-            generation_state.physics_layout = cached_level.get("physics_layout")
-            if 'layout_graph' in cached_level:
-                graph_data = cached_level['layout_graph']
-                generation_state.layout_graph = LayoutGraph()
-                generation_state.layout_graph.nodes = graph_data.get('nodes', {})
-                generation_state.layout_graph.edges = graph_data.get('edges', [])
-        else:
+        generation_state = self._reconstruct_generation_state_from_cache(cached_level)
+
+        if not generation_state:
             # --- New: LLM chooses exterior tile ---
             llm = V3_LLM(self.engine)
             tiles = {
@@ -186,21 +198,28 @@ class SetupManager:
         )
         self.engine.dehydrated_npcs.extend(generation_state.character_creation_queue)
 
-
         location_summary = f"{chosen_scene['source_location'].get('Name', '')}: {chosen_scene['source_location'].get('Description', '')}"
-        self.engine.director_manager.establish_initial_cast(scene_prompt, location_summary)
+        character_groups = self.engine.director_manager.establish_initial_cast(scene_prompt, location_summary)
 
         self._determine_context_limit()
 
         if self.game_state:
             roster_manager.spawn_entities_from_roster(self.engine, self.game_state)
 
-            placed_characters_for_context = []
+            # --- New Group-based Placement ---
+            placed_character_names = set()
+            for group in character_groups:
+                position_manager.place_character_group_contextually(self.engine, self.game_state, group,
+                                                                    generation_state)
+                for char in group['characters']:
+                    placed_character_names.add(char['name'])
+
+            # --- Place remaining individual characters ---
             for character in self.engine.characters:
-                if character.get('is_positional'):
+                if character.get('is_positional') and character['name'] not in placed_character_names:
                     position_manager.place_character_contextually(self.engine, self.game_state, character,
-                                                                  generation_state, placed_characters_for_context)
-                    placed_characters_for_context.append(character)
+                                                                  generation_state,
+                                                                  [])  # No context needed for individuals now
 
         # Build a descriptive summary of the entire generated level for the player.
         level_description_sentences = []
@@ -239,25 +258,14 @@ class SetupManager:
 
         if self.engine.current_scene_key:
             cached_level = self.engine.config.levels.get(self.engine.current_scene_key)
-            if cached_level and "placed_features" in cached_level:
-                generation_state = GenerationState(self.game_state.game_map)
-                generation_state.placed_features = cached_level.get("placed_features", {})
-                generation_state.narrative_log = cached_level.get("narrative_log", "")
-                generation_state.exterior_tile_type = cached_level.get("exterior_tile_type", "DEFAULT_FLOOR")
-                generation_state.physics_layout = cached_level.get("physics_layout")
-                if 'layout_graph' in cached_level:
-                    graph_data = cached_level['layout_graph']
-                    generation_state.layout_graph = LayoutGraph()
-                    generation_state.layout_graph.nodes = graph_data.get('nodes', {})
-                    generation_state.layout_graph.edges = graph_data.get('edges', [])
-
+            if generation_state := self._reconstruct_generation_state_from_cache(cached_level):
                 self.engine.generation_state = generation_state
                 self.engine.layout_graph = generation_state.layout_graph
-
                 map_artist = MapArtist()
                 map_artist.draw_map(self.game_state.game_map, generation_state, self.engine.config.features)
                 utils.log_message('debug',
                                   f"Reconstructed generation state and drew map from cache for scene: '{self.engine.current_scene_key}'")
+
         if not self.engine.characters: return False
         if self.game_state:
             roster_manager.spawn_entities_from_roster(self.engine, self.game_state)

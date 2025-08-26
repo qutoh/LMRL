@@ -33,6 +33,7 @@ class GenerationState:
         self.character_creation_queue = []
         self.door_locations = []
         self.exterior_tile_type = "DEFAULT_FLOOR" # Default fallback
+        self.feature_embeddings = {}
 
 
 graphic_dt = np.dtype(

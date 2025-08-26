@@ -4,6 +4,16 @@
     "source_agent": "COMMAND_HANDLER",
     "is_failure_handler": true
   },
+  "CH_FIX_INDIVIDUAL_ACTIONS_JSON": {
+    "task_prompt_key": "task_prompt_ch_fix_individual_actions_json",
+    "source_agent": "COMMAND_HANDLER",
+    "is_failure_handler": true
+  },
+  "CH_FIX_GROUP_PLACEMENT_JSON": {
+    "task_prompt_key": "task_prompt_ch_fix_group_placement_json",
+    "source_agent": "COMMAND_HANDLER",
+    "is_failure_handler": true
+  },
   "CH_FIX_FULL_LEAD_JSON": {
     "task_prompt_key": "task_prompt_ch_fix_full_lead_json",
     "source_agent": "COMMAND_HANDLER",

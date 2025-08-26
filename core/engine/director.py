@@ -83,49 +83,71 @@ class DirectorManager:
         raw_roles_response = execute_task(self.engine, self.director_agent, 'DIRECTOR_DEFINE_LEAD_ROLES_FOR_SCENE', [],
                                           task_prompt_kwargs=roles_kwargs)
 
-        needed_roles = []
+        character_groups = []
         command = command_parser.parse_structured_command(
             self.engine, raw_roles_response, 'DIRECTOR', fallback_task_key='CH_FIX_LEAD_ROLES_JSON'
         )
 
-        if command and isinstance(command.get('roles'), list) and command['roles']:
-            needed_roles = command['roles']
+        if command and isinstance(command.get('groups'), list):
+            character_groups = command['groups']
         else:
             utils.log_message('debug', "[DIRECTOR] JSON for lead roles failed. Falling back to semicolon-based task.")
             fallback_response = execute_task(self.engine, self.director_agent,
                                              'DIRECTOR_DEFINE_LEAD_ROLES_FOR_SCENE_FALLBACK', [],
                                              task_prompt_kwargs=roles_kwargs)
-            needed_roles = [role.strip() for role in fallback_response.split(';') if role.strip()]
+            roles = [role.strip() for role in fallback_response.split(';') if role.strip()]
+            if roles:
+                character_groups = [{"group_description": "A group of adventurers.", "roles": roles}]
 
-        utils.log_message('game', f"[DIRECTOR] The director has defined the lead roles needed: {needed_roles}")
+        if not character_groups:
+            utils.log_message('debug', "[DIRECTOR] FATAL: Could not define any lead roles for the scene.")
+            return [] # Return empty list
+
+        utils.log_message('game', f"[DIRECTOR] The director has defined the lead roles needed.")
 
         available_leads = [c for c in config.casting_leads if not roster_manager.find_character(self.engine, c['name'])]
 
-        for role in needed_roles:
-            if available_leads:
-                casting_list_str = "\n".join([f"- {c['name']}: {c['description']}" for c in available_leads])
-                cast_kwargs = {
-                    "prompt_substring_world_scene_context": shared_context_str,
-                    "role_archetype": role,
-                    "lead_casting_list": casting_list_str
-                }
-                chosen_name = execute_task(self.engine, self.director_agent, 'DIRECTOR_CAST_LEAD_FOR_ROLE', [],
-                                           task_prompt_kwargs=cast_kwargs)
+        # --- New: Process roles within their groups ---
+        finalized_groups = []
+        for group in character_groups:
+            finalized_group = {"group_description": group.get("group_description", ""), "characters": []}
+            for role in group.get("roles", []):
+                character_to_add = None
+                if available_leads:
+                    casting_list_str = "\n".join([f"- {c['name']}: {c['description']}" for c in available_leads])
+                    cast_kwargs = {
+                        "prompt_substring_world_scene_context": shared_context_str,
+                        "role_archetype": role,
+                        "lead_casting_list": casting_list_str
+                    }
+                    chosen_name = execute_task(self.engine, self.director_agent, 'DIRECTOR_CAST_LEAD_FOR_ROLE', [],
+                                               task_prompt_kwargs=cast_kwargs)
 
-                if chosen_name and 'none' not in chosen_name.lower():
-                    if lead_to_load := roster_manager.find_character_in_list(chosen_name, available_leads):
-                        roster_manager.decorate_and_add_character(self.engine, lead_to_load, 'lead')
-                        utils.log_message('game',
-                                          f"[DIRECTOR] Cast '{lead_to_load['name']}' for the role of '{role}'.")
-                        available_leads = [c for c in available_leads if c['name'] != lead_to_load['name']]
-                        continue
+                    if chosen_name and 'none' not in chosen_name.lower():
+                        if lead_to_load := roster_manager.find_character_in_list(chosen_name, available_leads):
+                            character_to_add = lead_to_load
+                            utils.log_message('game',
+                                              f"[DIRECTOR] Cast '{lead_to_load['name']}' for the role of '{role}'.")
+                            available_leads = [c for c in available_leads if c['name'] != lead_to_load['name']]
 
-            utils.log_message('debug', f"[DIRECTOR] No suitable lead in casting for role '{role}'. Creating a new one.")
-            if new_lead_data := character_factory.create_lead_from_role_and_scene(self.engine, self.director_agent,
-                                                                                  scene_prompt, role):
-                roster_manager.decorate_and_add_character(self.engine, new_lead_data, 'lead')
-            else:
-                utils.log_message('debug', f"[DIRECTOR WARNING] Failed to generate a required lead for role '{role}'.")
+                if not character_to_add:
+                    utils.log_message('debug', f"[DIRECTOR] No suitable lead in casting for role '{role}'. Creating a new one.")
+                    if new_lead_data := character_factory.create_lead_from_role_and_scene(self.engine, self.director_agent,
+                                                                                      scene_prompt, role):
+                        character_to_add = new_lead_data
+                    else:
+                        utils.log_message('debug', f"[DIRECTOR WARNING] Failed to generate a required lead for role '{role}'.")
+
+                if character_to_add:
+                    roster_manager.decorate_and_add_character(self.engine, character_to_add, 'lead')
+                    # Find the now-decorated character in the main roster to add to the group
+                    finalized_character = roster_manager.find_character(self.engine, character_to_add['name'])
+                    if finalized_character:
+                        finalized_group["characters"].append(finalized_character)
+
+            if finalized_group["characters"]:
+                finalized_groups.append(finalized_group)
+
 
         # --- DM Management (Performed ONCE after all other characters are set) ---
         all_chars = self.engine.characters
@@ -156,6 +178,8 @@ class DirectorManager:
         else:
             for dm_profile in chosen_dm_profiles:
                 roster_manager.decorate_and_add_character(self.engine, dm_profile, 'dm')
+
+        return finalized_groups
 
 
     def _get_director_command(self, character):

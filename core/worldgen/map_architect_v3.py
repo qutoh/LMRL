@@ -10,6 +10,7 @@ from .v3_components.interior import Interior
 from .v3_components.map_ops import MapOps
 from .v3_components.pathing import Pathing
 from .v3_components.placement import Placement, MIN_FEATURE_SIZE
+from .semantic_search import SemanticSearch
 from .v3_components.v3_llm import V3_LLM
 from ..common import utils
 from ..common.config_loader import config
@@ -39,6 +40,7 @@ class MapArchitectV3:
         self.interior = Interior(self.placement, self.map_width, self.map_height)
         self.pathing = Pathing(self.game_map)
         self.converter = Converter()
+        self.semantic_search = SemanticSearch(engine.embedding_model)
 
         self.initial_feature_branches: List[FeatureNode] = []
 
@@ -93,21 +95,44 @@ class MapArchitectV3:
         utils.log_message('debug',
                           f"[PEGv3 Pathing] Placing '{feature_data['name']}' (clearance: {clearance}) from '{parent_branch.name}'...")
 
-        other_branches = [b for b in self.initial_feature_branches if b is not parent_branch]
-        if not other_branches:
-            utils.log_message('debug', "  FAIL: No other branches to path to.")
+        # Pre-filter potential target branches to only those that are physically reachable
+        valid_target_branches = []
+        for b in self.initial_feature_branches:
+            if b is not parent_branch:
+                # Check if this branch has ANY valid connection points
+                for node in b.get_all_nodes_in_branch():
+                    if self.pathing.get_valid_connection_points(node, clearance, self.initial_feature_branches):
+                        valid_target_branches.append(b)
+                        break  # Found a valid point, no need to check other nodes in this branch
+
+        if not valid_target_branches:
+            utils.log_message('debug', "  FAIL: No other branches are physically reachable to path to.")
             return None
-        target_options_str = "\n".join(f"- {b.name}" for b in other_branches)
+
+        target_options = [b.name for b in valid_target_branches]
+        target_options_str = "\n".join(f"- {name}" for name in target_options)
 
         chosen_target_name = self.llm.choose_path_target_feature(narrative_log, narrative_beat, target_options_str)
+
         if not chosen_target_name or 'none' in chosen_target_name.lower():
-            utils.log_message('debug', "  LLM decided not to place a path.")
+            utils.log_message('debug', "  LLM decided not to place a path. Discarding feature.")
             return None
 
-        target_branch = next((b for b in other_branches if b.name.lower() in chosen_target_name.lower()), None)
+        target_branch = next((b for b in valid_target_branches if b.name.lower() == chosen_target_name.lower().strip()),
+                             None)
+
         if not target_branch:
-            utils.log_message('debug', f"  FAIL: LLM chose an invalid target '{chosen_target_name}'.")
-            return None
+            utils.log_message('debug',
+                              f"  LLM chose an invalid target '{chosen_target_name}'. Attempting semantic fallback.")
+            best_match_name = self.semantic_search.find_best_match(chosen_target_name, target_options)
+            if best_match_name:
+                target_branch = next((b for b in valid_target_branches if b.name == best_match_name), None)
+
+            if not target_branch:
+                utils.log_message('debug',
+                                  f"  FAIL: Semantic fallback could not find a match for '{chosen_target_name}'.")
+                return None
+
         utils.log_message('debug', f"  LLM chose target branch: '{target_branch.name}'")
 
         valid_start_points = []
@@ -153,96 +178,98 @@ class MapArchitectV3:
         utils.log_message('debug', f"  FAIL: Could not connect '{parent_branch.name}' to '{target_branch.name}'.")
         return None
 
+    def _resolve_parent_node(self, chosen_parent_name: str, valid_parent_nodes: List[FeatureNode]) -> Optional[
+        FeatureNode]:
+        """Resolves a parent node from an LLM-chosen name, with semantic fallback."""
+        if not chosen_parent_name or 'none' in chosen_parent_name.lower():
+            return None
+
+        valid_parent_names = [n.name for n in valid_parent_nodes]
+
+        # 1. Try direct match
+        resolved_parent_node = next(
+            (n for n in valid_parent_nodes if n.name.lower() == chosen_parent_name.lower().strip()), None)
+        if resolved_parent_node:
+            return resolved_parent_node
+
+        # 2. Try semantic fallback
+        utils.log_message('debug',
+                          f"  LLM chose an invalid parent '{chosen_parent_name}'. Attempting semantic fallback.")
+        best_match_name = self.semantic_search.find_best_match(chosen_parent_name, valid_parent_names)
+        if best_match_name:
+            resolved_parent_node = next((n for n in valid_parent_nodes if n.name == best_match_name), None)
+            if resolved_parent_node:
+                utils.log_message('debug',
+                                  f"  Semantic fallback succeeded. Using parent '{resolved_parent_node.name}'.")
+                return resolved_parent_node
+
+        utils.log_message('debug', f"  Could not resolve a valid parent for '{chosen_parent_name}'.")
+        return None
+
     def _place_new_root_branch(self, feature_data: dict, ui_callback: Callable, existing_branches: List[FeatureNode]) -> \
-    Optional[FeatureNode]:
+            Optional[FeatureNode]:
         """
         Attempts to place a new root feature branch, trying to attach it to an existing
         feature or placing it in an empty spot if no direct connection is chosen.
         """
         size_tier_map = {'large': 0.8, 'medium': 0.5, 'small': 0.25}
-        # Calculate proposed initial dimensions based on size tier
         rel_dim = size_tier_map.get(feature_data.get('size_tier', 'medium'), 0.5)
         prop_w = max(MIN_FEATURE_SIZE, int((self.map_width - 2) * rel_dim))
         prop_h = max(MIN_FEATURE_SIZE, int((self.map_height - 2) * rel_dim))
         feature_def = config.features.get(feature_data['type'], {})
+        temp_grid = self.placement._get_temp_grid(existing_branches)
 
+        # --- Pre-filter for physically possible parents ---
         all_existing_nodes = [node for branch in existing_branches for node in branch.get_all_nodes_in_branch()]
-        # Get all nodes names for parent selection
-        global_parent_options_str = "\n".join(
-            f"- {name}" for name in sorted(list(set(n.name for n in all_existing_nodes))))
+        physically_valid_parents = [
+            node for node in all_existing_nodes
+            if self.placement._find_valid_placements(prop_w, prop_h, temp_grid, [node], feature_def)
+        ]
+        if not physically_valid_parents:
+            utils.log_message('debug', "[PEGv3 Architect] No physically valid spot found to place a new root branch.")
+            return None
 
-        # Ask LLM to choose a parent from all existing features
+        global_parent_options_str = "\n".join(
+            f"- {name}" for name in sorted(list(set(n.name for n in physically_valid_parents)))
+        )
+
         chosen_global_parent_name = self.llm.choose_parent_feature(
-            self.scene_prompt,  # Using scene_prompt as general narrative context
+            self.scene_prompt,
             feature_data.get('description_sentence', feature_data.get('description', feature_data['name'])),
             global_parent_options_str
         )
 
-        chosen_global_parent_node = None
-        if chosen_global_parent_name and 'none' not in chosen_global_parent_name.lower():
-            for branch in existing_branches:
-                for node in branch.get_all_nodes_in_branch():
-                    if node.name == chosen_global_parent_name:
-                        chosen_global_parent_node = node
-                        break
-                if chosen_global_parent_node:
-                    break
+        chosen_global_parent_node = self._resolve_parent_node(chosen_global_parent_name, physically_valid_parents)
+        if not chosen_global_parent_node:
+            utils.log_message('debug', "[PEGv3 Architect] LLM chose no valid parent for new root branch. Discarding.")
+            return None
 
-        placement_found = False
-        new_x, new_y = 0, 0
-        new_w, new_h = prop_w, prop_h
-        anchor_face = 'any'
-
-        temp_grid = self.placement._get_temp_grid(existing_branches)
-
-        if chosen_global_parent_node:
+        utils.log_message('debug',
+                          f"[PEGv3 Architect] LLM chose '{chosen_global_parent_node.name}' as parent for new area '{feature_data['name']}'.")
+        valid_placements = self.placement._find_valid_placements(prop_w, prop_h, temp_grid, [chosen_global_parent_node],
+                                                                 feature_def)
+        if not valid_placements:
             utils.log_message('debug',
-                              f"[PEGv3 Architect] LLM chose '{chosen_global_parent_node.name}' as parent for new area '{feature_data['name']}'.")
-            # Try to place adjacent to the chosen parent
-            valid_placements = self.placement._find_valid_placements(prop_w, prop_h, temp_grid,
-                                                                     [chosen_global_parent_node], feature_def)
-            if valid_placements:
-                px, py, parent_node, face = random.choice(valid_placements)
-                new_x, new_y, new_w, new_h = px, py, prop_w, prop_h  # Initial placement is a seed, will grow
-                anchor_face = face
-                placement_found = True
-                utils.log_message('debug',
-                                  f"[PEGv3 Architect] Placed new branch '{feature_data['name']}' next to '{parent_node.name}' on face '{face}'.")
-            else:
-                utils.log_message('debug',
-                                  f"[PEGv3 Architect] No valid placement found adjacent to chosen parent '{chosen_global_parent_node.name}'. Falling back to general placement.")
+                              f"[PEGv3 Architect] FATAL: No valid placement found adjacent to pre-filtered parent '{chosen_global_parent_node.name}'. This indicates a logic error.")
+            return None
 
-        if not placement_found:
-            utils.log_message('debug',
-                              f"[PEGv3 Architect] Attempting to place new branch '{feature_data['name']}' in any valid open space.")
-            # Fallback: Find any open space adjacent to any existing feature
-            all_valid_placements = self.placement._find_valid_placements(prop_w, prop_h, temp_grid, existing_branches,
-                                                                         feature_def)
-            if all_valid_placements:
-                px, py, parent_node, face = random.choice(all_valid_placements)
-                new_x, new_y, new_w, new_h = px, py, prop_w, prop_h
-                anchor_face = face
-                placement_found = True
-                utils.log_message('debug',
-                                  f"[PEGv3 Architect] Placed new branch '{feature_data['name']}' next to '{parent_node.name}' on face '{face}'.")
-            else:
-                utils.log_message('debug',
-                                  f"[PEGv3 Architect] No valid open space found for new branch '{feature_data['name']}'.")
-                return None  # No placement found, cannot place this feature
+        px, py, parent_node, face = random.choice(valid_placements)
+        new_x, new_y, new_w, new_h = px, py, prop_w, prop_h
+        anchor_face = face
+        utils.log_message('debug',
+                          f"[PEGv3 Architect] Placed new branch '{feature_data['name']}' next to '{parent_node.name}' on face '{face}'.")
 
         # Create as a seed 1x1 first, then set its target growth rect
         root_node = FeatureNode(feature_data['name'], feature_data['type'], rel_dim, rel_dim, 1, 1, new_x, new_y)
         root_node.narrative_log = feature_data.get('description_sentence', feature_data.get('description', ''))
-        root_node.target_growth_rect = (new_x, new_y, new_w, new_h)  # Set target dimensions
-        root_node.anchor_to_parent_face = anchor_face  # Record for potential visual connection
-        root_node.sentence_count = 0  # Initialize for new branch
+        root_node.target_growth_rect = (new_x, new_y, new_w, new_h)
+        root_node.anchor_to_parent_face = anchor_face
+        root_node.sentence_count = 0
 
         self.initial_feature_branches.append(root_node)
-        # Immediately animate its growth after placement
         growth_anim = self._grow_subfeature_coroutine(root_node, ui_callback)
         for _ in growth_anim:
-            ui_callback(None)  # Pass None to indicate animation step, not full state update
-            # This yield ensures the animation steps are drawn.
+            ui_callback(None)
         utils.log_message('debug',
                           f"[PEGv3 Architect] Grown new branch '{root_node.name}' to final size {new_w}x{new_h}.")
 
@@ -345,95 +372,89 @@ class MapArchitectV3:
             other_features_context = "\n".join(other_features_context_list) if other_features_context_list else "None."
 
             narrative_beat = self.llm.get_next_narrative_beat(parent_branch.narrative_log, other_features_context)
-            if not narrative_beat: continue  # If no beat, skip and try another branch or end.
-            parent_branch.narrative_log += " " + narrative_beat
-            utils.log_message('story', f"-> {narrative_beat}")
-
-            feature_data = self.llm.define_feature_from_sentence(narrative_beat)
-            if not feature_data or feature_data['type'] == 'CHARACTER': continue
-
-            # For choosing a parent for sub-features, we only consider nodes within the *active* parenting branches
-            all_current_branch_nodes_for_parenting = [node for branch in active_parenting_branches for node in
-                                                      branch.get_all_nodes_in_branch()]
-            parent_options_str = "\n".join(
-                f"- {name}" for name in sorted(list(set(n.name for n in all_current_branch_nodes_for_parenting))))
-            chosen_parent_name = self.llm.choose_parent_feature(parent_branch.narrative_log, narrative_beat,
-                                                                parent_options_str)
-
-            # Resolve the chosen parent to a FeatureNode.
-            resolved_parent_node = None
-            if chosen_parent_name and 'none' not in chosen_parent_name.lower():
-                for branch in active_parenting_branches:
-                    for node_in_branch in branch.get_all_nodes_in_branch():
-                        if node_in_branch.name == chosen_parent_name:
-                            resolved_parent_node = node_in_branch
-                            break
-                    if resolved_parent_node:
-                        break
-
-            # Increment sentence count only if a valid parent was selected or if it's an interactable.
-            # This counts sentences that contribute to the current branch.
-            if resolved_parent_node or feature_data.get('placement_strategy') == 'INTERIOR':
-                parent_branch.sentence_count += 1
-            else:
-                utils.log_message('debug',
-                                  f"[PEGv3 Architect] LLM chose 'NONE' or an invalid parent for new feature '{feature_data['name']}'.")
-
-            is_interactable = feature_data.get('placement_strategy') == 'INTERIOR'
-            is_branch_retirement_triggered = False
-
-            # Check for retirement conditions only if a valid parent was found for the current beat,
-            # or if an interactable was created (which can lead to retirement even without a specific parent node).
-            if resolved_parent_node or is_interactable:
-                if parent_branch.sentence_count >= 3:
-                    if is_interactable or not resolved_parent_node:  # Second condition: no valid parent for a *non-interactable* feature.
-                        is_branch_retirement_triggered = True
-
-            if is_interactable:
-                # If it's an interactable, we add it to the chosen node's interior features.
-                # If no specific node was resolved, it defaults to the current parent_branch's root.
-                target_interior_node = resolved_parent_node if resolved_parent_node else parent_branch
-                target_interior_node.interior_features_to_place.append(feature_data)
-                utils.log_message('debug',
-                                  f"[PEGv3 Architect] Queued interior feature '{feature_data['name']}' for '{target_interior_node.name}'.")
-                yield "SUBFEATURE_STEP", gen_state  # Yield even for queued features to show activity
-
-                if is_branch_retirement_triggered:
-                    if parent_branch in active_parenting_branches:
-                        utils.log_message('debug',
-                                          f"[PEGv3 Architect] Branch '{parent_branch.name}' retired (interactable placed at sentence limit).")
-                        active_parenting_branches.remove(parent_branch)
-                    continue  # Skip to the next iteration of the main loop
-
-            elif feature_data.get('placement_strategy') == 'PATHING':
-                new_path_node = self._handle_pathing_placement(feature_data, parent_branch, parent_branch.narrative_log,
-                                                               narrative_beat)
-                if new_path_node:
-                    path_anim = self._draw_path_coroutine(new_path_node, update_and_draw_with_delay)
-                    for _ in path_anim:
-                        yield "PATH_DRAW_STEP", gen_state
-                continue
-
-            elif resolved_parent_node:  # Standard subfeature, not interior or pathing
-                new_subfeature = self.placement.find_and_place_subfeature(
-                    feature_data, resolved_parent_node, self.initial_feature_branches, chosen_parent_name, shrink_factor
-                )
-                if new_subfeature:
-                    growth_anim = self._grow_subfeature_coroutine(new_subfeature, update_and_draw_with_delay)
-                    for _ in growth_anim:
-                        yield "SUBFEATURE_GROWTH_STEP", gen_state
-                    update_and_draw_no_delay()
-                    yield "SUBFEATURE_STEP", gen_state
-                else:
+            if not narrative_beat or 'none' in narrative_beat.lower():
+                parent_branch.sentence_count += 1  # Count this as an attempt to prevent infinite loops on a stuck branch
+                if parent_branch.sentence_count >= 5 and parent_branch in active_parenting_branches:  # Add a higher threshold for retirement on 'none'
                     utils.log_message('debug',
-                                      f"[PEGv3 Architect] Failed to place subfeature '{feature_data['name']}' under '{resolved_parent_node.name}'.")
-
-            if is_branch_retirement_triggered:
-                if parent_branch in active_parenting_branches:
-                    utils.log_message('debug',
-                                      f"[PEGv3 Architect] Branch '{parent_branch.name}' retired (no valid parent for new feature at sentence limit).")
+                                      f"[PEGv3 Architect] Branch '{parent_branch.name}' retired (no new beats generated).")
                     active_parenting_branches.remove(parent_branch)
                 continue
+
+            feature_data = self.llm.define_feature_from_sentence(narrative_beat)
+            if not feature_data or feature_data.get('type') == 'CHARACTER':
+                continue
+
+            was_placed_successfully = False
+            placement_strategy = feature_data.get('placement_strategy')
+
+            if placement_strategy == 'PATHING':
+                new_node = self._handle_pathing_placement(feature_data, parent_branch, parent_branch.narrative_log,
+                                                          narrative_beat)
+                if new_node:
+                    was_placed_successfully = True
+                    path_anim = self._draw_path_coroutine(new_node, update_and_draw_with_delay)
+                    for _ in path_anim:
+                        yield "PATH_DRAW_STEP", gen_state
+            else:  # INTERIOR or EXTERIOR/BLOCKING (subfeature)
+                size_tier_map = {'large': (12, 12), 'medium': (8, 8), 'small': (4, 4)}
+                prop_w, prop_h = size_tier_map.get(feature_data.get('size_tier', 'medium'))
+                temp_grid = self.placement._get_temp_grid(self.initial_feature_branches)
+
+                physically_valid_parents = [
+                    node for branch in active_parenting_branches for node in branch.get_all_nodes_in_branch()
+                    if self.placement._find_valid_placements(prop_w, prop_h, temp_grid, [node], feature_data)
+                ]
+
+                if not physically_valid_parents:
+                    utils.log_message('debug',
+                                      f"No physically valid parent found for '{feature_data['name']}'. Discarding.")
+                else:
+                    parent_options_str = "\n".join(
+                        f"- {name}" for name in sorted(list(set(n.name for n in physically_valid_parents))))
+
+                    chosen_parent_name = self.llm.choose_parent_feature(parent_branch.narrative_log, narrative_beat,
+                                                                        parent_options_str)
+                    resolved_parent_node = self._resolve_parent_node(chosen_parent_name, physically_valid_parents)
+
+                    if placement_strategy == 'INTERIOR':
+                        target_interior_node = resolved_parent_node if resolved_parent_node else parent_branch
+                        target_interior_node.interior_features_to_place.append(feature_data)
+                        utils.log_message('debug',
+                                          f"[PEGv3 Architect] Queued interior feature '{feature_data['name']}' for '{target_interior_node.name}'.")
+                        was_placed_successfully = True
+                        yield "SUBFEATURE_STEP", gen_state
+
+                    elif resolved_parent_node:  # Standard subfeature with a valid parent
+                        new_subfeature = self.placement.find_and_place_subfeature(
+                            feature_data, resolved_parent_node, self.initial_feature_branches,
+                            resolved_parent_node.name,
+                            shrink_factor
+                        )
+                        if new_subfeature:
+                            was_placed_successfully = True
+                            growth_anim = self._grow_subfeature_coroutine(new_subfeature, update_and_draw_with_delay)
+                            for _ in growth_anim:
+                                yield "SUBFEATURE_GROWTH_STEP", gen_state
+                            update_and_draw_no_delay()
+                            yield "SUBFEATURE_STEP", gen_state
+                        else:
+                            utils.log_message('debug',
+                                              f"[PEGv3 Architect] Failed physical placement for subfeature '{feature_data['name']}' under '{resolved_parent_node.name}'.")
+                    else:
+                        utils.log_message('debug',
+                                          f"  LLM chose no valid parent for '{feature_data['name']}'. Discarding feature.")
+
+            if was_placed_successfully:
+                parent_branch.narrative_log += " " + narrative_beat
+                utils.log_message('story', f"-> {narrative_beat}")
+                parent_branch.sentence_count += 1
+
+                if parent_branch.sentence_count >= 3 and parent_branch in active_parenting_branches:
+                    utils.log_message('debug',
+                                      f"[PEGv3 Architect] Branch '{parent_branch.name}' retired (reached sentence limit).")
+                    active_parenting_branches.remove(parent_branch)
+            else:
+                utils.log_message('debug', f"  Discarding narrative beat due to placement failure: '{narrative_beat}'")
 
         update_and_draw_no_delay()
         yield "PRE_JITTER", gen_state
@@ -462,5 +483,13 @@ class MapArchitectV3:
         self.converter.populate_generation_state(gen_state, self.initial_feature_branches)
         gen_state.physics_layout = self.converter.convert_to_vertex_representation(gen_state.layout_graph,
                                                                                    all_connections)
+        # --- NEW: Generate and store embeddings ---
+        if self.semantic_search.model:
+            utils.log_message('debug', "[PEGv3 Architect] Generating feature embeddings for semantic search...")
+            for tag, feature_data in gen_state.placed_features.items():
+                desc = f"{feature_data.get('name', tag)}: {feature_data.get('description', '')}"
+                embedding = self.semantic_search.model.encode(desc)
+                gen_state.feature_embeddings[tag] = embedding.tolist()
+
         gen_state.narrative_log = ""  # Placeholder for full narrative log
         yield "VERTEX_DATA", gen_state
