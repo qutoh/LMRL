@@ -7,6 +7,7 @@
     "help_bar_text_input": "[ENTER] Submit | [ESC] Cancel | [CTRL+V] Paste",
     "help_bar_player_takeover": "[ENTER] Submit Response | [ESC] Cancel/Let AI Handle It | [CTRL+V] Paste",
     "help_bar_prometheus": "[UP/DOWN] Select Tool | [LEFT/RIGHT] Toggle | [ENTER] Submit | [ESC] Cancel",
+    "help_bar_role_creator": "[UP/DOWN] Navigate Groups/Buttons | [TAB] Switch Group Focus | [ENTER] Add Role/Edit Description/Delete Group | [ESC] Cancel Role Creation",
     "help_bar_game_running": "[F7] Cast Manager | [F8] Flag Response | [F9] Player Takeover | [F10/ESC] Save & Exit",
     "help_bar_ingame_input": "[ENTER] Submit Action | [ESC] Skip Action | [CTRL+V] Paste",
     "help_bar_ingame_menu": "[UP/DOWN] Navigate | [ENTER] Select | [ESC] Cancel",

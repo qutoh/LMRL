@@ -28,7 +28,7 @@ from ..common.config_loader import config
 from ..common import utils
 from ..common.game_state import GameState
 from .views import WorldSelectionView, GameView, SceneSelectionView, TextInputView, LoadOrNewView, SaveSelectionView, \
-    TabbedSettingsView, MenuView, PrometheusView, CalibrationView, WorldGraphView
+    TabbedSettingsView, MenuView, PrometheusView, CalibrationView, WorldGraphView, RoleCreatorView
 from .input_handler import TextInputHandler
 from ..llm.model_manager import ModelManager
 
@@ -98,6 +98,7 @@ class UIManager:
             AppState.AWAITING_SCENE_INPUT: "help_bar_text_input",
             "PLAYER_TAKEOVER": "help_bar_player_takeover",
             "PROMETHEUS_TAKEOVER": "help_bar_prometheus",
+            "ROLE_CREATOR_TAKEOVER": "help_bar_role_creator",
             AppState.GAME_RUNNING: "help_bar_game_running",
             "IN_GAME_INPUT": "help_bar_ingame_input",
             "IN_GAME_MENU": "help_bar_ingame_menu",
@@ -261,6 +262,7 @@ class UIManager:
 
         handler_map = {
             "PROMETHEUS_DETERMINE_TOOL_USE": player_input_handlers.create_prometheus_menu_view,
+            "DIRECTOR_DEFINE_LEAD_ROLES_FOR_SCENE": player_input_handlers.create_role_creator_view,
             "DIRECTOR_CAST_REPLACEMENT": None,
         }
 
@@ -365,6 +367,16 @@ class UIManager:
                             self.active_view = GameView(self.event_log, game_log_box)
 
                         player_input_handlers.create_prometheus_menu_view(self, on_submit, **message[1])
+                    elif msg_type == 'ROLE_CREATOR_REQUEST':
+                        def on_submit(result):
+                            self.input_queue.put(result)
+                            game_log_box = DynamicTextBox(title="Game Log", text="", x=0,
+                                                          y=self.root_console.height - 10,
+                                                          max_width=self.root_console.width, max_height=9)
+                            self.active_view = GameView(self.event_log, game_log_box)
+
+                        player_input_handlers.create_role_creator_view(self, on_submit, **message[1])
+
 
                 else:
                     if isinstance(self.active_view, GameView): self.active_view.update_state(message)
@@ -425,6 +437,8 @@ class UIManager:
             else:
                 context_key = AppState.SETTINGS
 
+        elif isinstance(self.active_view, RoleCreatorView):
+            context_key = "ROLE_CREATOR_TAKEOVER"
         elif isinstance(self.active_view, PrometheusView):
             context_key = "PROMETHEUS_TAKEOVER"
         elif isinstance(self.active_view, MenuView):

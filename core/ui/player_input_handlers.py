@@ -1,7 +1,7 @@
 # /core/ui/player_input_handlers.py
 
 from .input_handler import TextInputHandler
-from .views import TextInputView, PrometheusView
+from .views import TextInputView, PrometheusView, RoleCreatorView
 from ..common.config_loader import config
 from ..common.localization import loc
 from ..common.utils import get_text_from_messages
@@ -71,3 +71,25 @@ def create_prometheus_menu_view(ui_manager, on_submit, **handler_kwargs):
         console_width=ui_manager.root_console.width,
         console_height=ui_manager.root_console.height
     )
+
+
+def create_role_creator_view(ui_manager, on_submit, **handler_kwargs):
+    """Creates the interactive view for defining lead character roles."""
+    task_key = handler_kwargs.get("task_key")
+    ui_manager._send_player_notification(task_key)
+
+    task_prompt_kwargs = handler_kwargs.get("task_prompt_kwargs", {})
+    context_text = (
+        f"World Theme: {task_prompt_kwargs.get('prompt_substring_world_scene_context', '')}\n\n"
+        f"Location: {task_prompt_kwargs.get('location_summary', 'N/A')}\n\n"
+        f"Existing NPCs: {task_prompt_kwargs.get('npc_list_summary', 'None')}"
+    )
+
+    view = RoleCreatorView(
+        on_submit=on_submit,
+        context_text=context_text,
+        console_width=ui_manager.root_console.width,
+        console_height=ui_manager.root_console.height,
+        parent_ui_manager=ui_manager
+    )
+    ui_manager.active_view = view

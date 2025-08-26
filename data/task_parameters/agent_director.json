@@ -107,7 +107,9 @@
     "task_prompt_key": "task_prompt_director_define_lead_roles_for_scene",
     "model_override": "",
     "source_agent": "DIRECTOR",
-    "default_adjustment": 0.1
+    "default_adjustment": 0.1,
+    "player_takeover_enabled": true,
+    "player_takeover_notification": "The Director needs your help defining the main characters for the scene."
   },
   "DIRECTOR_DEFINE_LEAD_ROLES_FOR_SCENE_FALLBACK": {
     "task_prompt_key": "task_prompt_director_define_lead_roles_for_scene_fallback",

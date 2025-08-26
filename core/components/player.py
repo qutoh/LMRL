@@ -219,6 +219,12 @@ class PlayerInterface:
         response_lines = [f"{tool}: {str(value).upper()}" for tool, value in player_choices.items()]
         return "\n".join(response_lines)
 
+    def _handle_role_creation_takeover(self, **handler_kwargs) -> str | None:
+        """Handles the interactive menu for defining character roles."""
+        self.engine.render_queue.put(('ROLE_CREATOR_REQUEST', handler_kwargs))
+        player_response = self.engine.input_queue.get()
+        return player_response  # Can be None if cancelled
+
     def handle_task_takeover(self, **kwargs) -> str | None:
         """
         Dispatcher for different player takeover handlers based on task_key.
@@ -238,6 +244,8 @@ class PlayerInterface:
             return self._handle_prometheus_menu_takeover(**kwargs)
         elif task_key == "DIRECTOR_CAST_REPLACEMENT":
             return self._handle_replacement_menu_takeover(**kwargs)
+        elif task_key == "DIRECTOR_DEFINE_LEAD_ROLES_FOR_SCENE":
+            return self._handle_role_creation_takeover(**kwargs)
 
         # --- Default Handler ---
         # Any other task with player_takeover_enabled: true will use this.

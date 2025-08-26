@@ -12,6 +12,7 @@ from .tabbed_settings_view import TabbedSettingsView
 from .text_input_view import TextInputView
 from .world_graph_view import WorldGraphView
 from .world_selection_view import WorldSelectionView
+from .role_creator_view import RoleCreatorView
 
 __all__ = [
     "WorldSelectionView",
@@ -25,5 +26,6 @@ __all__ = [
     "PrometheusView",
     "CharacterGenerationTestView",
     "CalibrationView",
-    "WorldGraphView"
+    "WorldGraphView",
+    "RoleCreatorView"
 ]
