@@ -108,6 +108,11 @@ class UIManager:
             AppState.SHUTTING_DOWN: "help_bar_shutting_down"
         }
         self.help_bar = HelpBar(help_texts=self.help_texts)
+        self.game_view = GameView(
+            event_log=self.event_log,
+            console_width=self.root_console.width,
+            console_height=self.root_console.height
+        )
 
     def _send_player_notification(self, task_key: str):
         """Sends a toast notification for a player takeover event."""
@@ -238,6 +243,8 @@ class UIManager:
         elif self.app_state == AppState.LOADING_GAME:
             self._handle_game_loading()
         elif self.app_state == AppState.GAME_RUNNING:
+            if self.active_view is None:
+                self.active_view = self.game_view
             self._handle_game_updates()
         elif self.app_state == AppState.SHUTTING_DOWN:
             self.active_view = None
@@ -326,25 +333,28 @@ class UIManager:
                                                                     self.location_breadcrumb))
             self.engine_proc.start()
             self.app_state = AppState.GAME_RUNNING
+            self.active_view = self.game_view
 
     def _handle_game_updates(self):
         """Processes messages from the engine process queue to update the game view."""
-        if self.active_view is None:
-            game_log_box = DynamicTextBox(title="Game Log", text="", x=0, y=self.root_console.height - 10,
-                                          max_width=self.root_console.width, max_height=9)
-            self.active_view = GameView(self.event_log, game_log_box)
-
         if self.render_queue and not self.render_queue.empty():
             try:
                 message = self.render_queue.get(timeout=0.01)
                 if message is None:
                     self.app_state = AppState.SHUTTING_DOWN
                 elif isinstance(message, tuple):
-                    msg_type = message[0]
+                    msg_type, msg_data = message[0], message[1:]
                     if msg_type == 'ADD_EVENT_LOG':
-                        self.event_log.add_message(message[1], fg=message[2] if len(message) > 2 else (255, 255, 255))
-                    elif msg_type == 'GAME_LOG_UPDATE':
-                        self.active_view.game_log_box.set_text(message[1])
+                        self.event_log.add_message(msg_data[0], fg=msg_data[1] if len(msg_data) > 1 else (255, 255, 255))
+                    elif msg_type == 'STREAM_START':
+                        if isinstance(self.active_view, GameView):
+                            self.active_view.start_new_log_entry(speaker=msg_data[0])
+                    elif msg_type == 'STREAM_TOKEN':
+                        if isinstance(self.active_view, GameView):
+                            self.active_view.append_to_active_log(text_delta=msg_data[0], is_retry_clear=msg_data[1] if len(msg_data) > 1 else False)
+                    elif msg_type == 'STREAM_END':
+                        if isinstance(self.active_view, GameView):
+                            self.active_view.finalize_active_log()
                     elif msg_type == 'INPUT_REQUEST':
                         self._create_in_game_input_view(message)
                     elif msg_type == 'MENU_REQUEST':
@@ -352,32 +362,21 @@ class UIManager:
                     elif msg_type == 'PLAYER_TASK_TAKEOVER_REQUEST':
                         def on_submit(text):
                             self.input_queue.put(text)
-                            game_log_box = DynamicTextBox(title="Game Log", text="", x=0,
-                                                          y=self.root_console.height - 10,
-                                                          max_width=self.root_console.width, max_height=9)
-                            self.active_view = GameView(self.event_log, game_log_box)
+                            self.active_view = self.game_view
 
                         player_input_handlers.create_default_takeover_view(self, on_submit, **message[1])
                     elif msg_type == 'PROMETHEUS_MENU_REQUEST':
                         def on_submit(choices):
                             self.input_queue.put(choices)
-                            game_log_box = DynamicTextBox(title="Game Log", text="", x=0,
-                                                          y=self.root_console.height - 10,
-                                                          max_width=self.root_console.width, max_height=9)
-                            self.active_view = GameView(self.event_log, game_log_box)
+                            self.active_view = self.game_view
 
                         player_input_handlers.create_prometheus_menu_view(self, on_submit, **message[1])
                     elif msg_type == 'ROLE_CREATOR_REQUEST':
                         def on_submit(result):
                             self.input_queue.put(result)
-                            game_log_box = DynamicTextBox(title="Game Log", text="", x=0,
-                                                          y=self.root_console.height - 10,
-                                                          max_width=self.root_console.width, max_height=9)
-                            self.active_view = GameView(self.event_log, game_log_box)
+                            self.active_view = self.game_view
 
                         player_input_handlers.create_role_creator_view(self, on_submit, **message[1])
-
-
                 else:
                     if isinstance(self.active_view, GameView): self.active_view.update_state(message)
             except Exception:
@@ -390,9 +389,7 @@ class UIManager:
 
         def on_submit(text):
             self.input_queue.put(text)
-            game_log_box = DynamicTextBox(title="Game Log", text="", x=0, y=self.root_console.height - 10,
-                                          max_width=self.root_console.width, max_height=9)
-            self.active_view = GameView(self.event_log, game_log_box)
+            self.active_view = self.game_view
 
         handler = TextInputHandler(prompt=prompt, width=self.root_console.width - 2, prefix="> ", max_tokens=max_tokens,
                                    initial_text=initial_text)
@@ -404,9 +401,7 @@ class UIManager:
 
         def on_submit(choice: str | None):
             self.input_queue.put(choice)
-            game_log_box = DynamicTextBox(title="Game Log", text="", x=0, y=self.root_console.height - 10,
-                                          max_width=self.root_console.width, max_height=9)
-            self.active_view = GameView(self.event_log, game_log_box)
+            self.active_view = self.game_view
 
         self.active_view = MenuView(
             title=title,

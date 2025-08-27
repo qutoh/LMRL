@@ -4,6 +4,7 @@
     "system_model_scan_start": "\n--- [SYSTEM] Scanning all models to determine the global context limit ---",
     "system_model_scan_report": "[SYSTEM] Model '{model_id}' reports a context length of {context_len}.",
     "system_context_len_fail": "[SYSTEM WARNING] Could not determine context length. Error: {e}",
+    "system_prompt_blacklist_retry": "You used a forbidden word or phrase. Please try again, avoiding the previous output and using different phrasing.",
     "system_rewrite_active": "[SYSTEM] Rewrite stage active: Verifying role compliance...",
     "system_rewrite_corrected": "[SYSTEM] Response was corrected for role compliance.",
     "system_rewrite_no_change": "[SYSTEM] Response passed role compliance check (no changes made).",

@@ -66,8 +66,8 @@ class TurnManager:
 
     def generate_ai_prose(self, current_actor, unacted_roles) -> tuple[str, list]:
         """
-        Generates the prose for an AI-controlled character's turn.
-        Returns the prose string and the message context used to generate it.
+        Generates the prose for an AI-controlled character's turn using streaming.
+        Returns the final prose string and the message context used to generate it.
         """
         self.game_state.reset_entity_turn_stats(current_actor['name'])
 
@@ -91,14 +91,29 @@ class TurnManager:
 
         self.engine.render_queue.put(('ADD_EVENT_LOG', f"{current_actor['name']} is thinking...", (150, 150, 150)))
 
+        # --- STREAMING IMPLEMENTATION ---
+        self.engine.render_queue.put(('STREAM_START', current_actor['name']))
+
+        def on_token_stream(delta: str, is_retry_clear: bool = False):
+            self.engine.render_queue.put(('STREAM_TOKEN', delta, is_retry_clear))
+
+        def should_stop(current_buffer: str):
+            # This can be expanded later to allow for early termination logic.
+            return False
+
         task_key = 'DM_TURN' if current_actor.get('role_type') == 'dm' else 'CHARACTER_TURN'
 
-        raw_llm_response = llm_api.execute_task(
-            self.engine,
-            current_actor,
-            task_key,
-            messages
+        raw_llm_response = llm_api.execute_task_streaming(
+            engine=self.engine,
+            agent_or_character=current_actor,
+            task_key=task_key,
+            messages=messages,
+            on_token_stream=on_token_stream,
+            should_stop=should_stop
         )
+
+        self.engine.render_queue.put(('STREAM_END',))
+        # --- END STREAMING IMPLEMENTATION ---
 
         prose = command_parser.post_process_llm_response(self.engine, current_actor, raw_llm_response,
                                                          is_dm_role=current_actor.get('role_type') == 'dm')

@@ -185,7 +185,8 @@ class LLMSettingsPage(SettingsTabPage):
     def __init__(self, x, y, width, height, parent_view):
         keys = ["DEFAULT_INPUT_TOKEN_LIMIT", "LLM_PREFIX_CLEANUP_ENABLED", "LLM_PREFIX_CLEANUP_MODE",
                 "ENABLE_REWRITE_STAGE", "GEMINI_API_KEY_ENV_VAR", "GEMINI_MODEL_STRING", "GEMINI_MODEL_NAME",
-                "TOKEN_SUMMARY_OFFSET", "NEXT_TURN_KEYWORD"]
+                "TOKEN_SUMMARY_OFFSET", "NEXT_TURN_KEYWORD", "STREAMING_BLACKLIST_RETRIES",
+                "NONSTREAMING_BLACKLIST_RETRIES"]
         super().__init__(x, y, width, height, keys, parent_view)
         self.keyword_options = {"LLM_PREFIX_CLEANUP_MODE": ["strip", "rewrite"]}
 

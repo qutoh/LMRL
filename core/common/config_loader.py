@@ -40,6 +40,7 @@ class Config:
         self.calibrated_temperatures = self._load_json('calibrated_temperatures.json', default={})
         self.calibration_tasks = self._load_json('calibration_tasks.json', default=[])
         self.ideation_blacklist = self._load_json('ideation_blacklist.json', default={})
+        self.global_blacklist = self._load_json('global_blacklist.json', default={})
 
         self._apply_defaults_to_agents()
         self._apply_api_keys()
