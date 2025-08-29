@@ -24,7 +24,7 @@ class WorldActions:
     def navigate(self, current_node, breadcrumb, world_theme, scene_prompt, connections,
                  target_location_concept: dict | None = None):
         """Handles the NAVIGATE action by asking the LLM to choose a destination."""
-        if not connections: return breadcrumb, current_node, "CONTINUE"
+        if not connections: return breadcrumb, current_node, "ACCEPT"
 
         dest_str = "\n".join(f"- {name} ({rel})" for rel, name in connections.items())
 
@@ -55,9 +55,11 @@ class WorldActions:
                         new_breadcrumb = self.navigator.calculate_new_breadcrumb(breadcrumb, rel, individual_name)
                         if new_breadcrumb:
                             return new_breadcrumb, file_io._find_node_by_breadcrumb(config.world,
-                                                                                     new_breadcrumb), "CONTINUE"
+                                                                                    new_breadcrumb), "CONTINUE"
 
-        return breadcrumb, current_node, "CONTINUE"
+        utils.log_message('debug',
+                          f"[ATLAS] Navigation failed. LLM chose an invalid target: '{target_name_from_llm}'. Accepting current state.")
+        return breadcrumb, current_node, "ACCEPT"
 
     def create_and_place_location(self, world_name, world_theme, breadcrumb, current_node,
                                   relationship_override, scene_prompt,
@@ -66,10 +68,12 @@ class WorldActions:
         new_loc_data = self.content_generator.create_location(
             world_theme, breadcrumb, current_node, scene_prompt,
             target_location_summary=target_location_concept.get('Name',
-                                                                 'N/A') if target_location_concept else None
+                                                                'N/A') if target_location_concept else None
         )
         if not new_loc_data:
-            return breadcrumb, current_node, "CONTINUE"
+            utils.log_message('debug',
+                              f"[ATLAS] Location creation failed for parent '{current_node.get('Name')}'. Accepting current state.")
+            return breadcrumb, current_node, "ACCEPT"
 
         if relationship_override:
             utils.log_message('debug',
@@ -105,4 +109,4 @@ class WorldActions:
             config.load_world_data(world_name)
             return new_node_breadcrumb, file_io._find_node_by_breadcrumb(config.world,
                                                                          new_node_breadcrumb), "CONTINUE"
-        return breadcrumb, current_node, "CONTINUE"
+        return breadcrumb, current_node, "ACCEPT"

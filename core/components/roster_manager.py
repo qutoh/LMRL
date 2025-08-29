@@ -171,6 +171,7 @@ def decorate_and_add_character(engine, character_data, role_type):
 
     if role_type == 'lead':
         char.update({'is_positional': True, 'is_director_managed': True, 'is_essential': True, 'is_controllable': True})
+        engine.lead_roster_changed = True
     elif role_type == 'npc':
         char.update(
             {'is_positional': True, 'is_director_managed': False, 'is_essential': False, 'is_controllable': True})
@@ -422,6 +423,8 @@ def add_character(engine, character_data):
 def remove_character(engine, character_name):
     if character_to_remove := find_character(engine, character_name):
         engine.characters = [c for c in engine.characters if c['name'].lower() != character_name.lower()]
+        if character_to_remove.get('role_type') == 'lead':
+            engine.lead_roster_changed = True
         return character_to_remove
     return None
 
@@ -432,6 +435,7 @@ def promote_npc_to_lead(engine, npc_name):
             char_to_promote['role_type'] = 'lead'
             char_to_promote['is_essential'] = True
             char_to_promote['is_director_managed'] = True
+            engine.lead_roster_changed = True
             utils.log_message('debug', loc('system_director_lead_promote', npc_name=npc_name,
                                            character_name='(N/A)'))  # Context may vary
             return char_to_promote

@@ -262,6 +262,8 @@ class DirectorManager:
 
                 character['instructions'] = new_instructions
                 utils.log_message('debug', loc('log_director_rewrites', character_name=character['name']))
+                if character.get('role_type') == 'lead':
+                    self.engine.lead_roster_changed = True
                 roster_changed = True
         elif action == "LOAD":
             self._handle_character_loading(command)

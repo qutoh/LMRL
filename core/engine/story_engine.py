@@ -33,6 +33,8 @@ class StoryEngine:
         self.characters = []
         self.dialogue_log = []
         self.summaries = []
+        self.lead_character_summary = ""
+        self.lead_roster_changed = True # Start dirty to force initial generation
         self.dehydrated_npcs = []
         self.current_game_time = datetime(1486, 6, 12, 14, 0, 0)
         self.token_context_limit = 8192
@@ -113,6 +115,7 @@ class StoryEngine:
         state_data = {
             "dialogue_log": self.dialogue_log,
             "summaries": self.summaries,
+            "lead_character_summary": self.lead_character_summary,
             "current_game_time": self.current_game_time.isoformat(),
             "current_scene_key": self.current_scene_key
         }
@@ -186,6 +189,8 @@ class StoryEngine:
                               loc('log_cycle_header', cycle_num=i + 1, max_cycles=self.config.settings['MAX_CYCLES']))
 
             self.summary_manager.check_and_perform_summary()
+            if self.lead_roster_changed:
+                self.dm_manager.update_lead_character_summary()
 
             # Note: Initial spawn now happens in setup. This call is for any characters added mid-game.
             roster_manager.spawn_entities_from_roster(self, self.game_state)

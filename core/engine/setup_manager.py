@@ -136,6 +136,7 @@ class SetupManager:
     def _initialize_new_run(self) -> bool:
         self.engine.run_path = file_io.setup_new_run_directory(self.engine.config.data_dir, self.engine.world_name)
         roster_manager.load_initial_roster(self.engine)
+        self.engine.lead_character_summary = ""
 
         scene_prompt = self.engine.scene_prompt or "A story begins."
         self.engine.render_queue.put(('ADD_EVENT_LOG', f"Scene: {scene_prompt[:50]}..."))
@@ -254,6 +255,7 @@ class SetupManager:
         state_data = file_io.read_json(file_io.join_path(self.engine.run_path, 'story_state.json'), default={})
         self.engine.dialogue_log = state_data.get('dialogue_log', [])
         self.engine.summaries = state_data.get('summaries', [])
+        self.engine.lead_character_summary = state_data.get('lead_character_summary', "")
         self.engine.current_scene_key = state_data.get('current_scene_key')
 
         if self.engine.current_scene_key:

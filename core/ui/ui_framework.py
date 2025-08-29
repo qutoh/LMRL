@@ -1,5 +1,3 @@
-# /core/ui/ui_framework.py
-
 import textwrap
 from math import sqrt
 from typing import Callable, Optional, Tuple
@@ -40,12 +38,20 @@ class Label(Widget):
         super().__init__(**kwargs)
         self.text = text
         self.fg = fg
-        self.width = len(text)
-        self.height = 1
+
+        if self.width > 0:  # Check if width was passed in kwargs
+            self.lines = textwrap.wrap(self.text, width=self.width)
+            if not self.lines: self.lines = [""]
+            self.height = len(self.lines)
+        else:
+            self.lines = [self.text]
+            self.width = len(self.text)
+            self.height = 1
 
     def render(self, console: tcod.console.Console):
         abs_x, abs_y = self.get_absolute_pos()
-        console.print(x=abs_x, y=abs_y, string=self.text, fg=self.fg)
+        for i, line in enumerate(self.lines):
+            console.print(x=abs_x, y=abs_y + i, string=line, fg=self.fg)
 
 
 class Button(Widget):

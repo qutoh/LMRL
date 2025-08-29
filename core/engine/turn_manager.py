@@ -81,6 +81,7 @@ class TurnManager:
         builder = utils.PromptBuilder(self.engine, current_actor) \
             .add_world_theme() \
             .add_scene_prompt() \
+            .add_lead_character_summary() \
             .add_summary(self.engine.summaries) \
             .add_local_context(local_context_str) \
             .add_physical_context()

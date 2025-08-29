@@ -1,4 +1,9 @@
 {
+  "CH_FIX_EQUIPMENT_DESC_JSON": {
+    "task_prompt_key": "task_prompt_command_handler_fix_json",
+    "source_agent": "COMMAND_HANDLER",
+    "is_failure_handler": true
+  },
   "CH_FIX_INITIAL_EQUIPMENT_JSON": {
     "task_prompt_key": "task_prompt_ch_fix_initial_equipment_json",
     "source_agent": "COMMAND_HANDLER",

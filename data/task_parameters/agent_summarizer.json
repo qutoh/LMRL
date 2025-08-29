@@ -4,6 +4,11 @@
     "source_agent": "SUMMARIZER",
     "default_adjustment": 0.0
   },
+  "SUMMARIZE_LEAD_CHARACTER_DYNAMICS": {
+    "task_prompt_key": "task_prompt_summarizer_lead_character_dynamics",
+    "source_agent": "SUMMARIZER",
+    "default_adjustment": 0.1
+  },
   "SUMMARIZE_MAIN_STORY": {
     "task_prompt_key": "task_prompt_summarizer_main",
     "source_agent": "SUMMARIZER",

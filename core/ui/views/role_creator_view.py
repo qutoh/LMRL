@@ -44,15 +44,17 @@ class RoleCreatorView(View):
         self.widgets.append(context_box)
 
         creation_panel_width = self.console_width - context_width - 4
+        content_width = creation_panel_width - 2
 
         for i, group in enumerate(self.groups):
-            group_label = Label(f"--- Group {i + 1}: {group['group_description']} ---", fg=(255, 255, 0))
+            group_label = Label(f"--- Group {i + 1}: {group['group_description']} ---", fg=(255, 255, 0),
+                                width=content_width)
             main_vbox.add_child(group_label)
 
             if not group['roles']:
                 main_vbox.add_child(Label("  (No roles added yet)"))
             for role_text in group['roles']:
-                main_vbox.add_child(Label(f"  - {role_text}"))
+                main_vbox.add_child(Label(f"  - {role_text}", width=content_width))
 
             add_role_btn = Button(f"Add Role", on_click=lambda idx=i: self._prompt_for_add_role(idx))
             self.focusable_buttons.append(add_role_btn)

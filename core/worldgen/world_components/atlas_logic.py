@@ -141,7 +141,8 @@ class AtlasLogic:
         """Orchestrates a single, autonomous step of world exploration."""
         context_string, connections = self.build_context_for_decision(breadcrumb, current_node, visited_breadcrumbs)
 
-        action = self.decide_explore_action(world_theme, context_string)
+        raw_action = self.decide_explore_action(world_theme, context_string)
+        action = raw_action.strip().replace('`', '')
         utils.log_message('game', f"[ATLAS] Decided action: {action}")
 
         # --- Handle Action Short-circuiting ---
@@ -158,12 +159,12 @@ class AtlasLogic:
                                                                 relationship_override=action, scene_prompt=None)
 
         # --- Handle Generic Actions ---
-        if action == "NAVIGATE":
+        if "NAVIGATE" in action:
             return self.world_actions.navigate(current_node, breadcrumb, world_theme, None, connections)
-        elif action == "CREATE":
+        elif "CREATE" in action:
             return self.world_actions.create_and_place_location(world_name, world_theme, breadcrumb, current_node,
                                                                 relationship_override=None, scene_prompt=None)
-        elif action == "POPULATE":
+        elif "POPULATE" in action:
             if new_npc := self.content_generator.generate_npc_concept_for_location(world_theme, current_node):
                 file_io.add_inhabitant_to_location(world_name, breadcrumb, {"name": new_npc.split(' - ')[0],
                                                                             "description":

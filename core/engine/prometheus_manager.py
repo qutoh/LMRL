@@ -187,18 +187,31 @@ class PrometheusManager:
     def _call_select_next_actor(self, dialogue_entry: dict, **kwargs) -> str | None:
         """Asks the Director to choose the next actor based on the prose."""
         unacted_roles = kwargs.get('unacted_roles', [])
-        if not unacted_roles: return None
+        current_speaker_name = dialogue_entry.get('speaker')
+
+        # Explicitly filter out the current speaker from the choices
+        valid_choices = [
+            char for char in unacted_roles
+            if char.get('name', '').lower() != current_speaker_name.lower()
+        ]
+
+        if not valid_choices:
+            return None
 
         utils.log_message('debug', "[PROMETHEUS] Activating tool: select_next_actor.")
-        unacted_roles_str = "\n".join([f"- {r['name']}" for r in unacted_roles])
-        prompt_kwargs = {"most_recent_prose": dialogue_entry.get('content', ''),
-                         "unacted_roles_list": unacted_roles_str}
+        unacted_roles_str = "\n".join([f"- {r['name']}" for r in valid_choices])
+        prompt_kwargs = {
+            "current_speaker_name": current_speaker_name,
+            "most_recent_prose": dialogue_entry.get('content', ''),
+            "unacted_roles_list": unacted_roles_str
+        }
         director_agent = config.agents.get('DIRECTOR')
         choice_response = execute_task(self.engine, director_agent, 'DIRECTOR_CHOOSE_NEXT_ACTOR', [],
                                        task_prompt_kwargs=prompt_kwargs)
         if choice_response and choice_response.strip().upper() != 'NONE':
             cleaned_response = choice_response.strip().lower()
-            for character in unacted_roles:
+            # Search within valid_choices instead of unacted_roles
+            for character in valid_choices:
                 char_name_lower = character['name'].lower()
                 if char_name_lower in cleaned_response:
                     utils.log_message('debug', f"[PROMETHEUS] Director chose next actor: {character['name']}.")

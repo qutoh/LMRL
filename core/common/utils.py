@@ -154,6 +154,12 @@ class PromptBuilder:
             self.message_channels.append([{"role": "user", "content": scene_text}])
         return self
 
+    def add_lead_character_summary(self):
+        if self.character.get('role_type') == 'dm' and self.engine.lead_character_summary:
+            summary_text = f"--- LEAD CHARACTER DYNAMICS ---\n{self.engine.lead_character_summary}"
+            self.message_channels.append([{"role": "user", "content": summary_text}])
+        return self
+
     def add_summary(self, summaries):
         if summaries:
             formatted_summary = format_text_with_paragraph_breaks(summaries[-1])

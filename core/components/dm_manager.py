@@ -16,6 +16,52 @@ class DMManager:
     def __init__(self, engine):
         self.engine = engine
 
+    def update_lead_character_summary(self):
+        """
+        Generates and stores a summary of the lead characters' personalities and
+        relationships for use by the DM.
+        """
+        utils.log_message('debug', "[DM MANAGER] Lead roster has changed. Updating DM's character summary.")
+        leads = [char for char in self.engine.characters if char.get('role_type') == 'lead']
+
+        if not leads:
+            self.engine.lead_character_summary = "There are currently no lead characters in the story."
+            self.engine.lead_roster_changed = False
+            return
+
+        profile_lines = []
+        for lead in leads:
+            profile_lines.append(f"Name: {lead.get('name', 'N/A')}")
+            profile_lines.append(f"Description: {lead.get('description', 'N/A')}")
+            profile_lines.append(f"Persona: {lead.get('persona_description', 'N/A')}")
+            profile_lines.append(f"Instructions: {lead.get('instructions', 'N/A')}")
+            profile_lines.append("---")
+
+        profiles_str = "\n".join(profile_lines)
+
+        kwargs = {
+            "world_theme": self.engine.world_theme,
+            "scene_prompt": self.engine.scene_prompt,
+            "lead_character_profiles_str": profiles_str
+        }
+
+        summary = execute_task(
+            self.engine,
+            config.agents['SUMMARIZER'],
+            'SUMMARIZE_LEAD_CHARACTER_DYNAMICS',
+            [],
+            task_prompt_kwargs=kwargs
+        )
+
+        if summary:
+            self.engine.lead_character_summary = summary.strip()
+            utils.log_message('full', f"[DM MANAGER] New lead character summary:\n{summary.strip()}")
+        else:
+            self.engine.lead_character_summary = "Summary generation failed. The DM has a basic list of characters."
+            utils.log_message('debug', "[DM MANAGER] Lead character summary generation failed.")
+
+        self.engine.lead_roster_changed = False
+
     def _tailor_dm_for_scene(self, dm_profile: dict) -> dict:
         """
         Creates a scene-specific variant of a global DM, checking for a cached
@@ -141,13 +187,14 @@ class DMManager:
             meta_dm.update(cached_persona)
             meta_dm['component_dms'] = new_components_full_names
         else:
-            utils.log_message('debug', f"[DM FUSION] No cached persona found for {new_cache_key}. Synthesizing new one.")
+            utils.log_message('debug',
+                              f"[DM FUSION] No cached persona found for {new_cache_key}. Synthesizing new one.")
 
             all_dm_profiles_for_synthesis = []
 
             # 1. Get profiles for existing components from the roster
             for name in meta_dm['component_dms']:
-                 if profile := roster_manager.find_character(self.engine, name):
+                if profile := roster_manager.find_character(self.engine, name):
                     all_dm_profiles_for_synthesis.append(profile)
 
             # 2. Add the newly tailored profile
@@ -183,7 +230,8 @@ class DMManager:
 
         component_list_str = "\n".join([f"- {name}" for name in meta_dm['component_dms']])
         kwargs = {"component_dm_list": component_list_str}
-        response = execute_task(self.engine, config.agents['DIRECTOR'], 'DIRECTOR_CHOOSE_DM_TO_UNFUSE', [], task_prompt_kwargs=kwargs)
+        response = execute_task(self.engine, config.agents['DIRECTOR'], 'DIRECTOR_CHOOSE_DM_TO_UNFUSE', [],
+                                task_prompt_kwargs=kwargs)
 
         if not response or 'none' in response.lower():
             utils.log_message('debug', "[DM FUSION] Director chose not to un-fuse a DM.")
@@ -206,4 +254,5 @@ class DMManager:
             meta_dm['component_dms'] = new_components_full_names
             utils.log_message('game', f"[DM FUSION] Meta-DM has simplified to: '{cached_persona['name']}'.")
         else:
-            utils.log_message('debug', f"[DM FUSION] [ERROR] Cache miss on un-fusion for key {new_cache_key}. This should not happen. Aborting.")
+            utils.log_message('debug',
+                              f"[DM FUSION] [ERROR] Cache miss on un-fusion for key {new_cache_key}. This should not happen. Aborting.")
