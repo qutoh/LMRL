@@ -21,6 +21,11 @@ from .director import DirectorManager
 from .prometheus_manager import PrometheusManager
 from .turn_manager import TurnManager
 from ..common import file_io, utils
+from ..ui.ui_messages import (
+    AddEventLogMessage, StreamStartMessage, StreamTokenMessage, StreamEndMessage,
+    InputRequestMessage, MenuRequestMessage, PlayerTaskTakeoverRequestMessage,
+    PrometheusMenuRequestMessage, RoleCreatorRequestMessage
+)
 
 
 class StoryEngine:
@@ -30,11 +35,12 @@ class StoryEngine:
                  scene_prompt: str = None, embedding_model=None, model_context_limits=None,
                  location_breadcrumb: list = None, ui_manager=None):
 
+        self.game_state = game_state
         self.characters = []
         self.dialogue_log = []
         self.summaries = []
         self.lead_character_summary = ""
-        self.lead_roster_changed = True # Start dirty to force initial generation
+        self.lead_roster_changed = True  # Start dirty to force initial generation
         self.dehydrated_npcs = []
         self.current_game_time = datetime(1486, 6, 12, 14, 0, 0)
         self.token_context_limit = 8192
@@ -61,21 +67,20 @@ class StoryEngine:
         self.player_input_active = False
         self.cast_manager_interrupted = False
 
-        self.game_state = game_state
         self.generation_state = None
         self.layout_graph = None
         self.current_scene_key = None
         self.render_queue = render_queue
         self.input_queue = input_queue
-        self.ui_manager = ui_manager  # For synchronous, pre-game player input
 
-        # Configure the logger service with the render queue
+        # This ui_manager is the PlayerInterfaceHandler for synchronous pre-game input
+        self.ui_manager = ui_manager
+
         utils.configure_logger(self.render_queue)
 
-        # PlayerInterface is only fully functional for the async main engine
-        self.player_interface = PlayerInterface(self, self.game_state) if render_queue else None
+        self.player_interface = PlayerInterface(self) if render_queue else None
 
-        self.turn_manager = TurnManager(self, self.game_state, self.player_interface)
+        self.turn_manager = TurnManager(self, self.player_interface)
         self.director_manager = DirectorManager(self)
         self.summary_manager = SummaryManager(self)
         self.prometheus_manager = PrometheusManager(self)
@@ -85,7 +90,7 @@ class StoryEngine:
         self.dm_manager = DMManager(self)
         self.config = config
 
-        self.game_mode = None # NEW ATTRIBUTE
+        self.game_mode = None
 
         if world_name:
             self.config.load_world_data(world_name)
@@ -106,7 +111,7 @@ class StoryEngine:
             time_str = self.current_game_time.strftime('%H:%M on %A, %B %d')
             utils.log_message('debug',
                               f"[TIME] Advanced by {seconds}s. New time: {self.current_game_time.strftime('%Y-%m-%d %H:%M:%S')}")
-            utils.log_message('game', loc('log_time_update', time_str=time_str))
+            self.render_queue.put(AddEventLogMessage(loc('log_time_update', time_str=time_str)))
 
     def save_state(self, save_path):
         if not save_path: return
@@ -130,7 +135,7 @@ class StoryEngine:
 
         requeue_messages = []
         try:
-            while True:  # Loop until queue is confirmed empty
+            while True:
                 message = self.input_queue.get_nowait()
                 if message == '__INTERRUPT_SAVE__':
                     if not self.interrupted: self.interrupted = True
@@ -143,11 +148,11 @@ class StoryEngine:
                         self.annotation_manager.annotate_last_log_as_failure('PLAYER_FLAGGED',
                                                                              'Player marked this response as low quality.')
                         self.render_queue.put(
-                            ('ADD_EVENT_LOG', "Last response flagged as low quality.", (255, 200, 100)))
+                            AddEventLogMessage("Last response flagged as low quality.", (255, 200, 100)))
                 else:
                     requeue_messages.append(message)
         except queue.Empty:
-            pass  # This is the expected way to exit the loop
+            pass
         finally:
             for msg in requeue_messages:
                 self.input_queue.put(msg)
@@ -181,7 +186,6 @@ class StoryEngine:
         return fallback_name
 
     def run(self):
-        # Initialize the desired game mode. This could be decided by a config setting in the future.
         self.game_mode = NarrativeSimulationMode(self)
 
         for i in range(self.config.settings['MAX_CYCLES']):
@@ -192,10 +196,8 @@ class StoryEngine:
             if self.lead_roster_changed:
                 self.dm_manager.update_lead_character_summary()
 
-            # Note: Initial spawn now happens in setup. This call is for any characters added mid-game.
             roster_manager.spawn_entities_from_roster(self, self.game_state)
 
-            # --- DELEGATE CYCLE EXECUTION TO THE GAME MODE ---
             self.game_mode.run_cycle()
 
             if self.player_interrupted:
@@ -213,7 +215,6 @@ class StoryEngine:
 
             self.director_manager.execute_phase()
 
-
         initial_name = ""
         if self.load_path:
             basename = os.path.basename(self.load_path)
@@ -227,7 +228,7 @@ class StoryEngine:
 
         new_run_path, error = file_io.finalize_run_directory(self.run_path, final_name)
         self.run_path = new_run_path
-        if error: utils.log_message('debug', loc('error_run_rename_fail', error=error))
+        if error: self.render_queue.put(AddEventLogMessage(loc('error_run_rename_fail', error=error), (255, 100, 100)))
         utils.log_message('debug', f"Run directory finalized as: {self.run_path}")
 
         self.render_queue.put(None)

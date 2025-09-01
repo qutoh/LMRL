@@ -269,7 +269,7 @@ class MapArchitectV3:
         self.initial_feature_branches.append(root_node)
         growth_anim = self._grow_subfeature_coroutine(root_node, ui_callback)
         for _ in growth_anim:
-            ui_callback(None)
+            pass  # The generator handles its own callbacks
         utils.log_message('debug',
                           f"[PEGv3 Architect] Grown new branch '{root_node.name}' to final size {new_w}x{new_h}.")
 

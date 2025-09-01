@@ -4,6 +4,8 @@ from core.common import file_io, utils
 from core.common.config_loader import config
 from core.common.localization import loc
 from core.components import character_factory, roster_manager, position_manager
+from ..ui.ui_messages import InputRequestMessage, MenuRequestMessage, PlayerTaskTakeoverRequestMessage, \
+    PrometheusMenuRequestMessage, RoleCreatorRequestMessage, AddEventLogMessage
 
 
 class PlayerInterface:
@@ -12,9 +14,8 @@ class PlayerInterface:
     including menus and turn execution.
     """
 
-    def __init__(self, engine, game_state):
+    def __init__(self, engine):
         self.engine = engine
-        self.game_state = game_state
 
     def _get_player_input(self, prompt: str, initial_text: str = "") -> str:
         """
@@ -22,7 +23,7 @@ class PlayerInterface:
         """
         try:
             self.engine.player_input_active = True
-            self.engine.render_queue.put(('INPUT_REQUEST', prompt, self.engine.token_context_limit, initial_text))
+            self.engine.render_queue.put(InputRequestMessage(prompt, self.engine.token_context_limit, initial_text))
             response = self.engine.input_queue.get()
             return response
         finally:
@@ -34,7 +35,7 @@ class PlayerInterface:
         """
         try:
             self.engine.player_input_active = True
-            self.engine.render_queue.put(('MENU_REQUEST', title, options))
+            self.engine.render_queue.put(MenuRequestMessage(title, options))
             response = self.engine.input_queue.get()
             return response
         finally:
@@ -43,7 +44,7 @@ class PlayerInterface:
     def _prompt_for_choice(self, character_list, prompt_message, show_desc=True):
         """Generic helper to prompt the user to select a character from a list."""
         if not character_list:
-            self.engine.render_queue.put(('ADD_EVENT_LOG', loc('player_no_characters_option'), (255, 255, 100)))
+            self.engine.render_queue.put(AddEventLogMessage(loc('player_no_characters_option'), (255, 255, 100)))
             return None
 
         options = []
@@ -93,29 +94,29 @@ class PlayerInterface:
                     chosen_character = char_to_load
 
             elif main_choice == "Create a new Lead Character":
-                self.engine.render_queue.put(('ADD_EVENT_LOG', loc('player_menu_creating_character')))
+                self.engine.render_queue.put(AddEventLogMessage(loc('player_menu_creating_character')))
                 if new_lead_data := character_factory.create_lead_stepwise(self.engine, self.engine.dialogue_log):
                     chosen_character = new_lead_data
                 else:
-                    self.engine.render_queue.put(('ADD_EVENT_LOG', loc('player_creation_failed'), (255, 100, 100)))
+                    self.engine.render_queue.put(AddEventLogMessage(loc('player_creation_failed'), (255, 100, 100)))
 
             elif main_choice == "Cancel" or main_choice is None:
                 return None
             else:
-                self.engine.render_queue.put(('ADD_EVENT_LOG', loc('player_invalid_choice'), (255, 100, 100)))
+                self.engine.render_queue.put(AddEventLogMessage(loc('player_invalid_choice'), (255, 100, 100)))
 
         return chosen_character
 
     def initiate_takeover_menu(self):
         """Handles the UI for a player to take control of a character."""
-        self.engine.render_queue.put(('ADD_EVENT_LOG', loc('player_takeover_header'), (100, 255, 100)))
+        self.engine.render_queue.put(AddEventLogMessage(loc('player_takeover_header'), (100, 255, 100)))
         for char in self.engine.characters:
             char.pop('controlled_by', None)
 
         character_data = self.get_character_via_menu()
 
         if not character_data:
-            self.engine.render_queue.put(('ADD_EVENT_LOG', loc('player_takeover_canceled')))
+            self.engine.render_queue.put(AddEventLogMessage(loc('player_takeover_canceled')))
             return
 
         final_character = roster_manager.find_character(self.engine, character_data['name'])
@@ -136,32 +137,32 @@ class PlayerInterface:
             final_character['controlled_by'] = 'human'
             file_io.save_active_character_files(self.engine)
             self.engine.render_queue.put(
-                ('ADD_EVENT_LOG', loc('player_control_confirmed', character_name=final_character['name']),
-                 (100, 255, 100)))
+                AddEventLogMessage(loc('player_control_confirmed', character_name=final_character['name']),
+                                   (100, 255, 100)))
         else:
             self.engine.render_queue.put(
-                ('ADD_EVENT_LOG', "Error: Could not finalize character selection.", (255, 100, 100)))
+                AddEventLogMessage("Error: Could not finalize character selection.", (255, 100, 100)))
 
     def _handle_human_movement(self, current_actor):
         """Manages the movement sub-phase for a human player."""
-        self.engine.render_queue.put(('ADD_EVENT_LOG', loc('player_movement_header')))
-        other_entities = [e for e in self.game_state.entities if e.name.lower() != current_actor['name'].lower()]
+        self.engine.render_queue.put(AddEventLogMessage(loc('player_movement_header')))
+        other_entities = [e for e in self.engine.game_state.entities if e.name.lower() != current_actor['name'].lower()]
         if not other_entities:
-            self.engine.render_queue.put(('ADD_EVENT_LOG', loc('player_movement_no_targets')))
+            self.engine.render_queue.put(AddEventLogMessage(loc('player_movement_no_targets')))
             return
         if not (
                 target := self._prompt_for_choice(other_entities, loc('player_movement_select_target'),
                                                   show_desc=False)):
-            self.engine.render_queue.put(('ADD_EVENT_LOG', loc('player_movement_canceled')))
+            self.engine.render_queue.put(AddEventLogMessage(loc('player_movement_canceled')))
             return
 
         movement_description = self._get_player_input(loc('player_movement_describe', target_name=target.name)).strip()
 
         if movement_description:
-            position_manager.process_movement_intent(self.engine, self.game_state, current_actor['name'],
+            position_manager.process_movement_intent(self.engine, self.engine.game_state, current_actor['name'],
                                                      movement_description, "WALK")
         else:
-            self.engine.render_queue.put(('ADD_EVENT_LOG', loc('player_movement_skipped')))
+            self.engine.render_queue.put(AddEventLogMessage(loc('player_movement_skipped')))
 
     def execute_turn(self, current_actor) -> str:
         """
@@ -170,7 +171,7 @@ class PlayerInterface:
         """
         utils.log_message('debug', loc('log_turn_header', character_name=f"{current_actor['name']} (Human)"))
 
-        self.game_state.reset_entity_turn_stats(current_actor['name'])
+        self.engine.game_state.reset_entity_turn_stats(current_actor['name'])
 
         action_prompt = loc('player_turn_prompt_action', character_name=current_actor['name'])
         prose = self._get_player_input(action_prompt).strip()
@@ -187,12 +188,17 @@ class PlayerInterface:
 
     def _handle_default_takeover(self, **handler_kwargs) -> str | None:
         """Handles the standard text input for a player task takeover."""
-        self.engine.render_queue.put(('PLAYER_TASK_TAKEOVER_REQUEST', handler_kwargs))
-        player_response = self.engine.input_queue.get()
-        return None if player_response is None or not player_response.strip() else player_response.strip()
+        try:
+            self.engine.player_input_active = True
+            self.engine.render_queue.put(PlayerTaskTakeoverRequestMessage(handler_kwargs))
+            player_response = self.engine.input_queue.get()
+            return None if player_response is None or not player_response.strip() else player_response.strip()
+        finally:
+            self.engine.player_input_active = False
 
     def _handle_replacement_menu_takeover(self, **kwargs) -> str | None:
         """Handles the 'REPLACEMENT_MENU' handler by showing the character menu."""
+        # This function correctly uses get_character_via_menu, which handles the flag itself.
         character_data = self.get_character_via_menu()
         if not character_data:
             return None  # User cancelled
@@ -210,20 +216,28 @@ class PlayerInterface:
 
     def _handle_prometheus_menu_takeover(self, **handler_kwargs) -> str | None:
         """Handles the specialized menu for the Prometheus tool selection task."""
-        self.engine.render_queue.put(('PROMETHEUS_MENU_REQUEST', handler_kwargs))
-        player_choices = self.engine.input_queue.get()
+        try:
+            self.engine.player_input_active = True
+            self.engine.render_queue.put(PrometheusMenuRequestMessage(handler_kwargs))
+            player_choices = self.engine.input_queue.get()
 
-        if player_choices is None:
-            return None  # Player cancelled
+            if player_choices is None:
+                return None  # Player cancelled
 
-        response_lines = [f"{tool}: {str(value).upper()}" for tool, value in player_choices.items()]
-        return "\n".join(response_lines)
+            response_lines = [f"{tool}: {str(value).upper()}" for tool, value in player_choices.items()]
+            return "\n".join(response_lines)
+        finally:
+            self.engine.player_input_active = False
 
     def _handle_role_creation_takeover(self, **handler_kwargs) -> str | None:
         """Handles the interactive menu for defining character roles."""
-        self.engine.render_queue.put(('ROLE_CREATOR_REQUEST', handler_kwargs))
-        player_response = self.engine.input_queue.get()
-        return player_response  # Can be None if cancelled
+        try:
+            self.engine.player_input_active = True
+            self.engine.render_queue.put(RoleCreatorRequestMessage(handler_kwargs))
+            player_response = self.engine.input_queue.get()
+            return player_response  # Can be None if cancelled
+        finally:
+            self.engine.player_input_active = False
 
     def handle_task_takeover(self, **kwargs) -> str | None:
         """
@@ -270,11 +284,11 @@ class PlayerInterface:
                     if role_type == 'dm' and not config.settings.get("enable_multiple_dms", False):
                         dms_added_this_session.append(char_data)
                         self.engine.render_queue.put(
-                            ('ADD_EVENT_LOG', f"Queued '{char_data['name']}' for DM fusion.", (150, 255, 150)))
+                            AddEventLogMessage(f"Queued '{char_data['name']}' for DM fusion.", (150, 255, 150)))
                     else:
                         roster_manager.decorate_and_add_character(self.engine, char_data, role_type)
                         self.engine.render_queue.put(
-                            ('ADD_EVENT_LOG', f"Added '{char_data['name']}' to the story.", (150, 255, 150)))
+                            AddEventLogMessage(f"Added '{char_data['name']}' to the story.", (150, 255, 150)))
 
             elif "Create" in choice:
                 role_prompt = "Enter a role for the new Lead (e.g., 'a grizzled veteran'), or leave blank for a generic one."
@@ -288,7 +302,7 @@ class PlayerInterface:
                                                                                  context_str, role_archetype):
                     roster_manager.decorate_and_add_character(self.engine, new_lead, 'lead')
                     self.engine.render_queue.put(
-                        ('ADD_EVENT_LOG', f"Created and added new lead '{new_lead['name']}'.", (150, 255, 150)))
+                        AddEventLogMessage(f"Created and added new lead '{new_lead['name']}'.", (150, 255, 150)))
 
     def _handle_remove_character_menu(self):
         """Handles the menu for removing characters using the Director's logic."""
@@ -299,7 +313,7 @@ class PlayerInterface:
 
     def initiate_cast_management_menu(self):
         """Handles the main player-facing menu for managing the story's cast."""
-        self.engine.render_queue.put(('ADD_EVENT_LOG', "\n--- Cast & Crew Management ---", (100, 255, 255)))
+        self.engine.render_queue.put(AddEventLogMessage("\n--- Cast & Crew Management ---", (100, 255, 255)))
         dms_added_this_session = []
 
         while True:
@@ -315,9 +329,9 @@ class PlayerInterface:
 
         # Post-menu processing for DMs
         if dms_added_this_session and not config.settings.get("enable_multiple_dms", False):
-            self.engine.render_queue.put(('ADD_EVENT_LOG', "Processing newly added DMs...", (200, 200, 255)))
+            self.engine.render_queue.put(AddEventLogMessage("Processing newly added DMs...", (200, 200, 255)))
             for dm_profile in dms_added_this_session:
                 self.engine.dm_manager.fuse_dm_into_meta(dm_profile)
 
         file_io.save_active_character_files(self.engine)
-        self.engine.render_queue.put(('ADD_EVENT_LOG', "--- Cast Management Closed ---", (100, 255, 255)))
+        self.engine.render_queue.put(AddEventLogMessage("--- Cast Management Closed ---", (100, 255, 255)))

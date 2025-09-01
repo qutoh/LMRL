@@ -249,7 +249,9 @@ class GameState:
         self.entities.append(entity)
 
     def get_entity(self, name: str) -> Entity | None:
-        return next((e for e in self.entities if e.name.lower() == name.lower()), None)
+        if name is None:
+            return None
+        return next((e for e in self.entities if e.name is not None and e.name.lower() == name.lower()), None)
 
     def reset_entity_turn_stats(self, entity_name: str):
         entity = self.get_entity(entity_name)

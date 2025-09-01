@@ -10,6 +10,7 @@ from core.components import roster_manager
 from core.components.memory_manager import MemoryManager
 from core.worldgen.procgen_manager import ProcGenManager
 from core.worldgen.v3_components.v3_llm import V3_LLM
+from ..ui.ui_messages import AddEventLogMessage
 
 
 class SetupManager:
@@ -75,7 +76,7 @@ class SetupManager:
         Calculates the global context threshold based on the minimum context
         length of all models used for full, narrative context generation.
         """
-        self.engine.render_queue.put(('ADD_EVENT_LOG', 'Determining context limit for narrative...'))
+        self.engine.render_queue.put(AddEventLogMessage('Determining context limit for narrative...'))
         full_context_models = set()
         for agent_data in self.engine.config.agents.values():
             if agent_data.get("build_full_context", True):
@@ -139,7 +140,7 @@ class SetupManager:
         self.engine.lead_character_summary = ""
 
         scene_prompt = self.engine.scene_prompt or "A story begins."
-        self.engine.render_queue.put(('ADD_EVENT_LOG', f"Scene: {scene_prompt[:50]}..."))
+        self.engine.render_queue.put(AddEventLogMessage(f"Scene: {scene_prompt[:50]}..."))
         self.engine.current_scene_key = scene_prompt
 
         chosen_scene = {
@@ -244,7 +245,7 @@ class SetupManager:
         enhanced_prompt = f"{narrative_intro}\n\n{scene_prompt}".strip()
         self.engine.dialogue_log.append({"speaker": "Scene Setter", "content": enhanced_prompt})
         file_io.save_active_character_files(self.engine)
-        self.engine.render_queue.put(('ADD_EVENT_LOG', 'Setup complete. The story begins...'))
+        self.engine.render_queue.put(AddEventLogMessage('Setup complete. The story begins...'))
         return True
 
     def _load_existing_run(self) -> bool:

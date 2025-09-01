@@ -48,6 +48,10 @@
         "response_start_str": "<response>",
         "response_end_str": "</response>"
     },
+	"qwen3-30b-a3b-thinking-2507": {
+        "think_start_str": "<think>",
+        "think_end_str": "</think>"
+    },
 	"huihui-ai.huihui-qwen3-4b-thinking-2507-abliterated": {
 		"think_start_str": "<think>",
         "think_end_str": "</think>",

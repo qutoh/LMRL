@@ -18,38 +18,47 @@ from ..common.utils import log_message, get_text_from_messages
 
 def _parse_and_strip_thinking_block(raw_text: str, model_id: str) -> str:
     """
-    Checks for model-specific parsing rules and processes the raw LLM output.
-    - If response tags are found, it extracts the content between them.
-    - If an end-of-thought tag is found, it treats everything after it as the response.
-    - If no rules apply, it returns the original text.
+    Checks for model-specific parsing rules and processes the raw LLM output using a
+    multi-step, case-insensitive approach to robustly isolate the final response.
     """
     parser_config = config.model_tuning.get(model_id)
     if not parser_config:
-        return raw_text
+        return raw_text.strip()
 
+    text_to_process = raw_text
+    think_start = parser_config.get("think_start_str")
     think_end = parser_config.get("think_end_str")
     response_start = parser_config.get("response_start_str")
     response_end = parser_config.get("response_end_str")
 
-    # Priority 1: Extract content from a dedicated response block if tags are defined.
+    # Priority 1: Find and extract a dedicated response block if it exists.
+    # This is considered the definitive answer if present.
     if response_start and response_end:
-        # Use a more robust regex that allows for whitespace around tags and content.
-        pattern = re.compile(re.escape(response_start) + r'\s*(.*?)\s*' + re.escape(response_end),
-                             re.DOTALL | re.IGNORECASE)
-        match = re.search(pattern, raw_text)
+        pattern = re.compile(re.escape(response_start) + r'(.*?)' + re.escape(response_end), re.DOTALL | re.IGNORECASE)
+        match = re.search(pattern, text_to_process)
         if match:
             return match.group(1).strip()
 
-    # Priority 2: Split the response at the first end-of-thought marker.
-    # This robustly handles cases where the start tag is missing.
-    if think_end:
-        parts = raw_text.split(think_end, 1)
-        if len(parts) > 1:
-            # We have successfully split the string. The response is the second part.
-            return parts[1].strip()
+    # Priority 2: If no dedicated response block, aggressively remove any and all complete thinking blocks.
+    # This handles the common case of: <think>...</think>Answer
+    if think_start and think_end:
+        pattern = re.compile(re.escape(think_start) + r'.*?' + re.escape(think_end), re.DOTALL | re.IGNORECASE)
+        text_to_process = re.sub(pattern, '', text_to_process)
 
-    # Fallback: If no tags matched or the configuration was partial.
-    return raw_text
+    # Priority 3: As a final cleanup, if an end-of-thought tag still exists,
+    # take everything that comes after its last occurrence. This handles cases
+    # where the model might have omitted a start tag.
+    if think_end:
+        # We split on the end tag, and if successful, the desired text is the last part.
+        parts = re.split(re.escape(think_end), text_to_process, flags=re.IGNORECASE)
+        if len(parts) > 1:
+            # Take the last part of the split and strip it.
+            potential_response = parts[-1].strip()
+            if potential_response:
+                return potential_response
+
+    # Fallback: If all else fails, return the text (which may have had think blocks removed)
+    return text_to_process.strip()
 
 
 def _prepare_messages_for_llm(
@@ -130,10 +139,16 @@ def _prepare_task_execution(
         engine.annotation_manager.annotate_last_log_as_failure('AUTOMATIC_HANDLER_TRIGGERED',
                                                                f"Triggered by task: {task_key}")
 
+    # --- THIS IS THE FIX ---
+    # Establish the base model from the agent/character.
     model_identifier = agent_or_character.get('model')
     is_turn_task = task_key in ['CHARACTER_TURN', 'DM_TURN']
+
+    # Check for a task-specific override, but only if it's a non-empty string.
     if not is_turn_task and task_params:
-        model_identifier = task_params.get('model_override', model_identifier)
+        if model_override := task_params.get('model_override'):
+            model_identifier = model_override
+    # --- END FIX ---
 
     sampling_params = sampling_manager.get_sampling_params(
         task_key, model_identifier, agent_or_character,
@@ -489,11 +504,38 @@ def _get_lmstudio_config_dict(temperature, top_p, top_k):
     return config_dict
 
 
+def _prepare_messages_for_lmstudio(messages: list) -> list:
+    """
+    Ensures the message list adheres to the strict user/assistant alternation
+    required by the LM Studio API by converting any subsequent assistant messages
+    into user messages.
+    """
+    if not messages:
+        return []
+
+    processed_messages = []
+    first_assistant_found = False
+    for msg in messages:
+        msg_copy = msg.copy()
+        current_role = msg_copy.get('role')
+
+        if current_role == 'assistant':
+            if not first_assistant_found:
+                first_assistant_found = True
+            else:
+                msg_copy['role'] = 'user'
+
+        processed_messages.append(msg_copy)
+
+    return processed_messages
+
+
 def get_lmstudio_response(model_identifier, messages, temperature=0.75, top_k=None, top_p=None):
     try:
+        prepared_messages = _prepare_messages_for_lmstudio(messages)
         with lms.Client() as client:
             model = client.llm.model(model_identifier)
-            chat_history = {"messages": messages}
+            chat_history = {"messages": prepared_messages}
             config_dict = _get_lmstudio_config_dict(temperature, top_p, top_k)
             prediction = model.respond(chat_history, config=config_dict)
             return prediction.content or ""
@@ -512,9 +554,10 @@ def get_lmstudio_response_streaming(
     full_response_content = ""
     prediction_stream = None
     try:
+        prepared_messages = _prepare_messages_for_lmstudio(messages)
         client = lms.Client()
         model = client.llm.model(model_identifier)
-        chat_history = {"messages": messages}
+        chat_history = {"messages": prepared_messages}
         config_dict = _get_lmstudio_config_dict(temperature, top_p, top_k)
 
         def _handle_fragment(fragment: lms_json_api.LlmPredictionFragment):

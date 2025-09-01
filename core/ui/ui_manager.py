@@ -5,7 +5,6 @@ from multiprocessing import Process, Queue
 import numpy as np
 import tcod
 import tcod.constants
-# Import the new rendering classes
 from tcod.render import SDLTilesetAtlas, SDLConsoleRender
 
 try:
@@ -15,27 +14,23 @@ except ImportError:
     WindowsToaster = None
 
 from .app_states import AppState
-from . import ui_data_provider
-from .ui_callbacks import UICallbacks
 from .ui_special_modes import SpecialModeManager
-from . import player_input_handlers
-
-from .ui_framework import EventLog, DynamicTextBox, HelpBar
-from ..engine.story_engine import StoryEngine
-from ..engine.setup_manager import SetupManager
-from ..common import file_io
+from .view_factory import ViewFactory
+from .ui_framework import EventLog, HelpBar
 from ..common.config_loader import config
-from ..common import utils
-from ..common.game_state import GameState
-from .views import WorldSelectionView, GameView, SceneSelectionView, TextInputView, LoadOrNewView, SaveSelectionView, \
-    TabbedSettingsView, MenuView, PrometheusView, CalibrationView, WorldGraphView, RoleCreatorView
-from .input_handler import TextInputHandler
 from ..llm.model_manager import ModelManager
+from .views import GameView, TextInputView, MenuView, PrometheusView, RoleCreatorView, WorldGraphView, \
+    TabbedSettingsView
+from .player_interface_handler import PlayerInterfaceHandler
+from .game_update_handler import GameUpdateHandler
 
 
 def engine_process(render_queue: Queue, input_queue: Queue, load_path: str, world_name: str,
                    starting_location: dict, world_theme: str, scene_prompt: str,
                    embedding_model, model_context_limits: dict, location_breadcrumb: list):
+    from ..engine.story_engine import StoryEngine
+    from ..engine.setup_manager import SetupManager
+    from ..common.game_state import GameState
     engine = StoryEngine(load_path=load_path, game_state=GameState(), render_queue=render_queue,
                          input_queue=input_queue, world_name=world_name, starting_location=starting_location,
                          world_theme=world_theme, scene_prompt=scene_prompt, embedding_model=embedding_model,
@@ -48,42 +43,34 @@ def engine_process(render_queue: Queue, input_queue: Queue, load_path: str, worl
 
 
 class UIManager:
-    def __init__(self, context, root_console, load_path, model_manager: ModelManager, tileset):
-        self.context, self.root_console, self.load_path, self.model_manager, self.tileset = context, root_console, load_path, model_manager, tileset
-        self.app_state = AppState.WORLD_SELECTION
+    def __init__(self, app_controller, context, root_console, model_manager: ModelManager, tileset):
+        self.app = app_controller
+        self.context = context
+        self.root_console = root_console
+        self.model_manager = model_manager
+        self.tileset = tileset
+
         self.active_view = None
+        self.current_app_state = None
         self.text_input_active = False
         self.sync_input_active = False
         self.sync_input_result = None
         self.toaster = WindowsToaster('AI Storyteller') if WindowsToaster else None
 
-        self.model_manager.transition_to_state('WORLD_CREATION')
         self.event_log = EventLog(max_lines=10)
+        self.input_queue = None
 
-        self.engine_proc, self.render_queue, self.input_queue = None, None, None
-        self.selected_world_name, self.world_theme, self.scene_prompt, self.starting_location, self.location_breadcrumb = None, "A generic fantasy world.", None, None, None
-
-        self.atlas_engine = StoryEngine(world_name=None, ui_manager=self)
-        self.atlas_engine.embedding_model = None
-        self.worldgen_generator = None
-
-        self.callbacks = UICallbacks(self)
+        # Instantiate handlers
+        self.player_interface_handler = PlayerInterfaceHandler(self)
+        self.game_update_handler = GameUpdateHandler(self, self.player_interface_handler)
+        self.view_factory = ViewFactory(app_controller, self)
         self.special_modes = SpecialModeManager(self)
-        self.special_mode_active = None
 
-        self.calibration_thread = None
-        self.calibration_jobs = []
-        self.current_job_index = 0
-        self.calibration_update_queue = Queue()
-
-        # --- NEW: Initialize SDL rendering helpers ---
         self.atlas = None
         self.console_render = None
-        # Ensure the renderer exists before trying to create these
         if self.context.sdl_renderer and self.tileset:
             self.atlas = SDLTilesetAtlas(self.context.sdl_renderer, self.tileset)
             self.console_render = SDLConsoleRender(self.atlas)
-        # --- END NEW ---
 
         self.help_texts = {
             "DEFAULT": "help_bar_default",
@@ -114,6 +101,25 @@ class UIManager:
             console_height=self.root_console.height
         )
 
+    def set_engine_queues(self, render_queue, input_queue):
+        self.game_update_handler.set_queue(render_queue)
+        self.input_queue = input_queue
+
+    def set_view_for_state(self, new_app_state: AppState):
+        if new_app_state != self.current_app_state:
+            self.current_app_state = new_app_state
+            if new_app_state == AppState.GAME_RUNNING:
+                self.active_view = self.game_view
+            elif new_app_state in [AppState.LOADING_GAME, AppState.SHUTTING_DOWN]:
+                self.active_view = None
+            else:
+                self.active_view = self.view_factory.create_view(new_app_state)
+            self.special_modes.set_active_mode(new_app_state)
+
+    def update_world_graph_view(self, world_data):
+        self.active_view = WorldGraphView(world_data, self.root_console.width,
+                                          self.root_console.height, self.tileset)
+
     def _send_player_notification(self, task_key: str):
         """Sends a toast notification for a player takeover event."""
         if not self.toaster: return
@@ -129,302 +135,13 @@ class UIManager:
     def _get_default_token_limit(self) -> int:
         return config.settings.get("DEFAULT_INPUT_TOKEN_LIMIT", 4096)
 
-    def _process_logic(self):
-        """The main state machine for the UI. Determines which view to show or action to take."""
-        if self.app_state == AppState.CALIBRATING:
-            if not isinstance(self.active_view, CalibrationView):
-                self.active_view = CalibrationView(self.root_console.width, self.root_console.height)
-            self.special_modes.handle_calibration_step()
-            self._handle_calibration_updates()
-            return
-
-        if self.app_state == AppState.WORLD_CREATING:
-            if not self.model_manager.models_loaded.is_set(): return
-
-            if self.worldgen_generator is None:
-                from ..worldgen.atlas_manager import AtlasManager
-                atlas = AtlasManager(self.atlas_engine)
-                self.worldgen_generator = atlas.create_new_world_generator(self.world_theme)
-
-            try:
-                result = next(self.worldgen_generator)
-                if result['status'] == 'update':
-                    self.active_view = WorldGraphView(result['world_data'], self.root_console.width,
-                                                      self.root_console.height, self.tileset)
-                elif result['status'] == 'complete':
-                    self.selected_world_name = result['world_name']
-                    if self.selected_world_name:
-                        config.load_world_data(self.selected_world_name)
-                        self.app_state = AppState.SCENE_SELECTION
-                    else:
-                        self.event_log.add_message("FATAL: World creation failed.", (255, 50, 50))
-                        self.app_state = AppState.WORLD_SELECTION
-                    self.worldgen_generator = None
-                    self.active_view = None
-            except StopIteration:
-                self.worldgen_generator = None
-                self.active_view = None
-                if self.app_state == AppState.WORLD_CREATING:
-                    self.app_state = AppState.WORLD_SELECTION
-            return
-
-        if self.active_view is None:
-            self.special_mode_active = None
-            if self.app_state == AppState.WORLD_SELECTION:
-                self.active_view = WorldSelectionView(
-                    worlds=ui_data_provider.get_available_worlds(),
-                    on_choice=self.callbacks.on_world_selection,
-                    console_width=self.root_console.width, console_height=self.root_console.height
-                )
-            elif self.app_state == AppState.SETTINGS:
-                def on_settings_back():
-                    self.app_state = AppState.WORLD_SELECTION
-                    self.active_view = None
-
-                self.active_view = TabbedSettingsView(on_back=on_settings_back, console_width=self.root_console.width,
-                                                      console_height=self.root_console.height)
-
-            elif self.app_state == AppState.AWAITING_THEME_INPUT:
-                user_prompt = "Enter a theme for the new world (or leave blank for a generated one)."
-                handler = TextInputHandler(prompt=user_prompt, width=self.root_console.width - 2, prefix="> ",
-                                           max_tokens=self._get_default_token_limit())
-                self.active_view = TextInputView(handler=handler, on_submit=self.callbacks.handle_theme_submission)
-
-            elif self.app_state == AppState.AWAITING_SCENE_INPUT:
-                user_prompt = "Write an opening scene to begin the story (or leave blank for a generated one)."
-                handler = TextInputHandler(prompt=user_prompt, width=self.root_console.width - 2, prefix="> ",
-                                           max_tokens=self._get_default_token_limit())
-                self.active_view = TextInputView(handler=handler, on_submit=self.callbacks.on_new_scene_submit)
-
-            elif self.app_state == AppState.LOAD_OR_NEW:
-                self.active_view = LoadOrNewView(on_choice=self.callbacks.on_load_new_choice,
-                                                 console_width=self.root_console.width,
-                                                 console_height=self.root_console.height)
-
-            elif self.app_state == AppState.LOAD_GAME_SELECTION:
-                saved_runs = file_io.get_saved_runs_for_world(self.selected_world_name)
-                self.active_view = SaveSelectionView(saves=saved_runs, on_choice=self.callbacks.on_save_selected,
-                                                     on_back=lambda: self.callbacks.on_load_new_choice("BACK"),
-                                                     console_width=self.root_console.width,
-                                                     console_height=self.root_console.height)
-
-            elif self.app_state == AppState.SCENE_SELECTION:
-                self.active_view = SceneSelectionView(scenes=ui_data_provider.get_available_scenes(),
-                                                      anachronisms=ui_data_provider.get_anachronisms(
-                                                          self.selected_world_name),
-                                                      on_choice=self.callbacks.on_scene_selection,
-                                                      on_new=self.callbacks.on_new_scene,
-                                                      on_back=lambda: self.callbacks.on_world_selection(
-                                                          self.selected_world_name),
-                                                      console_width=self.root_console.width,
-                                                      console_height=self.root_console.height)
-
-            elif self.app_state == AppState.CHARACTER_GENERATION_TEST:
-                def on_context_submit(context: str):
-                    self.active_view = None
-                    if context:
-                        self.special_modes.start_character_generation_test(context)
-                    else:
-                        self.app_state = AppState.WORLD_SELECTION
-
-                user_prompt = "Enter a scene context for character generation."
-                handler = TextInputHandler(prompt=user_prompt, width=self.root_console.width - 2, prefix="> ",
-                                           max_tokens=self._get_default_token_limit())
-                self.active_view = TextInputView(handler=handler, on_submit=on_context_submit)
-
-        if self.app_state == AppState.PEG_V3_TEST:
-            if self.special_modes.peg_test_generator is None:
-                self.active_view = None
-                self.special_modes.run_peg_v3_test()
-            self.special_mode_active = "PEG_V3_TEST"
-        elif self.app_state == AppState.CHARACTER_GENERATION_TEST:
-            if self.special_mode_active == "CHAR_GEN_TEST":
-                self.special_modes.handle_character_generation_updates()
-        elif self.app_state == AppState.LOADING_GAME:
-            self._handle_game_loading()
-        elif self.app_state == AppState.GAME_RUNNING:
-            if self.active_view is None:
-                self.active_view = self.game_view
-            self._handle_game_updates()
-        elif self.app_state == AppState.SHUTTING_DOWN:
-            self.active_view = None
-
-    def get_player_task_input(self, **kwargs):
-        """Synchronously gets player input for a task, blocking the calling engine."""
-        task_key = kwargs.get("task_key")
-
-        # --- Redundant safety check to prevent deadlocks ---
-        task_params = config.task_parameters.get(task_key, {})
-        if not task_params.get("player_takeover_enabled"):
-            utils.log_message('debug', f"[UI] get_player_task_input called for disabled task '{task_key}'. Ignoring.")
-            return None
-
-        self.sync_input_active = True
-        self.sync_input_result = None
-        original_view = self.active_view
-
-        def on_submit(result):
-            self.sync_input_result = result
-            self.sync_input_active = False
-
-        handler_map = {
-            "PROMETHEUS_DETERMINE_TOOL_USE": player_input_handlers.create_prometheus_menu_view,
-            "DIRECTOR_DEFINE_LEAD_ROLES_FOR_SCENE": player_input_handlers.create_role_creator_view,
-            "DIRECTOR_CAST_REPLACEMENT": None,
-        }
-
-        creation_func = handler_map.get(task_key, player_input_handlers.create_default_takeover_view)
-
-        if creation_func:
-            creation_func(self, on_submit, **kwargs)
-        else:
-            self.sync_input_active = False
-            return None
-
-        while self.sync_input_active:
-            self._sync_text_input_state()
-            self._update_help_context()
-            self._render()
-            for event in tcod.event.get():
-                converted_event = self.context.convert_event(event)
-                if self.active_view:
-                    self.active_view.handle_event(converted_event)
-                if isinstance(converted_event, tcod.event.Quit):
-                    self.app_state = AppState.EXITING
-                    self.sync_input_active = False
-                    self.sync_input_result = None
-
-        self.active_view = original_view
-        return self.sync_input_result if self.sync_input_result is not None else None
-
-    def _handle_calibration_updates(self):
-        """Processes messages from the calibration thread queue to update the UI."""
-        if self.calibration_update_queue and not self.calibration_update_queue.empty():
-            try:
-                while not self.calibration_update_queue.empty():
-                    message = self.calibration_update_queue.get_nowait()
-                    if isinstance(self.active_view, CalibrationView):
-                        if message.get('type') == 'phase_change':
-                            self.active_view.set_phase(message['phase'], message['text'])
-                        else:
-                            self.active_view.update_data(message)
-            except Exception:
-                pass
-
-    def _handle_game_loading(self):
-        """Checks if models are ready and then starts the engine process."""
-        self.active_view = None
-        if self.model_manager.models_loaded.is_set():
-            if not self.scene_prompt:
-                from ..worldgen.scene_maker import SceneMakerManager
-                self.atlas_engine.embedding_model = self.model_manager.embedding_model
-                scene_maker = SceneMakerManager(self.atlas_engine)
-                generated_scene = scene_maker.generate_scene(world_name=self.selected_world_name)
-                self.scene_prompt, self.starting_location = generated_scene.get('scene_prompt'), generated_scene.get(
-                    'source_location')
-                self.location_breadcrumb = [next(iter(config.world))]
-
-            self.render_queue, self.input_queue = Queue(), Queue()
-            self.engine_proc = Process(target=engine_process, args=(self.render_queue, self.input_queue, self.load_path,
-                                                                    self.selected_world_name, self.starting_location,
-                                                                    self.world_theme, self.scene_prompt,
-                                                                    self.model_manager.embedding_model,
-                                                                    self.model_manager.active_llm_models,
-                                                                    self.location_breadcrumb))
-            self.engine_proc.start()
-            self.app_state = AppState.GAME_RUNNING
-            self.active_view = self.game_view
-
-    def _handle_game_updates(self):
-        """Processes messages from the engine process queue to update the game view."""
-        if self.render_queue and not self.render_queue.empty():
-            try:
-                message = self.render_queue.get(timeout=0.01)
-                if message is None:
-                    self.app_state = AppState.SHUTTING_DOWN
-                elif isinstance(message, tuple):
-                    msg_type, msg_data = message[0], message[1:]
-                    if msg_type == 'ADD_EVENT_LOG':
-                        self.event_log.add_message(msg_data[0], fg=msg_data[1] if len(msg_data) > 1 else (255, 255, 255))
-                    elif msg_type == 'STREAM_START':
-                        if isinstance(self.active_view, GameView):
-                            self.active_view.start_new_log_entry(speaker=msg_data[0])
-                    elif msg_type == 'STREAM_TOKEN':
-                        if isinstance(self.active_view, GameView):
-                            self.active_view.append_to_active_log(text_delta=msg_data[0], is_retry_clear=msg_data[1] if len(msg_data) > 1 else False)
-                    elif msg_type == 'STREAM_END':
-                        if isinstance(self.active_view, GameView):
-                            self.active_view.finalize_active_log()
-                    elif msg_type == 'INPUT_REQUEST':
-                        self._create_in_game_input_view(message)
-                    elif msg_type == 'MENU_REQUEST':
-                        self._create_in_game_menu_view(message)
-                    elif msg_type == 'PLAYER_TASK_TAKEOVER_REQUEST':
-                        def on_submit(text):
-                            self.input_queue.put(text)
-                            self.active_view = self.game_view
-
-                        player_input_handlers.create_default_takeover_view(self, on_submit, **message[1])
-                    elif msg_type == 'PROMETHEUS_MENU_REQUEST':
-                        def on_submit(choices):
-                            self.input_queue.put(choices)
-                            self.active_view = self.game_view
-
-                        player_input_handlers.create_prometheus_menu_view(self, on_submit, **message[1])
-                    elif msg_type == 'ROLE_CREATOR_REQUEST':
-                        def on_submit(result):
-                            self.input_queue.put(result)
-                            self.active_view = self.game_view
-
-                        player_input_handlers.create_role_creator_view(self, on_submit, **message[1])
-                else:
-                    if isinstance(self.active_view, GameView): self.active_view.update_state(message)
-            except Exception:
-                pass
-
-    def _create_in_game_input_view(self, message: tuple):
-        """Creates the TextInputView for in-game player actions."""
-        prompt, max_tokens = message[1], message[2] if len(message) > 2 else self._get_default_token_limit()
-        initial_text = message[3] if len(message) > 3 else ""
-
-        def on_submit(text):
-            self.input_queue.put(text)
-            self.active_view = self.game_view
-
-        handler = TextInputHandler(prompt=prompt, width=self.root_console.width - 2, prefix="> ", max_tokens=max_tokens,
-                                   initial_text=initial_text)
-        self.active_view = TextInputView(handler=handler, on_submit=on_submit)
-
-    def _create_in_game_menu_view(self, message: tuple):
-        """Creates the MenuView for in-game player choices."""
-        title, options = message[1], message[2] if len(message) > 2 else []
-
-        def on_submit(choice: str | None):
-            self.input_queue.put(choice)
-            self.active_view = self.game_view
-
-        self.active_view = MenuView(
-            title=title,
-            options=options,
-            on_choice=on_submit,
-            console_width=self.root_console.width,
-            console_height=self.root_console.height
-        )
-
     def _update_help_context(self):
         """Determines the correct context key for the help bar based on the current UI state."""
-        context_key = self.app_state
+        context_key = self.app.app_state
+        if self.active_view and self.active_view.help_context_key:
+            context_key = self.active_view.help_context_key
 
-        if isinstance(self.active_view, TextInputView):
-            if self.app_state == AppState.GAME_RUNNING:
-                if "Your turn" in self.active_view.handler.prompt:
-                    context_key = "IN_GAME_INPUT"
-                else:
-                    context_key = "PLAYER_TAKEOVER"
-            elif self.app_state in [AppState.AWAITING_THEME_INPUT, AppState.AWAITING_SCENE_INPUT]:
-                context_key = self.app_state
-
-        elif isinstance(self.active_view, TabbedSettingsView):
+        if isinstance(self.active_view, TabbedSettingsView):
             if self.active_view.show_exit_confirmation:
                 context_key = "SETTINGS_CONFIRM"
             elif getattr(self.active_view.pages[self.active_view.active_page_index], 'is_editing', False):
@@ -432,85 +149,49 @@ class UIManager:
             else:
                 context_key = AppState.SETTINGS
 
-        elif isinstance(self.active_view, RoleCreatorView):
-            context_key = "ROLE_CREATOR_TAKEOVER"
-        elif isinstance(self.active_view, PrometheusView):
-            context_key = "PROMETHEUS_TAKEOVER"
-        elif isinstance(self.active_view, MenuView):
-            context_key = "IN_GAME_MENU"
-
         self.help_bar.set_context(context_key)
 
-    def _render(self):
+    def render(self):
         """Prepares all console content and renders it and all SDL primitives in the correct order."""
-        # --- PHASE 1: Prepare all console content ---
         self.root_console.clear()
         if self.active_view:
             self.active_view.render(self.root_console)
-        elif self.app_state == AppState.LOADING_GAME:
+        elif self.app.app_state == AppState.LOADING_GAME:
             self.root_console.print(self.root_console.width // 2, 20, "Please Wait... Loading Game Models",
                                     alignment=tcod.constants.CENTER, fg=(200, 200, 255))
-        elif self.app_state == AppState.SHUTTING_DOWN:
+        elif self.app.app_state == AppState.SHUTTING_DOWN:
             self.root_console.print(self.root_console.width // 2, 20, "Story finished. Saving run and exiting...",
                                     alignment=tcod.constants.CENTER, fg=(220, 220, 200))
         self.help_bar.render(self.root_console)
-
-        # --- PHASE 2: Full SDL Rendering ---
         renderer = self.context.sdl_renderer
         if not renderer or not self.console_render:
-            # Fallback for contexts without a renderer
             self.context.present(self.root_console)
             return
-
-        # Step 2.1: Clear the SDL backbuffer
         renderer.clear()
-
-        # Step 2.2: Render the root_console to a texture and draw it first.
-        # This is now our background layer.
         root_texture = self.console_render.render(self.root_console)
         renderer.copy(root_texture)
-
-        # Step 2.3: Draw SDL primitives from the active view ON TOP of the root console.
         if self.active_view and self.active_view.sdl_primitives:
             lines = [p for p in self.active_view.sdl_primitives if p['type'] == 'line']
             consoles = [p for p in self.active_view.sdl_primitives if p['type'] == 'console']
-
-            # Draw lines over the background
             for prim in lines:
                 points = tcod.los.bresenham(prim['start'], prim['end']).tolist()
                 points_array = np.array(points, dtype=np.intc)
                 if points_array.size > 0:
                     renderer.draw_color = (*prim['color'], 255)
                     renderer.draw_points(points=points_array)
-
-            # Draw individual node consoles over the lines
             for prim in consoles:
                 temp_console = prim['console']
-                if temp_console.width <= 0 or temp_console.height <= 0:
-                    continue
-
-                # Use the helper to render the small console to its own texture
+                if temp_console.width <= 0 or temp_console.height <= 0: continue
                 texture = self.console_render.render(temp_console)
-                texture.blend_mode = tcod.sdl.render.BlendMode.BLEND  # Ensure transparency
-
-                # Copy the node texture to the screen
-                renderer.copy(
-                    texture,
-                    dest=(prim['x'], prim['y'], texture.width, texture.height)
-                )
-
+                texture.blend_mode = tcod.sdl.render.BlendMode.BLEND
+                renderer.copy(texture, dest=(prim['x'], prim['y'], texture.width, texture.height))
             self.active_view.sdl_primitives.clear()
-
-        # --- PHASE 3: Present the final composed frame to the window ---
         renderer.present()
 
     def _sync_text_input_state(self):
-        if not isinstance(self.active_view, TabbedSettingsView):
-            is_text_view = isinstance(self.active_view, TextInputView)
-        else:
-            active_page = self.active_view.pages[self.active_view.active_page_index]
-            is_text_view = getattr(active_page, 'is_editing', False)
-
+        is_text_view = isinstance(self.active_view, TextInputView) or \
+                       (isinstance(self.active_view, TabbedSettingsView) and \
+                        getattr(self.active_view.pages[self.active_view.active_page_index], 'is_editing', False))
         if is_text_view and not self.text_input_active:
             if self.context.sdl_window: self.context.sdl_window.start_text_input()
             self.text_input_active = True
@@ -518,91 +199,38 @@ class UIManager:
             if self.context.sdl_window: self.context.sdl_window.stop_text_input()
             self.text_input_active = False
 
-    def run(self):
-        """The main application loop."""
-        while self.app_state != AppState.EXITING:
-            if not self.sync_input_active:
-                self._process_logic()
+    def process_events(self):
+        self._sync_text_input_state()
+        self._update_help_context()
+        for event in tcod.event.get():
+            converted_event = self.context.convert_event(event)
+            if isinstance(converted_event, tcod.event.Quit):
+                self.app.app_state = AppState.EXITING
+                return
 
-            self._sync_text_input_state()
-            self._update_help_context()
-            self._render()
-
-            if self.app_state == AppState.SHUTTING_DOWN:
-                if self.engine_proc and self.engine_proc.is_alive():
-                    self.engine_proc.join(timeout=5.0)
-                self.app_state = AppState.EXITING
-                continue
-
-            for event in tcod.event.get():
-                converted_event = self.context.convert_event(event)
-
-                if isinstance(converted_event, tcod.event.KeyDown):
-                    if converted_event.sym == tcod.event.KeySym.ESCAPE and self.app_state == AppState.WORLD_CREATING:
-                        from ..worldgen.atlas_manager import AtlasManager
-                        atlas = AtlasManager(self.atlas_engine)
-                        setattr(atlas.world_generator, '_skip_exploration', True)
-                        self.event_log.add_message("Skipping autonomous exploration...")
+            if isinstance(converted_event, tcod.event.KeyDown):
+                if self.app.app_state == AppState.GAME_RUNNING and self.input_queue:
+                    key = converted_event.sym
+                    if key == tcod.event.KeySym.F7:
+                        self.input_queue.put('__INTERRUPT_CAST_MANAGER__')
+                        continue
+                    elif key == tcod.event.KeySym.F8:
+                        self.input_queue.put('__FLAG_LAST_RESPONSE__')
+                        continue
+                    elif key == tcod.event.KeySym.F9:
+                        self.input_queue.put('__INTERRUPT_PLAYER__')
+                        continue
+                    elif key == tcod.event.KeySym.F10:
+                        self.input_queue.put('__INTERRUPT_SAVE__')
                         continue
 
-                if self.active_view: self.active_view.handle_event(converted_event)
+            if self.special_modes.active_mode and self.special_modes.handle_event(converted_event):
+                continue
 
-                if isinstance(converted_event, tcod.event.Quit): self.app_state = AppState.EXITING; break
-
-                if isinstance(converted_event, tcod.event.KeyDown):
-                    if self.special_mode_active == "PEG_V3_TEST":
-                        key = converted_event.sym
-                        phase = self.special_modes.current_peg_phase
-
-                        if key in (tcod.event.KeySym.LEFT, tcod.event.KeySym.RIGHT, tcod.event.KeySym.ESCAPE):
-                            current_app_state = self.app_state
-                            self.special_modes.stop_peg_patches()
-                            if key == tcod.event.KeySym.LEFT:
-                                self.special_modes.peg_v3_scenario_index = (
-                                                                                   self.special_modes.peg_v3_scenario_index - 1) % len(
-                                    self.special_modes.peg_v3_scenarios)
-                            elif key == tcod.event.KeySym.RIGHT:
-                                self.special_modes.peg_v3_scenario_index = (
-                                                                                   self.special_modes.peg_v3_scenario_index + 1) % len(
-                                    self.special_modes.peg_v3_scenarios)
-                            elif key == tcod.event.KeySym.ESCAPE:
-                                self.app_state = AppState.WORLD_SELECTION
-                                self.active_view = None
-                                continue
-                            self.app_state = current_app_state
-                            self.active_view = None
-                            continue
-
-                        # Simplified key handling: any valid progression key calls advance_peg_test_step.
-                        if key in (tcod.event.KeySym.RETURN, tcod.event.KeySym.KP_ENTER, tcod.event.KeySym.SPACE):
-                            if phase in ('DONE', 'FINAL'):
-                                self.active_view = None  # Trigger regeneration
-                            else:
-                                self.special_modes.advance_peg_test_step(key)
-
-                    elif self.special_mode_active == "CHAR_GEN_TEST":
-                        if converted_event.sym == tcod.event.KeySym.ESCAPE:
-                            self.special_modes.stop_character_generation_test()
-                            continue
-
-                    if self.input_queue:
-                        if converted_event.sym == tcod.event.KeySym.F7:
-                            self.input_queue.put('__INTERRUPT_CAST_MANAGER__')
-                        elif converted_event.sym == tcod.event.KeySym.F8:
-                            self.input_queue.put('__FLAG_LAST_RESPONSE__')
-                        elif converted_event.sym == tcod.event.KeySym.F9:
-                            self.input_queue.put('__INTERRUPT_PLAYER__')
-                        elif converted_event.sym in (tcod.event.KeySym.F10, tcod.event.KeySym.ESCAPE):
-                            if self.app_state == AppState.GAME_RUNNING:
-                                self.input_queue.put('__INTERRUPT_SAVE__')
-
-        self.shutdown()
+            if self.active_view:
+                self.active_view.handle_event(converted_event)
 
     def shutdown(self):
         if self.text_input_active:
             if self.context.sdl_window: self.context.sdl_window.stop_text_input()
-        if self.engine_proc and self.engine_proc.is_alive():
-            self.engine_proc.terminate()
-            self.engine_proc.join()
-        self.special_modes.stop_peg_patches()
-        print("\n[SYSTEM] Application has finished. Exiting.")
+        self.special_modes.stop_all()

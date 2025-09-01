@@ -8,6 +8,7 @@ import tcod
 
 from ..ui_framework import View, DynamicTextBox, EventLog
 from ...common.config_loader import config
+from ..app_states import AppState
 
 
 class GameView(View):
@@ -19,6 +20,7 @@ class GameView(View):
         self.console_width = console_width
         self.console_height = console_height
         self.is_debug_mode = is_debug_mode
+        self.help_context_key = AppState.GAME_RUNNING
 
         self.game_state = None
         self.generation_state = None

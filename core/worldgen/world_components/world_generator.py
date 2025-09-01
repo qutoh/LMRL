@@ -1,5 +1,6 @@
 # /core/worldgen/world_components/world_generator.py
 
+from collections import Counter
 from core.common import file_io, utils
 from core.common.config_loader import config
 from .atlas_logic import AtlasLogic
@@ -17,6 +18,7 @@ class WorldGenerator:
         self.content_generator = content_generator
         self.atlas_logic = atlas_logic
         self._skip_exploration = False
+        self.visited_routes = Counter()
 
     def create_new_world_generator(self, theme: str):
         """A generator that yields after each step of world creation and exploration."""
@@ -53,6 +55,7 @@ class WorldGenerator:
             config.load_world_data(world_name)
             current_breadcrumb = [origin_location['Name']]
             visited_breadcrumbs = [current_breadcrumb]
+            self.visited_routes.clear()
 
             for i in range(exploration_steps):
                 if self._skip_exploration:
@@ -66,9 +69,14 @@ class WorldGenerator:
                     break
 
                 utils.log_message('game', f"\n[ATLAS EXPLORATION] Step {i + 1}/{exploration_steps}")
-                breadcrumb, node, status = self.atlas_logic.run_exploration_step(
-                    world_name, theme, current_breadcrumb, current_node, visited_breadcrumbs=visited_breadcrumbs
+                breadcrumb, node, status, route_taken = self.atlas_logic.run_exploration_step(
+                    world_name, theme, current_breadcrumb, current_node,
+                    visited_breadcrumbs=visited_breadcrumbs,
+                    visited_routes=self.visited_routes
                 )
+
+                if route_taken:
+                    self.visited_routes[route_taken] += 1
 
                 current_breadcrumb = breadcrumb
                 if current_breadcrumb not in visited_breadcrumbs:
@@ -80,10 +88,13 @@ class WorldGenerator:
                 utils.log_message('game', f'Description: {current_node["Description"]}')
                 if status == "ACCEPT":
                     utils.log_message('game', "[ATLAS] Atlas just thinks this place is neat :3")
-                    breadcrumb, node, status = self.atlas_logic.run_exploration_step(
+                    breadcrumb, node, status, route_taken = self.atlas_logic.run_exploration_step(
                         world_name, theme, current_breadcrumb,
-                        current_node, visited_breadcrumbs=visited_breadcrumbs
+                        current_node, visited_breadcrumbs=visited_breadcrumbs,
+                        visited_routes=self.visited_routes
                     )
+                    if route_taken:
+                        self.visited_routes[route_taken] += 1
                     current_breadcrumb = breadcrumb
                     if current_breadcrumb not in visited_breadcrumbs:
                         visited_breadcrumbs.append(current_breadcrumb)

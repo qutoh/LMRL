@@ -5,6 +5,7 @@ from ..common import utils
 from ..components import position_manager
 from ..components import roster_manager
 from ..llm import llm_api
+from ..ui.ui_messages import StreamStartMessage, StreamTokenMessage, StreamEndMessage, AddEventLogMessage
 
 
 class TurnManager:
@@ -13,9 +14,9 @@ class TurnManager:
     processing their outcomes. It is orchestrated by a Game Mode.
     """
 
-    def __init__(self, engine, game_state, player_interface):
+    def __init__(self, engine, player_interface):
         self.engine = engine
-        self.game_state = game_state
+        self.game_state = engine.game_state
         self.player_interface = player_interface
 
     def hydrate_proximate_npcs(self):
@@ -90,13 +91,13 @@ class TurnManager:
         builder.add_dialogue_log(self.engine.dialogue_log)
         messages = builder.build()
 
-        self.engine.render_queue.put(('ADD_EVENT_LOG', f"{current_actor['name']} is thinking...", (150, 150, 150)))
+        self.engine.render_queue.put(AddEventLogMessage(f"{current_actor['name']} is thinking...", (150, 150, 150)))
 
         # --- STREAMING IMPLEMENTATION ---
-        self.engine.render_queue.put(('STREAM_START', current_actor['name']))
+        self.engine.render_queue.put(StreamStartMessage(current_actor['name']))
 
         def on_token_stream(delta: str, is_retry_clear: bool = False):
-            self.engine.render_queue.put(('STREAM_TOKEN', delta, is_retry_clear))
+            self.engine.render_queue.put(StreamTokenMessage(delta, is_retry_clear))
 
         def should_stop(current_buffer: str):
             # This can be expanded later to allow for early termination logic.
@@ -113,7 +114,7 @@ class TurnManager:
             should_stop=should_stop
         )
 
-        self.engine.render_queue.put(('STREAM_END',))
+        self.engine.render_queue.put(StreamEndMessage())
         # --- END STREAMING IMPLEMENTATION ---
 
         prose = command_parser.post_process_llm_response(self.engine, current_actor, raw_llm_response,

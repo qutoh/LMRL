@@ -49,6 +49,7 @@ class SettingsTabPage(Widget):
         self.edit_handler.text = str(value) if not isinstance(value, list) else ", ".join(map(str, value))
         self.edit_handler.cursor_pos = len(self.edit_handler.text)
         self.error_message = None
+        self.parent_view.update_help_context()
 
     def _stop_editing(self, new_value_str: Optional[Any] = None):
         if new_value_str is not None and self.setting_keys:
@@ -67,6 +68,7 @@ class SettingsTabPage(Widget):
 
         self.is_editing = False
         self.edit_handler = None
+        self.parent_view.update_help_context()
 
     def _restore_default(self):
         if not self.setting_keys: return
@@ -76,6 +78,7 @@ class SettingsTabPage(Widget):
         self.is_editing = False
         self.edit_handler = None
         self.error_message = None
+        self.parent_view.update_help_context()
 
     def _revert_to_original(self):
         if not self.setting_keys: return
@@ -85,6 +88,7 @@ class SettingsTabPage(Widget):
         self.is_editing = False
         self.edit_handler = None
         self.error_message = None
+        self.parent_view.update_help_context()
 
     def _cycle_value(self, direction: int):
         if not self.setting_keys: return
@@ -309,9 +313,11 @@ class TabbedSettingsView(View):
         self.modal_view: Optional[View] = None
         self.info_message: Optional[str] = None
         self.info_message_timer = 0
+        self.help_context_key = "DEFAULT"
 
         self._rebuild_pages()
         self._build_confirmation_dialog()
+        self.update_help_context()
 
     def _rebuild_pages(self):
         content_x, content_y = 1, 4
@@ -342,6 +348,15 @@ class TabbedSettingsView(View):
         self.confirmation_dialog = Frame(vbox, title=loc('settings_exit_confirm_title'))
         self.confirmation_dialog.center_in_parent(self.console_width, self.console_height)
 
+    def update_help_context(self):
+        if self.show_exit_confirmation:
+            self.help_context_key = "SETTINGS_CONFIRM"
+        elif getattr(self.pages[self.active_page_index], 'is_editing', False):
+            self.help_context_key = "SETTINGS_EDIT"
+        else:
+            self.help_context_key = "SETTINGS_NAV"
+
+
     def _has_unsaved_changes(self) -> bool:
         return self.original_settings != config.settings
 
@@ -363,6 +378,7 @@ class TabbedSettingsView(View):
             for child in self.confirmation_dialog.child.children:
                 if isinstance(child, Button):
                     child.selected = False
+        self.update_help_context()
 
     def _show_info_message(self, message: str):
         self.info_message = message
@@ -437,6 +453,7 @@ class TabbedSettingsView(View):
             if event.sym == tcod.event.KeySym.ESCAPE:
                 if self._has_unsaved_changes():
                     self.show_exit_confirmation = True
+                    self.update_help_context()
                 else:
                     self.on_back()
                 return
@@ -467,11 +484,13 @@ class TabbedSettingsView(View):
             console.print(2, self.console_height - 3, self.info_message, fg=(100, 255, 100))
             self.info_message_timer -= 1
 
-        footer = loc('settings_footer_nav')
+        footer_key = getattr(active_page, 'help_context_key', self.help_context_key)
         if isinstance(active_page, SettingsProfilePage):
             footer = loc('help_bar_settings_profiles')
         elif getattr(active_page, 'is_editing', False):
             footer = loc('settings_footer_edit')
+        else:
+            footer = loc('settings_footer_nav')
         console.print(2, self.console_height - 2, footer, fg=(200, 200, 200))
 
         if self.show_exit_confirmation:

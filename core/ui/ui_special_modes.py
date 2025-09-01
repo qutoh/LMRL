@@ -34,6 +34,7 @@ class SpecialModeManager:
 
     def __init__(self, ui_manager):
         self.ui_manager = ui_manager
+        self.active_mode = None
         self.plausible_subfeatures = [
             ("Bookshelf", "GENERIC_INTERACTABLE"), ("Small Alcove", "GENERIC_CONTAINER"),
             ("Weapon Rack", "GENERIC_INTERACTABLE"), ("Fireplace", "GENERIC_INTERACTABLE"),
@@ -53,6 +54,75 @@ class SpecialModeManager:
         self.char_gen_queue = None
         self.char_gen_stop_event = None
         self.generated_characters = []
+        self.peg_v3_scenarios = []
+        self.peg_v3_scenario_index = 0
+
+    def set_active_mode(self, app_state: AppState):
+        """Sets the active special mode based on the application state."""
+        if app_state == AppState.PEG_V3_TEST:
+            self.active_mode = "PEG_V3_TEST"
+        elif app_state == AppState.CHARACTER_GENERATION_TEST:
+            self.active_mode = "CHAR_GEN_TEST"
+        elif app_state == AppState.CALIBRATING:
+            self.active_mode = "CALIBRATING"
+        else:
+            self.active_mode = None
+
+    def process_logic(self, app_state: AppState):
+        """Handles the logic tick for the currently active special mode."""
+        if app_state == AppState.PEG_V3_TEST:
+            if self.peg_test_generator is None:
+                self.run_peg_v3_test()
+        elif app_state == AppState.CHARACTER_GENERATION_TEST:
+            self.handle_character_generation_updates()
+
+    def handle_event(self, event: tcod.event.Event) -> bool:
+        """
+        Handles events for active special modes. Returns True if the event was
+        consumed, False otherwise.
+        """
+        if not self.active_mode:
+            return False
+
+        if self.active_mode == "PEG_V3_TEST":
+            if isinstance(event, tcod.event.KeyDown):
+                key = event.sym
+                phase = self.current_peg_phase
+
+                if key in (tcod.event.KeySym.LEFT, tcod.event.KeySym.RIGHT, tcod.event.KeySym.ESCAPE):
+                    current_app_state = self.ui_manager.app.app_state
+                    self.stop_peg_patches()
+                    if key == tcod.event.KeySym.LEFT:
+                        self.peg_v3_scenario_index = (self.peg_v3_scenario_index - 1) % len(self.peg_v3_scenarios)
+                    elif key == tcod.event.KeySym.RIGHT:
+                        self.peg_v3_scenario_index = (self.peg_v3_scenario_index + 1) % len(self.peg_v3_scenarios)
+                    elif key == tcod.event.KeySym.ESCAPE:
+                        self.ui_manager.app.app_state = AppState.WORLD_SELECTION
+                        self.ui_manager.active_view = None
+                        return True
+
+                    self.ui_manager.app.app_state = current_app_state
+                    self.ui_manager.active_view = None
+                    return True
+
+                if key in (tcod.event.KeySym.RETURN, tcod.event.KeySym.KP_ENTER, tcod.event.KeySym.SPACE):
+                    if phase in ('DONE', 'FINAL'):
+                        self.ui_manager.active_view = None
+                    else:
+                        self.advance_peg_test_step(key)
+                    return True
+
+        elif self.active_mode == "CHAR_GEN_TEST":
+            if isinstance(event, tcod.event.KeyDown) and event.sym == tcod.event.KeySym.ESCAPE:
+                self.stop_character_generation_test()
+                return True
+
+        return False
+
+    def stop_all(self):
+        """Stops all active special mode processes (threads, patches)."""
+        self.stop_peg_patches()
+        self.stop_character_generation_test()
 
     def start_character_generation_test(self, context: str):
         """Initializes and kicks off the character generation test."""
@@ -69,13 +139,13 @@ class SpecialModeManager:
             console_width=self.ui_manager.root_console.width,
             console_height=self.ui_manager.root_console.height
         )
-        self.ui_manager.special_mode_active = "CHAR_GEN_TEST"
+        self.active_mode = "CHAR_GEN_TEST"
 
     def _generate_initial_equipment_stepwise_for_test(self, equipment_agent, physical_description: str) -> list[dict]:
         """A copy of the stepwise fallback for use in the isolated test environment."""
         utils.log_message('debug', "[CHAR_GEN_TEST] JSON generation failed, using stepwise fallback.")
         names_kwargs = {"physical_description": physical_description}
-        names_response = execute_task(self.ui_manager.atlas_engine, equipment_agent,
+        names_response = execute_task(self.ui_manager.app.atlas_engine, equipment_agent,
                                       'EQUIPMENT_GET_ITEM_NAMES_FROM_DESC', [], task_prompt_kwargs=names_kwargs)
 
         item_names = [name.strip() for name in names_response.split(';') if name.strip()]
@@ -83,11 +153,11 @@ class SpecialModeManager:
             return []
 
         desc_kwargs = {"item_names_list": "; ".join(item_names), "context": physical_description}
-        raw_desc_response = execute_task(self.ui_manager.atlas_engine, equipment_agent, 'EQUIPMENT_DESCRIBE_ITEMS', [],
+        raw_desc_response = execute_task(self.ui_manager.app.atlas_engine, equipment_agent, 'EQUIPMENT_DESCRIBE_ITEMS', [],
                                          task_prompt_kwargs=desc_kwargs)
 
         command = command_parser.parse_structured_command(
-            self.ui_manager.atlas_engine, raw_desc_response, equipment_agent.get('name'),
+            self.ui_manager.app.atlas_engine, raw_desc_response, equipment_agent.get('name'),
             fallback_task_key='CH_FIX_INITIAL_EQUIPMENT_JSON'
         )
 
@@ -106,7 +176,7 @@ class SpecialModeManager:
 
         while not self.char_gen_stop_event.is_set():
             initial_char = character_factory.create_lead_from_role_and_scene(
-                self.ui_manager.atlas_engine, director_agent,
+                self.ui_manager.app.atlas_engine, director_agent,
                 self.char_gen_context, generic_role
             )
             if not initial_char:
@@ -141,7 +211,7 @@ class SpecialModeManager:
                 else:
                     update_desc_kwargs = {"original_description": char_state.get('physical_description', ''),
                                           "items_added": "None", "items_removed": item_to_remove['name']}
-                    new_desc = execute_task(self.ui_manager.atlas_engine, director_agent,
+                    new_desc = execute_task(self.ui_manager.app.atlas_engine, director_agent,
                                             'DIRECTOR_UPDATE_PHYSICAL_DESCRIPTION', [],
                                             task_prompt_kwargs=update_desc_kwargs)
                     if new_desc: char_state['physical_description'] = new_desc.strip()
@@ -177,7 +247,7 @@ class SpecialModeManager:
                     utils.log_message('debug', "[CHAR_GEN_TEST_WARNING] Outfit hashing failed on re-add.")
                     update_desc_kwargs = {"original_description": char_state.get('physical_description', ''),
                                           "items_added": item_to_add['name'], "items_removed": "None"}
-                    new_desc = execute_task(self.ui_manager.atlas_engine, director_agent,
+                    new_desc = execute_task(self.ui_manager.app.atlas_engine, director_agent,
                                             'DIRECTOR_UPDATE_PHYSICAL_DESCRIPTION', [],
                                             task_prompt_kwargs=update_desc_kwargs)
                     if new_desc: char_state['physical_description'] = new_desc.strip()
@@ -210,46 +280,8 @@ class SpecialModeManager:
         self.char_gen_stop_event = None
         self.generated_characters = []
 
-        self.ui_manager.app_state = AppState.WORLD_SELECTION
-        self.ui_manager.active_view = None
-        self.ui_manager.special_mode_active = None
-
-    def start_calibration(self):
-        """Initializes and kicks off the calibration process."""
-        ui = self.ui_manager
-        cal_manager = CalibrationManager(ui.atlas_engine, ui.model_manager.embedding_model, ui.event_log)
-        ui.calibration_jobs = cal_manager.get_calibration_plan()
-        ui.current_job_index = 0
-
-    def _run_single_calibration_job(self, job):
-        """The target function for the calibration thread. Runs one job."""
-        ui = self.ui_manager
-        model_id = job['model_id']
-        task = job['task']
-
-        ui.calibration_update_queue.put({'type': 'status', 'text': f"Loading model for calibration: {model_id}..."})
-        ui.model_manager.set_active_models([model_id])
-        ui.model_manager.models_loaded.wait()
-
-        cal_manager = CalibrationManager(ui.atlas_engine, ui.model_manager.embedding_model, ui.event_log,
-                                         ui.calibration_update_queue)
-        cal_manager.run_calibration_test(job)
-
-    def handle_calibration_step(self):
-        """Checks calibration progress and starts the next job if ready."""
-        ui = self.ui_manager
-        if ui.calibration_thread is None or not ui.calibration_thread.is_alive():
-            if ui.current_job_index >= len(ui.calibration_jobs):
-                ui.calibration_update_queue.put({'type': 'status', 'text': "Calibration complete for all models."})
-                # Short delay to allow the final message to be seen
-                time.sleep(3)
-                ui.app_state = AppState.WORLD_SELECTION
-            else:
-                job = ui.calibration_jobs[ui.current_job_index]
-                ui.calibration_thread = threading.Thread(target=self._run_single_calibration_job, args=(job,),
-                                                         daemon=True)
-                ui.calibration_thread.start()
-                ui.current_job_index += 1
+        self.ui_manager.app.app_state = AppState.WORLD_SELECTION
+        self.active_mode = None
 
     def _mock_execute_task_for_peg(self, engine, agent, task_key, messages, **kwargs):
         """A stateful mock function to replace llm_api.execute_task for the PEG tests."""
@@ -442,14 +474,14 @@ class SpecialModeManager:
         self.last_peg_state = None
         self.last_path_tracer.clear()
 
-        if not hasattr(self, 'peg_v3_scenarios'):
+        if not self.peg_v3_scenarios:
             scenarios_path = file_io.join_path(config.data_dir, 'peg_v3_test_scenarios.json')
             self.peg_v3_scenarios = file_io.read_json(scenarios_path, default=[])
             self.peg_v3_scenario_index = 0
 
         if not self.peg_v3_scenarios:
             ui.event_log.add_message("peg_v3_test_scenarios.json not found or empty.", (255, 100, 100))
-            ui.app_state = AppState.WORLD_SELECTION
+            ui.app.app_state = AppState.WORLD_SELECTION
             return
 
         scenario = self.peg_v3_scenarios[self.peg_v3_scenario_index]
@@ -463,15 +495,15 @@ class SpecialModeManager:
                                      area_names]
 
         game_state = GameState()
-        architect = MapArchitectV3(ui.atlas_engine, game_state.game_map, "PEG V3 Test", scenario['name'])
+        architect = MapArchitectV3(ui.app.atlas_engine, game_state.game_map, "PEG V3 Test", scenario['name'])
 
-        ui.active_view = GameView(ui.event_log, None, is_debug_mode=True)
-        ui.active_view.update_state(game_state)
+        ui.game_view.update_state(game_state)
+        ui.active_view = ui.game_view
+
 
         def ui_render_callback(gen_state):
             if isinstance(ui.active_view, GameView):
                 ui.active_view.update_state(game_state, gen_state)
-                ui._render()
 
         self._start_peg_patches()
         self.peg_test_generator = architect.generate_layout_in_steps(ui_render_callback)
@@ -485,13 +517,10 @@ class SpecialModeManager:
         if self.peg_test_generator is None:
             return
 
-        # Phases that are animation frames and should always cause a pause
         animation_phases = ['INITIAL_GROWTH_STEP', 'SUBFEATURE_GROWTH_STEP', 'PATH_DRAW_STEP']
-        # Major phases that require explicit user confirmation to proceed
         major_decision_phases = ['POST_GROWTH', 'PRE_JITTER', 'PRE_INTERIOR_PLACEMENT', 'PRE_CONNECT', 'POST_CONNECT']
 
-        # The main loop that drives the generator forward.
-        for _ in range(500):  # Safety break to prevent infinite loops
+        for _ in range(500):
             try:
                 phase, state = next(self.peg_test_generator)
                 self.current_peg_phase = phase
@@ -500,19 +529,14 @@ class SpecialModeManager:
                 self.current_peg_phase = 'DONE'
                 break
 
-            # If we hit an animation frame, break to render it.
             if self.current_peg_phase in animation_phases:
                 break
-
-            # If fast-forwarding, only stop for major decisions.
             if key_sym == tcod.event.KeySym.SPACE:
                 if self.current_peg_phase in major_decision_phases:
                     break
-            # If single-stepping, stop for major decisions too.
             elif self.current_peg_phase in major_decision_phases:
                 break
 
-        # After the loop, update the UI prompt based on the final phase we paused on.
         scenario = self.peg_v3_scenarios[self.peg_v3_scenario_index]
         title_str = "PEG V3 (Iterative)"
         base_text = f"Scenario: {scenario['name']} | [LEFT/RIGHT] Change | [ESC] Back"
@@ -537,11 +561,3 @@ class SpecialModeManager:
             self.stop_peg_patches()
             if self.last_peg_state:
                 self._save_peg_test_output(self.last_peg_state, scenario['name'])
-
-        game_log_box = DynamicTextBox(
-            title=title_str, text=f"{title_str}: {base_text}{prompt_text}",
-            x=0, y=self.ui_manager.root_console.height - 10, max_width=self.ui_manager.root_console.width, max_height=9
-        )
-        if self.ui_manager.active_view:
-            self.ui_manager.active_view.game_log_box = game_log_box
-            self.ui_manager.active_view.widgets = [game_log_box]

@@ -417,8 +417,8 @@ def place_character_group_contextually(engine, game_state: GameState, character_
 
     # 2. Have the Director choose a location
     chosen_tag = None
-    if valid_locations:
-        placer_agent = engine.config.agents.get('DIRECTOR')
+    placer_agent = config.agents.get('DIRECTOR')
+    if valid_locations and placer_agent:
         char_list_str = "\n".join(f"- {c['name']}: {c['description']}" for c in characters)
         valid_tags_str = ", ".join(f"'{tag}'" for tag in valid_locations.keys())
 
@@ -541,6 +541,11 @@ def process_movement_intent(engine, game_state: GameState, character_name: str, 
     if not command or command.get("action", "").upper() != "MOVE":
         utils.log_message('debug', f"[POSITION] No valid MOVE command could be determined.")
         return
+
+    if not command.get("mover"):
+        command["mover"] = character_name
+        utils.log_message('debug',
+                          f"[POSITION] LLM omitted 'mover' from command. Defaulting to current actor: {character_name}")
 
     # --- 3. Process the command based on target type ---
     target_name = command.get("target")

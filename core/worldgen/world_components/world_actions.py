@@ -24,7 +24,7 @@ class WorldActions:
     def navigate(self, current_node, breadcrumb, world_theme, scene_prompt, connections,
                  target_location_concept: dict | None = None):
         """Handles the NAVIGATE action by asking the LLM to choose a destination."""
-        if not connections: return breadcrumb, current_node, "ACCEPT"
+        if not connections: return breadcrumb, current_node, "ACCEPT", None
 
         dest_str = "\n".join(f"- {name} ({rel})" for rel, name in connections.items())
 
@@ -54,12 +54,13 @@ class WorldActions:
                     if individual_name.lower() in target_name_from_llm.lower():
                         new_breadcrumb = self.navigator.calculate_new_breadcrumb(breadcrumb, rel, individual_name)
                         if new_breadcrumb:
+                            route_taken = tuple(sorted((current_node["Name"], individual_name)))
                             return new_breadcrumb, file_io._find_node_by_breadcrumb(config.world,
-                                                                                    new_breadcrumb), "CONTINUE"
+                                                                                    new_breadcrumb), "CONTINUE", route_taken
 
         utils.log_message('debug',
                           f"[ATLAS] Navigation failed. LLM chose an invalid target: '{target_name_from_llm}'. Accepting current state.")
-        return breadcrumb, current_node, "ACCEPT"
+        return breadcrumb, current_node, "ACCEPT", None
 
     def create_and_place_location(self, world_name, world_theme, breadcrumb, current_node,
                                   relationship_override, scene_prompt,
@@ -73,7 +74,7 @@ class WorldActions:
         if not new_loc_data:
             utils.log_message('debug',
                               f"[ATLAS] Location creation failed for parent '{current_node.get('Name')}'. Accepting current state.")
-            return breadcrumb, current_node, "ACCEPT"
+            return breadcrumb, current_node, "ACCEPT", None
 
         if relationship_override:
             utils.log_message('debug',
@@ -82,11 +83,13 @@ class WorldActions:
 
         rel = new_loc_data.pop("Relationship").upper()
         new_name = new_loc_data["Name"]
+        route_taken = tuple(sorted((current_node["Name"], new_name)))
 
         if rel == "OUTSIDE":
             if "PARENT" in current_node.get("relationships", {}):
                 new_breadcrumb = breadcrumb[:-1]
-                return new_breadcrumb, file_io._find_node_by_breadcrumb(config.world, new_breadcrumb), "CONTINUE"
+                return new_breadcrumb, file_io._find_node_by_breadcrumb(config.world,
+                                                                        new_breadcrumb), "CONTINUE", route_taken
         elif rel in self.navigator.HIERARCHICAL_RELATIONSHIPS:
             new_loc_data.setdefault("relationships", {})["PARENT_RELATION"] = rel
             file_io.add_child_to_world(world_name, breadcrumb, new_loc_data)
@@ -95,7 +98,7 @@ class WorldActions:
             file_io.add_relationship_to_node(world_name, new_node_breadcrumb, "PARENT", current_node["Name"])
             config.load_world_data(world_name)
             return new_node_breadcrumb, file_io._find_node_by_breadcrumb(config.world,
-                                                                         new_node_breadcrumb), "CONTINUE"
+                                                                         new_node_breadcrumb), "CONTINUE", route_taken
         elif rel in self.navigator.LATTICE_RELATIONSHIPS:
             parent_breadcrumb = breadcrumb[:-1]
             file_io.add_child_to_world(world_name, parent_breadcrumb, new_loc_data)
@@ -108,5 +111,5 @@ class WorldActions:
                                              current_node.get("relationships", {}).get("PARENT"))
             config.load_world_data(world_name)
             return new_node_breadcrumb, file_io._find_node_by_breadcrumb(config.world,
-                                                                         new_node_breadcrumb), "CONTINUE"
-        return breadcrumb, current_node, "ACCEPT"
+                                                                         new_node_breadcrumb), "CONTINUE", route_taken
+        return breadcrumb, current_node, "ACCEPT", None

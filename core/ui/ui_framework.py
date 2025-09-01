@@ -1,3 +1,4 @@
+# /core/ui/ui_framework.py
 import textwrap
 from math import sqrt
 from typing import Callable, Optional, Tuple
@@ -308,6 +309,7 @@ class View:
         self.sdl_primitives = []
         self.focusable_widgets: list[Widget] = []
         self.focused_widget_index: int = 0
+        self.help_context_key = None
 
     def _update_focusable_widgets(self):
         """Should be called whenever the view's widget list changes."""
@@ -334,10 +336,9 @@ class View:
         self.sdl_primitives.append({'type': 'line', 'start': start_xy, 'end': end_xy, 'color': color})
 
     def handle_event(self, event: tcod.event.Event):
-        # Pass the event ONLY to the focused widget
-        if self.focusable_widgets:
-            focused_widget = self.focusable_widgets[self.focused_widget_index]
-            focused_widget.handle_event(event)
+        # Pass the event to all widgets, not just the focused one, for things like mouse hover.
+        for widget in self.widgets:
+            widget.handle_event(event)
 
     def render(self, console: tcod.console.Console):
         for widget in self.widgets:

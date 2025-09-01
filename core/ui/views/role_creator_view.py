@@ -14,12 +14,14 @@ class RoleCreatorView(View):
     """A view for interactively creating character role groups."""
 
     def __init__(self, on_submit: Callable[[Optional[str]], None], context_text: str, console_width: int,
-                 console_height: int, parent_ui_manager: 'UIManager'):
+                 console_height: int, app_controller: 'Application'):
         super().__init__()
         self.on_submit = on_submit
         self.console_width = console_width
         self.console_height = console_height
-        self.parent_ui_manager = parent_ui_manager
+        self.app_controller = app_controller
+        self.ui_manager = app_controller.ui_manager # For convenience
+        self.help_context_key = "ROLE_CREATOR_TAKEOVER"
 
         self.groups = [{"group_description": "Initial group of adventurers.", "roles": []}]
         self.context_text = context_text
@@ -110,26 +112,26 @@ class RoleCreatorView(View):
         self.on_text_submit_callback = lambda text: self._submit_new_role(text, group_index)
         handler = TextInputHandler(prompt="Enter a new role description (e.g., 'a grizzled veteran')",
                                    width=self.console_width - 2, prefix="> ")
-        self.parent_ui_manager.active_view = TextInputView(handler, self.on_text_submit_callback)
+        self.ui_manager.active_view = TextInputView(handler, self.on_text_submit_callback)
 
     def _submit_new_role(self, text: str, group_index: int):
         if text and 0 <= group_index < len(self.groups):
             self.groups[group_index]['roles'].append(text)
         self._rebuild_widgets()
-        self.parent_ui_manager.active_view = self
+        self.ui_manager.active_view = self
 
     def _prompt_for_edit_desc(self, group_index: int):
         self.on_text_submit_callback = lambda text: self._submit_new_description(text, group_index)
         initial_text = self.groups[group_index]['group_description']
         handler = TextInputHandler(prompt="Enter the group's shared context/description",
                                    width=self.console_width - 2, prefix="> ", initial_text=initial_text)
-        self.parent_ui_manager.active_view = TextInputView(handler, self.on_text_submit_callback)
+        self.ui_manager.active_view = TextInputView(handler, self.on_text_submit_callback)
 
     def _submit_new_description(self, text: str, group_index: int):
         if text and 0 <= group_index < len(self.groups):
             self.groups[group_index]['group_description'] = text
         self._rebuild_widgets()
-        self.parent_ui_manager.active_view = self
+        self.ui_manager.active_view = self
 
     def handle_event(self, event: tcod.event.Event):
         for widget in self.widgets:

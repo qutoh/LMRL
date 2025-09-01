@@ -8,6 +8,7 @@ import tiktoken
 from .config_loader import config
 from .localization import loc
 import numpy as np
+from ..ui.ui_messages import AddEventLogMessage
 
 LOG_HIERARCHY = {'game': 0, 'story': 1, 'debug': 2, 'full': 3}
 
@@ -37,7 +38,8 @@ class _Logger:
         setting_val = LOG_HIERARCHY.get(log_level_setting, 2)
         if level == 'game' and self.render_queue:
             try:
-                self.render_queue.put_nowait(('GAME_LOG_UPDATE', message))
+                # --- THIS IS THE FIX ---
+                self.render_queue.put_nowait(AddEventLogMessage(message))
             except Exception:
                 pass
         should_print = False

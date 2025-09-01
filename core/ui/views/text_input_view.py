@@ -17,6 +17,7 @@ class TextInputView(View):
         self.on_submit = on_submit
         self._cursor_timer = 0
         self._show_cursor = True
+        self.help_context_key = "IN_GAME_INPUT" if "Your turn" in self.handler.prompt else "PLAYER_TAKEOVER"
 
     def handle_event(self, event: tcod.event.Event):
         result = self.handler.handle_event(event)
