@@ -81,6 +81,11 @@
     "default_adjustment": -0.2,
     "is_failure_handler": true
   },
+  "CH_FIX_TILE_JSON": {
+    "task_prompt_key": "task_prompt_ch_fix_tile_json",
+    "source_agent": "COMMAND_HANDLER",
+    "is_failure_handler": true
+  },
   "CH_FIX_PROCGEN": {
     "task_prompt_key": "task_prompt_ch_fix_procgen",
     "source_agent": "COMMAND_HANDLER",

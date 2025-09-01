@@ -1,0 +1,9 @@
+{
+  "movement_capabilities": {
+    "GROUND": "They can travel on foot or with common land-based mounts like horses.",
+    "FLYING": "They can fly over obstacles and terrain that would impede ground travel.",
+    "SWIM": "They can move through water tiles.",
+    "PHASING": "They can move through solid objects as if they were not there.",
+    "PASS_WALL": "A special ability to move directly through walls and barriers."
+  }
+}

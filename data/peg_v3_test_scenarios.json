@@ -6,13 +6,13 @@
         "features": [
           {
             "name": "Courtyard",
-            "type": "GENERIC_CONTAINER",
+            "type": "GENERIC_SPACE",
             "size_tier": "large",
             "description_sentence": "A muddy central courtyard, open to the sky and surrounded by high walls."
           },
           {
             "name": "Mess Hall",
-            "type": "GENERIC_CONTAINER",
+            "type": "GENERIC_ROOM",
             "size_tier": "large",
             "description_sentence": "A long hall with rows of wooden tables, smelling of stale ale and old stew."
           }
@@ -27,12 +27,12 @@
       "PEG_V2_GET_AREA_NAMES": "Barracks; Armory; Captain's Quarters; Mess Hall; Courtyard; Stables",
       "PEG_V2_RANK_AREAS": "Courtyard; Mess Hall; Barracks; Stables; Armory; Captain's Quarters",
       "PEG_V2_DEFINE_AREA_DATA": {
-        "Courtyard": { "description": "A muddy central courtyard, open to the sky.", "type": "GENERIC_CONTAINER", "size_tier": "large" },
-        "Mess Hall": { "description": "A large hall with long wooden tables for dining.", "type": "GENERIC_CONTAINER", "size_tier": "large" },
-        "Barracks": { "description": "Rows of bunks for the fortress garrison.", "type": "GENERIC_CONTAINER", "size_tier": "medium" },
-        "Stables": { "description": "Stalls for horses, smelling of hay and manure.", "type": "GENERIC_CONTAINER", "size_tier": "medium" },
-        "Armory": { "description": "Racks of weapons and stands of armor line the walls.", "type": "GENERIC_CONTAINER", "size_tier": "small" },
-        "Captain's Quarters": { "description": "A private, spartan room for the fort's commander.", "type": "GENERIC_CONTAINER", "size_tier": "small" }
+        "Courtyard": { "description": "A muddy central courtyard, open to the sky.", "type": "GENERIC_SPACE", "size_tier": "large" },
+        "Mess Hall": { "description": "A large hall with long wooden tables for dining.", "type": "GENERIC_ROOM", "size_tier": "large" },
+        "Barracks": { "description": "Rows of bunks for the fortress garrison.", "type": "GENERIC_ROOM", "size_tier": "medium" },
+        "Stables": { "description": "Stalls for horses, smelling of hay and manure.", "type": "GENERIC_ROOM", "size_tier": "medium" },
+        "Armory": { "description": "Racks of weapons and stands of armor line the walls.", "type": "GENERIC_ROOM", "size_tier": "small" },
+        "Captain's Quarters": { "description": "A private, spartan room for the fort's commander.", "type": "GENERIC_ROOM", "size_tier": "small" }
       }
     }
   }

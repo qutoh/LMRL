@@ -136,14 +136,14 @@ class LocationFinder:
                     utils.log_message('debug', "[ATLAS] Decided to NAVIGATE but no connections exist. Breaking loop.")
                     break
 
-                breadcrumb, current_node, _ = self.world_actions.navigate(current_node, breadcrumb, world_theme,
+                breadcrumb, current_node, _, _ = self.world_actions.navigate(current_node, breadcrumb, world_theme,
                                                                           scene_prompt, connections,
                                                                           target_location_concept)
                 visited_breadcrumbs.append(breadcrumb)
 
 
             elif action == "CREATE":
-                breadcrumb, current_node, _ = self.world_actions.create_and_place_location(world_name, world_theme,
+                breadcrumb, current_node, _, _ = self.world_actions.create_and_place_location(world_name, world_theme,
                                                                                            breadcrumb,
                                                                                            current_node, None,
                                                                                            scene_prompt,

@@ -65,7 +65,6 @@ class SetupManager:
             self.engine.render_queue.put(self.game_state)
             if self.engine.dialogue_log:
                 log_key = 'log_story_resumes' if self.engine.load_path else 'log_story_start'
-                # The detailed game log is now the primary source of startup info, so we simplify this.
                 if self.engine.load_path:
                     utils.log_message('game', loc(log_key))
 
@@ -150,30 +149,14 @@ class SetupManager:
         run_scene_path = file_io.join_path(self.engine.run_path, 'scene.json')
         file_io.write_json(run_scene_path, [chosen_scene])
 
-        # --- Generation Phase ---
         cached_level = self.engine.config.levels.get(scene_prompt)
         generation_state = self._reconstruct_generation_state_from_cache(cached_level)
 
         if not generation_state:
-            # --- New: LLM chooses exterior tile ---
-            llm = V3_LLM(self.engine)
-            tiles = {
-                name: data for name, data in self.engine.config.tile_types.items()
-                if name != "VOID_SPACE"
-            }
-            tile_options_str = "\n".join(
-                f"- `{name}`: {data.get('description', 'No description.')}" for name, data in tiles.items()
-            )
-            chosen_tile = llm.choose_exterior_tile(scene_prompt, tile_options_str)
-            if chosen_tile not in tiles:
-                chosen_tile = "VOID_SPACE"  # Fallback
-
-            utils.log_message('debug', f"[PEG Setup] LLM chose '{chosen_tile}' as the exterior tile.")
-
             procgen = ProcGenManager(self.engine)
+            map_artist = MapArtist()
 
             def redraw_and_update_ui(gen_state):
-                map_artist = MapArtist()
                 map_artist.draw_map(self.game_state.game_map, gen_state, self.engine.config.features)
                 self.engine.render_queue.put(self.game_state)
                 import time
@@ -181,7 +164,6 @@ class SetupManager:
 
             generation_state = procgen.generate(scene_prompt, self.game_state.game_map,
                                                 ui_callback=redraw_and_update_ui)
-            generation_state.exterior_tile_type = chosen_tile
             self._cache_newly_generated_level(scene_prompt, generation_state)
 
         self.engine.generation_state = generation_state
@@ -190,11 +172,7 @@ class SetupManager:
         map_artist = MapArtist()
         map_artist.draw_map(self.game_state.game_map, generation_state, self.engine.config.features)
 
-        # --- Character and Casting Phase ---
-        # Load leads and DMs, but defer inhabitants and proc-gen characters
         roster_manager.load_characters_from_scene(self.engine, chosen_scene, hydrate_inhabitants=False)
-
-        # Store character concepts from world file and proc-gen for later hydration
         self.engine.dehydrated_npcs.extend(
             chosen_scene.get('source_location', {}).get('inhabitants', [])
         )
@@ -207,8 +185,6 @@ class SetupManager:
 
         if self.game_state:
             roster_manager.spawn_entities_from_roster(self.engine, self.game_state)
-
-            # --- New Group-based Placement ---
             placed_character_names = set()
             for group in character_groups:
                 position_manager.place_character_group_contextually(self.engine, self.game_state, group,
@@ -216,14 +192,12 @@ class SetupManager:
                 for char in group['characters']:
                     placed_character_names.add(char['name'])
 
-            # --- Place remaining individual characters ---
             for character in self.engine.characters:
                 if character.get('is_positional') and character['name'] not in placed_character_names:
                     position_manager.place_character_contextually(self.engine, self.game_state, character,
                                                                   generation_state,
-                                                                  [])  # No context needed for individuals now
+                                                                  [])
 
-        # Build a descriptive summary of the entire generated level for the player.
         level_description_sentences = []
         if generation_state and generation_state.placed_features:
             if generation_state.narrative_log:

@@ -163,17 +163,15 @@ class AtlasLogic:
             action = raw_action.strip().replace('`', '')
             utils.log_message('game', f"[ATLAS] Decided action: {action}")
 
-            # Check if the chosen action is a blocked navigation
             if action in connections:
-                target_name = connections[action].split(',')[0].strip()  # Handle multiple connections
+                target_name = connections[action].split(',')[0].strip()
                 route = tuple(sorted((current_node["Name"], target_name)))
                 if visited_routes.get(route, 0) >= 2:
                     mud_prompt = f"> {action}\n> You can't go that way, the route is blocked."
                     utils.log_message('game', mud_prompt)
-                    context_string += f"\n\n{mud_prompt}"  # Add feedback to context for re-prompt
-                    continue  # Re-run the decision loop
+                    context_string += f"\n\n{mud_prompt}"
+                    continue
 
-            # --- Handle Action Short-circuiting ---
             if action in connections:
                 target_name = connections[action]
                 utils.log_message('game', f"[ATLAS] Action '{action}' moved to '{target_name}'.")
@@ -182,15 +180,17 @@ class AtlasLogic:
             elif action in self.navigator.get_available_relationships(breadcrumb,
                                                                       current_node) and action not in connections:
                 utils.log_message('game', f"[ATLAS] Action '{action}' pushed through the void.")
-                return self.world_actions.create_and_place_location(world_name, world_theme, breadcrumb, current_node,
+                breadcrumb, current_node, status, route_taken = self.world_actions.create_and_place_location(world_name, world_theme, breadcrumb, current_node,
                                                                     relationship_override=action, scene_prompt=None)
+                return breadcrumb, current_node, status, route_taken
 
-            # --- Handle Generic Actions ---
             if action == "NAVIGATE":
-                return self.world_actions.navigate(current_node, breadcrumb, world_theme, None, connections)
+                breadcrumb, current_node, status, route_taken = self.world_actions.navigate(current_node, breadcrumb, world_theme, None, connections)
+                return breadcrumb, current_node, status, route_taken
             elif action == "CREATE":
-                return self.world_actions.create_and_place_location(world_name, world_theme, breadcrumb, current_node,
+                breadcrumb, current_node, status, route_taken = self.world_actions.create_and_place_location(world_name, world_theme, breadcrumb, current_node,
                                                                     relationship_override=None, scene_prompt=None)
+                return breadcrumb, current_node, status, route_taken
             elif action == "POPULATE":
                 if new_npc := self.content_generator.generate_npc_concept_for_location(world_theme, current_node):
                     file_io.add_inhabitant_to_location(world_name, breadcrumb, {"name": new_npc.split(' - ')[0],
@@ -199,5 +199,4 @@ class AtlasLogic:
                     config.load_world_data(world_name)
                     return breadcrumb, file_io._find_node_by_breadcrumb(config.world, breadcrumb), "CONTINUE", None
 
-            # Default to ACCEPT if action is not recognized or is explicitly ACCEPT
             return breadcrumb, current_node, "ACCEPT", None

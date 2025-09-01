@@ -56,6 +56,38 @@
     "source_agent": "LEVEL_GENERATOR",
     "enable_reasoning": false
   },
+  "PEG_V3_CREATE_TILE_JSON": {
+    "task_prompt_key": "task_prompt_gen_tile_full_json",
+    "source_agent": "LEVEL_GENERATOR"
+  },
+  "PEG_V3_CREATE_TILE_NAME_STEPWISE": {
+    "task_prompt_key": "task_prompt_gen_tile_name_stepwise",
+    "source_agent": "LEVEL_GENERATOR"
+  },
+  "PEG_V3_CREATE_TILE_DESC_STEPWISE": {
+    "task_prompt_key": "task_prompt_gen_tile_desc_stepwise",
+    "source_agent": "LEVEL_GENERATOR"
+  },
+  "PEG_V3_CREATE_TILE_CHAR_STEPWISE": {
+    "task_prompt_key": "task_prompt_gen_tile_char_stepwise",
+    "source_agent": "LEVEL_GENERATOR",
+    "enable_reasoning": false
+  },
+  "PEG_V3_CREATE_TILE_COLOR_STEPWISE": {
+    "task_prompt_key": "task_prompt_gen_tile_color_stepwise",
+    "source_agent": "LEVEL_GENERATOR",
+    "enable_reasoning": false
+  },
+  "PEG_V3_CREATE_TILE_PASS_METHODS_STEPWISE": {
+    "task_prompt_key": "task_prompt_gen_tile_pass_methods_stepwise",
+    "source_agent": "LEVEL_GENERATOR",
+    "enable_reasoning": false
+  },
+  "PEG_V3_CREATE_TILE_MATERIALS_STEPWISE": {
+    "task_prompt_key": "task_prompt_gen_tile_materials_stepwise",
+    "source_agent": "LEVEL_GENERATOR",
+    "enable_reasoning": false
+  },
   "PROCGEN_GENERATE_NARRATIVE_BEAT": {
     "task_prompt_key": "task_prompt_peg_narrative_beat",
     "source_agent": "LEVEL_GENERATOR",

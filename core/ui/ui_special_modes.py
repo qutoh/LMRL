@@ -90,24 +90,21 @@ class SpecialModeManager:
                 phase = self.current_peg_phase
 
                 if key in (tcod.event.KeySym.LEFT, tcod.event.KeySym.RIGHT, tcod.event.KeySym.ESCAPE):
-                    current_app_state = self.ui_manager.app.app_state
                     self.stop_peg_patches()
                     if key == tcod.event.KeySym.LEFT:
                         self.peg_v3_scenario_index = (self.peg_v3_scenario_index - 1) % len(self.peg_v3_scenarios)
+                        self.run_peg_v3_test()
                     elif key == tcod.event.KeySym.RIGHT:
                         self.peg_v3_scenario_index = (self.peg_v3_scenario_index + 1) % len(self.peg_v3_scenarios)
+                        self.run_peg_v3_test()
                     elif key == tcod.event.KeySym.ESCAPE:
                         self.ui_manager.app.app_state = AppState.WORLD_SELECTION
                         self.ui_manager.active_view = None
-                        return True
-
-                    self.ui_manager.app.app_state = current_app_state
-                    self.ui_manager.active_view = None
                     return True
 
                 if key in (tcod.event.KeySym.RETURN, tcod.event.KeySym.KP_ENTER, tcod.event.KeySym.SPACE):
                     if phase in ('DONE', 'FINAL'):
-                        self.ui_manager.active_view = None
+                        self.run_peg_v3_test()
                     else:
                         self.advance_peg_test_step(key)
                     return True
@@ -497,8 +494,9 @@ class SpecialModeManager:
         game_state = GameState()
         architect = MapArchitectV3(ui.app.atlas_engine, game_state.game_map, "PEG V3 Test", scenario['name'])
 
-        ui.game_view.update_state(game_state)
+        # This mode takes direct control of the active view
         ui.active_view = ui.game_view
+        ui.active_view.update_state(game_state)
 
 
         def ui_render_callback(gen_state):

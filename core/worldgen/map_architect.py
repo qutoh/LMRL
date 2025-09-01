@@ -82,7 +82,7 @@ class MapArchitect:
                 for branch in self.initial_feature_branches
             ]
             other_features_context = "\n".join(other_features_context_list) if other_features_context_list else "None."
-            
+
             narrative_beat = self.llm.get_next_narrative_beat(self.narrative_log, other_features_context)
             if not narrative_beat: break
             self.narrative_log += " " + narrative_beat
@@ -124,15 +124,15 @@ class MapArchitect:
             update_and_draw()
 
         # --- Phase 4: Pathing ---
-        all_connections = self.pathing.create_all_connections(self.initial_feature_branches)
-        all_door_coords = [coord for conn in all_connections for coord in conn.get('door_coords', [])]
-        gen_state.door_locations = all_door_coords
+        all_connections, all_door_placements, all_hallways = self.pathing.create_all_connections(self.initial_feature_branches)
+        gen_state.door_locations = all_door_placements
+        gen_state.blended_hallways = all_hallways
 
         # --- Phase 5: Final Conversion ---
         gen_state.layout_graph = self.converter.serialize_feature_tree_to_graph(self.initial_feature_branches)
         self.converter.populate_generation_state(gen_state, self.initial_feature_branches)
         gen_state.physics_layout = self.converter.convert_to_vertex_representation(gen_state.layout_graph,
-                                                                                    all_connections)
+                                                                                   all_connections)
         gen_state.narrative_log = self.narrative_log
         artist.draw_map(self.game_map, gen_state, config.features)
         ui_callback(gen_state)

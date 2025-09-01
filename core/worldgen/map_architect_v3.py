@@ -305,20 +305,17 @@ class MapArchitectV3:
             update_and_draw_with_delay()
             yield "INITIAL_GROWTH_STEP", gen_state
 
-        # Initialize sentence count for root branches
         for branch in self.initial_feature_branches:
-            branch.sentence_count = 0  # Initialize to 0, will increment when first beat is added to it.
+            branch.sentence_count = 0
 
-        active_parenting_branches = list(
-            self.initial_feature_branches)  # Only contains branches that LLM can add sub-features to.
-
-        # This new yield creates a clear state transition point.
+        active_parenting_branches = list(self.initial_feature_branches)
         update_and_draw_no_delay()
         yield "POST_GROWTH", gen_state
 
-        shrink_factor = 0.1
-        main_loop_iteration_count = 0  # Track iterations to prevent infinite loops if LLM gets stuck
+        shrink_factor = 0.01
+        main_loop_iteration_count = 0
         while main_loop_iteration_count < MAX_SUBFEATURES_TO_PLACE:
+            # ... (the main generation loop is unchanged) ...
             main_loop_iteration_count += 1
 
             if not active_parenting_branches:
@@ -455,6 +452,7 @@ class MapArchitectV3:
                     active_parenting_branches.remove(parent_branch)
             else:
                 utils.log_message('debug', f"  Discarding narrative beat due to placement failure: '{narrative_beat}'")
+        # --- END OF MAIN LOOP ---
 
         update_and_draw_no_delay()
         yield "PRE_JITTER", gen_state
@@ -471,9 +469,18 @@ class MapArchitectV3:
         update_and_draw_no_delay()
         yield "PRE_CONNECT", gen_state
 
-        all_connections = self.pathing.create_all_connections(self.initial_feature_branches)
-        all_door_coords = [coord for conn in all_connections for coord in conn['door_coords']]
-        gen_state.door_locations = all_door_coords
+        # --- REVISED CONNECTION LOGIC ---
+        # 1. Create initial connections (which might be detached after jitter)
+        all_connections, door_placements, hallways = self.pathing.create_all_connections(self.initial_feature_branches)
+
+        # 2. Reconnect any paths that became detached
+        reconns, new_hallways = self.pathing._reconnect_detached_paths(self.initial_feature_branches, all_connections)
+        all_connections.extend(reconns)
+        hallways.extend(new_hallways)
+
+        # 3. Finalize door and hallway data on the generation state
+        gen_state.door_locations = door_placements
+        gen_state.blended_hallways = hallways
 
         artist.draw_map(self.game_map, gen_state, config.features)
         ui_callback(gen_state)
@@ -483,7 +490,6 @@ class MapArchitectV3:
         self.converter.populate_generation_state(gen_state, self.initial_feature_branches)
         gen_state.physics_layout = self.converter.convert_to_vertex_representation(gen_state.layout_graph,
                                                                                    all_connections)
-        # --- NEW: Generate and store embeddings ---
         if self.semantic_search.model:
             utils.log_message('debug', "[PEGv3 Architect] Generating feature embeddings for semantic search...")
             for tag, feature_data in gen_state.placed_features.items():
@@ -491,5 +497,5 @@ class MapArchitectV3:
                 embedding = self.semantic_search.model.encode(desc)
                 gen_state.feature_embeddings[tag] = embedding.tolist()
 
-        gen_state.narrative_log = ""  # Placeholder for full narrative log
+        gen_state.narrative_log = ""
         yield "VERTEX_DATA", gen_state

@@ -149,9 +149,9 @@ class MapArchitectV2:
         self.map_ops.apply_jitter(self.initial_feature_branches, on_iteration_end=update_and_draw)
         update_and_draw()
 
-        all_connections = self.pathing.create_all_connections(self.initial_feature_branches)
-        all_door_coords = [coord for conn in all_connections for coord in conn.get('door_coords', [])]
-        gen_state.door_locations = all_door_coords
+        all_connections, all_door_placements, all_hallways = self.pathing.create_all_connections(self.initial_feature_branches)
+        gen_state.door_locations = all_door_placements
+        gen_state.blended_hallways = all_hallways
 
         gen_state.layout_graph = self.converter.serialize_feature_tree_to_graph(self.initial_feature_branches)
         self.converter.populate_generation_state(gen_state, self.initial_feature_branches)

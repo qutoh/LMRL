@@ -1,6 +1,6 @@
 {
-    "MAP_WIDTH": 120,
-    "MAP_HEIGHT": 40,
+    "MAP_WIDTH": 140,
+    "MAP_HEIGHT": 45,
     "ADAPTIVE_RESOLUTION_MODE": false,
     "LOG_LEVEL": "full",
     "DEFAULT_INPUT_TOKEN_LIMIT": 4096,

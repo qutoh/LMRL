@@ -23,6 +23,8 @@ class Config:
 
         self.features = self._load_json('features.json', default={})
         self.tile_types = self._load_json('tile_types.json', default={})
+        self.travel = self._load_json('travel.json', default={})
+        self.materials = self._load_json('materials.json', default={})
 
         # --- Programmatically ensure core definitions exist ---
         self._ensure_core_definitions()
@@ -89,7 +91,7 @@ class Config:
     def save_settings(self):
         """Saves the current settings dictionary to settings.json."""
         path = file_io.join_path(self.data_dir, 'settings.json')
-        self.settings.pop('GEMINI_API_KEY', '') # Yeah lol
+        self.settings.pop('GEMINI_API_KEY', '')  # Yeah lol
         return file_io.write_json(path, self.settings)
 
     def load_world_data(self, world_name: str):
@@ -106,6 +108,19 @@ class Config:
 
         scenes_file = file_io.join_path(world_data_path, 'generated_scenes.json')
         self.generated_scenes = file_io.read_json(scenes_file, default=[])
+
+        # --- MERGE TILE TYPES ---
+        self.tile_types = self._load_json('tile_types.json', default={})  # Reload base
+        world_tiles_file = file_io.join_path(world_data_path, 'generated_tiles.json')
+        world_tiles = file_io.read_json(world_tiles_file, default={})
+        self.tile_types.update(world_tiles)
+
+        # --- RE-ENSURE CORE DEFINITIONS ---
+        self._ensure_core_definitions()
+
+        # Regenerate maps after merge
+        self.tile_type_map = {name: i for i, name in enumerate(self.tile_types.keys())}
+        self.tile_type_map_reverse = {i: name for name, i in self.tile_type_map.items()}
 
         world_npcs_file = file_io.join_path(world_data_path, 'casting_npcs.json')
         world_npcs = file_io.read_json(world_npcs_file, default=[])
@@ -160,7 +175,7 @@ class Config:
     def _apply_api_keys(self):
         """Get API keys from environment variables via the file_io module."""
         gemini_env_var = self.settings.get("GEMINI_API_KEY_ENV_VAR")
-        if gemini_env_var: # This will spill your API key to settings, recommended to leave uncommented but
+        if gemini_env_var:  # This will spill your API key to settings, recommended to leave uncommented but
             self.settings['GEMINI_API_KEY'] = file_io.get_env_variable(gemini_env_var)
 
 

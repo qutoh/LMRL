@@ -2,10 +2,11 @@
 
 import json
 import re
+from typing import Callable, Optional
 
 from .config_loader import config
 from .localization import loc
-from .utils import log_message, get_chosen_name_from_response
+from .utils import log_message, get_chosen_name_from_response, clean_json_from_llm
 from ..llm.llm_api import execute_task
 
 
@@ -85,7 +86,8 @@ def parse_structured_command(
         raw_response: str,
         agent_type: str,
         fallback_task_key: str | None = None,
-        fallback_prompt_kwargs: dict | None = None
+        fallback_prompt_kwargs: dict | None = None,
+        validator: Optional[Callable[[dict], bool]] = None
 ):
     """
     Parses a structured command from raw text, using a new context-aware fallback system.
@@ -97,7 +99,11 @@ def parse_structured_command(
     try:
         command = json.loads(clean_response)
         if isinstance(command, dict) and command:
-            return command
+            if validator is None or validator(command):
+                return command
+            else:
+                log_message('debug', "[PARSER] Initial JSON parse passed but failed validation.")
+                raise json.JSONDecodeError("Validation failed", clean_response, 0)
     except (json.JSONDecodeError, TypeError):
         pass
 
@@ -106,7 +112,10 @@ def parse_structured_command(
             engine, raw_response, fallback_task_key, fallback_prompt_kwargs
         )
         if command_from_handler:
-            return command_from_handler
+             if validator is None or validator(command_from_handler):
+                return command_from_handler
+             else:
+                log_message('debug', "[PARSER] Fallback JSON parse passed but failed validation.")
 
     if agent_type == 'DIRECTOR':
         log_message('debug', "[PARSER] All other methods failed. Falling back to legacy regex for Director.")
