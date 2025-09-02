@@ -84,7 +84,7 @@ class Application:
         elif self.app_state == AppState.CALIBRATING:
             self._handle_calibration_updates()
             self._handle_calibration_step()
-        elif self.app_state in [AppState.PEG_V3_TEST, AppState.CHARACTER_GENERATION_TEST]:
+        elif self.app_state in [AppState.PEG_V3_TEST, AppState.CHARACTER_GENERATION_TEST, AppState.NOISE_VISUALIZER_TEST]:
             self.ui_manager.special_modes.process_logic(self.app_state)
 
     def _handle_game_loading(self):
@@ -211,6 +211,8 @@ class Application:
             self.app_state = AppState.PEG_V3_TEST
         elif choice == "Character Generation Test":
             self.app_state = AppState.CHARACTER_GENERATION_TEST
+        elif choice == "Noise Visualizer Test":
+            self.app_state = AppState.NOISE_VISUALIZER_TEST
         else:
             self.selected_world_name = choice
             config.load_world_data(self.selected_world_name)

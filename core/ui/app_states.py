@@ -18,4 +18,5 @@ class AppState(Enum):
     CALIBRATING = auto()
     PEG_V3_TEST = auto()
     CHARACTER_GENERATION_TEST = auto()
+    NOISE_VISUALIZER_TEST = auto()
     ROLE_CREATOR_VIEW = auto()

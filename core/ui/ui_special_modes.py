@@ -17,6 +17,7 @@ from .app_states import AppState
 from .ui_framework import DynamicTextBox
 from .views.character_generation_test_view import CharacterGenerationTestView
 from .views.game_view import GameView
+from .views.noise_visualizer_view import NoiseVisualizerView
 from ..common import file_io, utils, command_parser
 from ..common.config_loader import config
 from ..common.game_state import GameState, GenerationState
@@ -24,6 +25,7 @@ from ..components import game_functions, character_factory
 from ..llm.calibration_manager import CalibrationManager
 from ..llm.llm_api import execute_task
 from ..worldgen.map_architect_v3 import MapArchitectV3
+from ..worldgen.v3_components.feature_node import FeatureNode
 
 
 class SpecialModeManager:
@@ -56,6 +58,7 @@ class SpecialModeManager:
         self.generated_characters = []
         self.peg_v3_scenarios = []
         self.peg_v3_scenario_index = 0
+        self.noise_visualizer_active = False
 
     def set_active_mode(self, app_state: AppState):
         """Sets the active special mode based on the application state."""
@@ -65,6 +68,8 @@ class SpecialModeManager:
             self.active_mode = "CHAR_GEN_TEST"
         elif app_state == AppState.CALIBRATING:
             self.active_mode = "CALIBRATING"
+        elif app_state == AppState.NOISE_VISUALIZER_TEST:
+            self.active_mode = "NOISE_VISUALIZER"
         else:
             self.active_mode = None
 
@@ -75,6 +80,9 @@ class SpecialModeManager:
                 self.run_peg_v3_test()
         elif app_state == AppState.CHARACTER_GENERATION_TEST:
             self.handle_character_generation_updates()
+        elif app_state == AppState.NOISE_VISUALIZER_TEST:
+            if not self.noise_visualizer_active:
+                self.run_noise_visualizer_test()
 
     def handle_event(self, event: tcod.event.Event) -> bool:
         """
@@ -114,12 +122,18 @@ class SpecialModeManager:
                 self.stop_character_generation_test()
                 return True
 
+        elif self.active_mode == "NOISE_VISUALIZER":
+            if self.ui_manager.active_view:
+                self.ui_manager.active_view.handle_event(event)
+                return True
+
         return False
 
     def stop_all(self):
         """Stops all active special mode processes (threads, patches)."""
         self.stop_peg_patches()
         self.stop_character_generation_test()
+        self.noise_visualizer_active = False
 
     def start_character_generation_test(self, context: str):
         """Initializes and kicks off the character generation test."""
@@ -150,7 +164,8 @@ class SpecialModeManager:
             return []
 
         desc_kwargs = {"item_names_list": "; ".join(item_names), "context": physical_description}
-        raw_desc_response = execute_task(self.ui_manager.app.atlas_engine, equipment_agent, 'EQUIPMENT_DESCRIBE_ITEMS', [],
+        raw_desc_response = execute_task(self.ui_manager.app.atlas_engine, equipment_agent, 'EQUIPMENT_DESCRIBE_ITEMS',
+                                         [],
                                          task_prompt_kwargs=desc_kwargs)
 
         command = command_parser.parse_structured_command(
@@ -498,7 +513,6 @@ class SpecialModeManager:
         ui.active_view = ui.game_view
         ui.active_view.update_state(game_state)
 
-
         def ui_render_callback(gen_state):
             if isinstance(ui.active_view, GameView):
                 ui.active_view.update_state(game_state, gen_state)
@@ -559,3 +573,67 @@ class SpecialModeManager:
             self.stop_peg_patches()
             if self.last_peg_state:
                 self._save_peg_test_output(self.last_peg_state, scenario['name'])
+
+    def run_noise_visualizer_test(self):
+        """Sets up and runs the noise visualizer test."""
+        self.noise_visualizer_active = True
+        ui = self.ui_manager
+
+        # 1. Generate a base map
+        game_state = GameState()
+        architect = MapArchitectV3(ui.app.atlas_engine, game_state.game_map, "Noise Test", "Noise Test")
+
+        possible_features = [
+            key for key, data in config.features.items()
+            if data.get('placement_strategy') == 'EXTERIOR'
+        ]
+        if len(possible_features) < 5:
+            possible_features.extend(['GENERIC_ROOM'] * (5 - len(possible_features)))
+
+        initial_specs = [
+            {'name': f'Area {i}', 'type': random.choice(possible_features),
+             'size_tier': random.choice(['small', 'medium', 'large'])}
+            for i in range(5)
+        ]
+
+        growth_generator = architect.placement.place_and_grow_initial_features(initial_specs)
+        for branches in growth_generator:
+            architect.initial_feature_branches = branches
+
+        architect.map_ops.apply_jitter(architect.initial_feature_branches, on_iteration_end=lambda: None)
+
+        # Connect all pairs of root features
+        root_nodes = architect.initial_feature_branches
+        for i in range(len(root_nodes)):
+            for j in range(i + 1, len(root_nodes)):
+                node_a, node_b = root_nodes[i], root_nodes[j]
+                start_points = architect.pathing.get_valid_connection_points(node_a, 0, root_nodes)
+                end_points = architect.pathing.get_valid_connection_points(node_b, 0, root_nodes)
+                if start_points and end_points:
+                    start_pos = random.choice(start_points)
+                    end_pos = random.choice(end_points)
+                    path = architect.pathing.find_path_with_clearance(start_pos, end_pos, 0, root_nodes, {})
+                    if path:
+                        path_node = FeatureNode(f"Path {i}-{j}", "GENERIC_PATH", 0, 0, 0, 0)
+                        path_node.path_coords = path
+                        node_a.subfeatures.append(path_node)
+
+        gen_state = GenerationState(game_state.game_map)
+        architect.converter.populate_generation_state(gen_state, architect.initial_feature_branches)
+
+        from ..common.game_state import MapArtist
+        artist = MapArtist()
+        artist.draw_map(game_state.game_map, gen_state, config.features)
+
+        # 2. Create and set the view
+        def on_exit():
+            self.noise_visualizer_active = False
+            self.ui_manager.app.app_state = AppState.WORLD_SELECTION
+
+        view = NoiseVisualizerView(
+            on_exit=on_exit,
+            console_width=ui.root_console.width,
+            console_height=ui.root_console.height
+        )
+        view.set_base_map(game_state, gen_state)
+        ui.active_view = view

@@ -55,18 +55,17 @@ class Pathing:
             noise = tcod.noise.Noise(
                 dimensions=2,
                 algorithm=tcod.noise.Algorithm.PERLIN,
-                implementation=tcod.noise.Implementation.SIMPLE,
-                hurst=max(0.0, 1.0 - turbulence),  # Higher turbulence = lower hurst = more roughness
-                lacunarity=2.0,
-                octaves=4,
+                implementation=tcod.noise.Implementation.TURBULENCE,
+                hurst=0.0, # Does nothing to this implementation except at values we don't want.
+                lacunarity=min(max(0.0, turbulence), 10),
+                octaves=2,
                 seed=None
             )
             scale = path_feature_def.get('turbulence_scale', 0.1)
-            # Use np.ogrid to create sparse coordinate arrays.
             grid_y, grid_x = np.ogrid[0:self.map_height, 0:self.map_width]
-            # Pass to sample_ogrid in [x, y] order.
             samples = noise.sample_ogrid([grid_x * scale, grid_y * scale])
-            # The output of sample_ogrid is (width, height), so we transpose it.
+
+            # Use turbulence value again to control the *amplitude* of the noise
             turbulence_modifier = 1.0 + (samples.T * turbulence)
             cost *= turbulence_modifier
 
@@ -98,7 +97,6 @@ class Pathing:
 
                 source_map = np.ones((self.map_height, self.map_width), dtype=bool)
                 if target_coords := feature_type_coords.get(target_type):
-                    # Separate x (cols) and y (rows) for correct numpy [y, x] indexing
                     cols, rows = zip(*target_coords)
                     source_map[list(rows), list(cols)] = False
 

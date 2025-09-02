@@ -18,5 +18,6 @@
     "help_bar_settings_nav": "[W/S] Nav | [A/D] Change | [ENTER] Edit | [DEL] Default | [BKSP] Revert | [ESC] Exit | [LEFT/RIGHT] Tab",
     "help_bar_settings_edit": "[ENTER] Confirm | [ESC] Cancel Edit",
     "help_bar_settings_confirm_exit": "[S] Save & Exit | [D] Discard & Exit | [ESC] Cancel",
-    "help_bar_settings_profiles": "[W/S] Navigate | [ENTER] Select | [ESC] Back | [LEFT/RIGHT] Tab"
+    "help_bar_settings_profiles": "[W/S] Navigate | [ENTER] Select | [ESC] Back | [LEFT/RIGHT] Tab",
+  	"help_bar_noise_test": "[ARROWS] Change Param/Value | [ESC] Back"
 }

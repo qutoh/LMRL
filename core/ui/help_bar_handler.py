@@ -28,6 +28,7 @@ class HelpBarHandler:
             AppState.CALIBRATING: "help_bar_calibrating",
             AppState.PEG_V3_TEST: "help_bar_peg_test",
             AppState.CHARACTER_GENERATION_TEST: "help_bar_char_gen_test",
+            AppState.NOISE_VISUALIZER_TEST: "help_bar_noise_test",
             AppState.SHUTTING_DOWN: "help_bar_shutting_down"
         }
         self.widget = HelpBar(help_texts=self.help_texts, width=console_width, height=1, y=console_height - 1)

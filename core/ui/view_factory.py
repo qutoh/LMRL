@@ -4,8 +4,7 @@ from .app_states import AppState
 from . import ui_data_provider
 from .views import (
     WorldSelectionView, SceneSelectionView, LoadOrNewView, SaveSelectionView,
-    TabbedSettingsView, TextInputView, CalibrationView, WorldGraphView,
-    CharacterGenerationTestView
+    TabbedSettingsView, TextInputView, CalibrationView
 )
 from .input_handler import TextInputHandler
 from ..common import file_io
@@ -32,6 +31,7 @@ class ViewFactory:
 
     def create_view(self, app_state: AppState):
         """Creates and returns the appropriate view for the given state."""
+        # The NOISE_VISUALIZER_TEST state is handled by the SpecialModeManager, so it does not need a factory entry.
         creator_func = self.view_map.get(app_state)
         if creator_func:
             return creator_func()
