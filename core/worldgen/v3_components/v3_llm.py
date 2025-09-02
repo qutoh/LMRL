@@ -169,10 +169,14 @@ class V3_LLM:
         if not all(key in data for key in required_keys): return False
 
         if not (isinstance(data["characters"], list) and data["characters"] and all(
-            isinstance(c, str) for c in data["characters"])): return False
+                isinstance(c, str) for c in data["characters"])): return False
         if not (isinstance(data["colors"], list) and data["colors"] and all(
-            isinstance(c, list) and len(c) == 3 for c in data["colors"])): return False
+                isinstance(c, list) and len(c) == 3 for c in data["colors"])): return False
         if not (isinstance(data["materials"], list) and data["materials"]): return False
+
+        valid_pass = list(config.travel.get("movement_capabilities", {}).keys())
+        if not (isinstance(data["pass_methods"], list) and all(
+            p in valid_pass for p in data["pass_methods"])): return False
 
         return True
 
@@ -325,3 +329,31 @@ class V3_LLM:
         }
         return execute_task(self.engine, self.level_generator, 'PEG_V3_CHOOSE_EXTERIOR_TILE', [],
                             task_prompt_kwargs=kwargs)
+
+    def decide_connector_strategy(self, connector_name: str, connector_desc: str, nearby_targets: List[str]) -> str:
+        """Decides whether to bridge a connector to an existing feature or create a new one."""
+        kwargs = {
+            "world_scene_context": self._get_world_scene_context_str(),
+            "connector_name": connector_name,
+            "connector_description": connector_desc,
+            "nearby_targets_list": "\n".join(
+                f"- {name}" for name in nearby_targets) if nearby_targets else "None available."
+        }
+        return execute_task(self.engine, self.level_generator, 'PEG_V3_DECIDE_CONNECTOR_STRATEGY', [],
+                            task_prompt_kwargs=kwargs)
+
+    def create_connector_child(self, grandparent_node: 'FeatureNode', connector_node: 'FeatureNode') -> dict | None:
+        """Generates the definition for a new feature at the end of a seeded connector."""
+        # 1. Generate the narrative sentence for the new feature.
+        context_kwargs = {
+            "world_scene_context": self._get_world_scene_context_str(),
+            "starting_area_description": grandparent_node.narrative_log,
+            "passage_description": connector_node.narrative_log
+        }
+        new_sentence = execute_task(self.engine, self.level_generator, 'PEG_V3_CREATE_CONNECTOR_CHILD', [],
+                                    task_prompt_kwargs=context_kwargs)
+        if not new_sentence or "none" in new_sentence.lower():
+            return None
+
+        # 2. Use the standard define_feature_from_sentence to convert it to data.
+        return self.define_feature_from_sentence(new_sentence)

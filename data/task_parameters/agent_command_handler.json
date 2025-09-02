@@ -86,6 +86,11 @@
     "source_agent": "COMMAND_HANDLER",
     "is_failure_handler": true
   },
+    "CH_FIX_CONNECTOR_CHILD_JSON": {
+    "task_prompt_key": "task_prompt_ch_fix_connector_child_json",
+    "source_agent": "COMMAND_HANDLER",
+    "is_failure_handler": true
+  },
   "CH_FIX_PROCGEN": {
     "task_prompt_key": "task_prompt_ch_fix_procgen",
     "source_agent": "COMMAND_HANDLER",

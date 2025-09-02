@@ -22,8 +22,8 @@
         "Courtyard": "The Courtyard is a vast and open space, defining the center of the complex.",
         "Mess Hall": "The Mess Hall echoes with the ghosts of a hundred boisterous meals."
       },
-      "PROCGEN_GENERATE_NARRATIVE_BEAT": "In the corner, a sturdy Weapon Rack 1 stands, still holding a few rusty spears.",
-      
+      "PROCGEN_GENERATE_NARRATIVE_BEAT": "A simple Archway 1 connects the hall to the main yard.",
+      "PEG_V3_DECIDE_CONNECTOR_STRATEGY": "Courtyard",
       "PEG_V2_GET_AREA_NAMES": "Barracks; Armory; Captain's Quarters; Mess Hall; Courtyard; Stables",
       "PEG_V2_RANK_AREAS": "Courtyard; Mess Hall; Barracks; Stables; Armory; Captain's Quarters",
       "PEG_V2_DEFINE_AREA_DATA": {
@@ -33,6 +33,38 @@
         "Stables": { "description": "Stalls for horses, smelling of hay and manure.", "type": "GENERIC_ROOM", "size_tier": "medium" },
         "Armory": { "description": "Racks of weapons and stands of armor line the walls.", "type": "GENERIC_ROOM", "size_tier": "small" },
         "Captain's Quarters": { "description": "A private, spartan room for the fort's commander.", "type": "GENERIC_ROOM", "size_tier": "small" }
+      }
+    }
+  },
+  {
+    "name": "Fortress Interior",
+    "mock_llm_calls": {
+      "PEG_V3_GET_INITIAL_FEATURES_JSON": {
+        "features": [
+          {
+            "name": "Captain's Quarters",
+            "type": "GENERIC_ROOM",
+            "size_tier": "small",
+            "description_sentence": "The captain's tidy but spartan quarters are well-kept."
+          },
+          {
+            "name": "Barracks",
+            "type": "GENERIC_ROOM",
+            "size_tier": "large",
+            "description_sentence": "The main barracks smells of sweat and leather."
+          }
+        ]
+      },
+      "PEG_V3_GET_NARRATIVE_SEED": {
+        "Captain's Quarters": "The captain's quarters are austere, containing only a simple bed and a map table.",
+        "Barracks": "The barracks are filled with rows of bunks, indicating a well-staffed fortress."
+      },
+      "PROCGEN_GENERATE_NARRATIVE_BEAT": "A grand archway leads out from the Captain's Quarters, opening into a new space.",
+      "PEG_V3_DECIDE_CONNECTOR_STRATEGY": "CREATE_NEW",
+      "PEG_V3_CREATE_CONNECTOR_CHILD": {
+        "name": "Secret Tunnel Entrance",
+        "type": "GENERIC_PORTAL",
+        "description_sentence": "The archway opens to reveal a hidden grate leading down into a dark tunnel."
       }
     }
   }

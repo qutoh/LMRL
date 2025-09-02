@@ -6,10 +6,11 @@ from typing import List, Dict, Tuple, Optional
 
 import numpy as np
 import tcod
+from scipy.ndimage import distance_transform_edt
 
 from core.common import utils
 from core.common.game_state import GameMap
-from core.worldgen.procgen_utils import UnionFind, find_contiguous_regions
+from core.worldgen.procgen_utils import UnionFind
 from .feature_node import FeatureNode
 from ...common.config_loader import config
 from .placement import Placement
@@ -32,12 +33,14 @@ class Pathing:
                                  all_branches: List[FeatureNode], path_feature_def: dict) -> Optional[
         List[Tuple[int, int]]]:
         """
-        Finds a path using a cost grid built from terrain intersection rules, then validates its clearance.
+        Finds a path using a cost grid modified by turbulence and feature attraction/repulsion fields,
+        then validates its clearance.
         """
         terrain_grid = self.placement_utils._get_temp_grid(all_branches)
         cost = np.full((self.map_height, self.map_width), np.inf, dtype=np.float32)
-        cost[terrain_grid == self.void_space_index] = 1.0
 
+        # 1. Base Cost from Terrain Intersection Rules
+        cost[terrain_grid == self.void_space_index] = 1.0
         for rule in path_feature_def.get('intersects_ok', []):
             intersect_type_name = rule.get('type')
             cost_mod = rule.get('cost_mod', 1.0)
@@ -46,6 +49,67 @@ class Pathing:
                 base_cost = config.tile_types.get(intersect_type_name, {}).get('movement_cost', 1.0)
                 cost[terrain_grid == intersect_type_index] = base_cost * cost_mod
 
+        # 2. Apply Turbulence Field (Perlin Noise)
+        turbulence = path_feature_def.get('turbulence', 0.0)
+        if turbulence > 0.0:
+            noise = tcod.noise.Noise(
+                dimensions=2,
+                algorithm=tcod.noise.Algorithm.PERLIN,
+                implementation=tcod.noise.Implementation.SIMPLE,
+                hurst=max(0.0, 1.0 - turbulence),  # Higher turbulence = lower hurst = more roughness
+                lacunarity=2.0,
+                octaves=4,
+                seed=None
+            )
+            scale = path_feature_def.get('turbulence_scale', 0.1)
+            # Use np.ogrid to create sparse coordinate arrays.
+            grid_y, grid_x = np.ogrid[0:self.map_height, 0:self.map_width]
+            # Pass to sample_ogrid in [x, y] order.
+            samples = noise.sample_ogrid([grid_x * scale, grid_y * scale])
+            # The output of sample_ogrid is (width, height), so we transpose it.
+            turbulence_modifier = 1.0 + (samples.T * turbulence)
+            cost *= turbulence_modifier
+
+        # 3. Apply Attraction/Repulsion Fields
+        if modifiers := path_feature_def.get('pathfinding_modifiers'):
+            feature_type_coords = {}
+            all_nodes = [node for branch in all_branches for node in branch.get_all_nodes_in_branch()]
+            for node in all_nodes:
+                if node.feature_type not in feature_type_coords:
+                    feature_type_coords[node.feature_type] = set()
+                coords_to_add = []
+                if node.path_coords:
+                    coords_to_add = node.path_coords
+                else:
+                    x, y, w, h = node.get_rect()
+                    coords_to_add = [(i, j) for i in range(x, x + w) for j in range(y, y + h)]
+
+                for i, j in coords_to_add:
+                    if 0 <= i < self.map_width and 0 <= j < self.map_height:
+                        feature_type_coords[node.feature_type].add((i, j))
+
+            final_modifier_grid = np.ones((self.map_height, self.map_width), dtype=np.float32)
+            for rule in modifiers:
+                target_type = rule.get('type')
+                influence = rule.get('influence', 1.0)
+                decay = rule.get('decay', 0.1)
+                if not target_type or influence == 1.0:
+                    continue
+
+                source_map = np.ones((self.map_height, self.map_width), dtype=bool)
+                if target_coords := feature_type_coords.get(target_type):
+                    # Separate x (cols) and y (rows) for correct numpy [y, x] indexing
+                    cols, rows = zip(*target_coords)
+                    source_map[list(rows), list(cols)] = False
+
+                distance_grid = distance_transform_edt(source_map)
+                influence_grid = 1 + (influence - 1) * np.exp(-decay * distance_grid)
+                final_modifier_grid *= influence_grid
+
+            cost *= final_modifier_grid
+
+        # Clamp cost to prevent errors and create the path
+        cost[cost <= 0] = 0.01
         astar = tcod.path.AStar(cost=cost.T, diagonal=0)
         start_x, start_y = start_coords
         end_x, end_y = end_coords
@@ -57,14 +121,13 @@ class Pathing:
         path_is_valid = True
         path_radius = clearance
         path_dim = clearance * 2 + 1
-        obstacle_grid = (cost == np.inf)
 
         for x_center, y_center in path_xy:
             px, py = x_center - path_radius, y_center - path_radius
             if not (px >= 0 and py >= 0 and (px + path_dim) <= self.map_width and (py + path_dim) <= self.map_height):
                 path_is_valid = False
                 break
-            if np.any(obstacle_grid[py:py + path_dim, px:px + path_dim]):
+            if np.any(np.isinf(cost[py:py + path_dim, px:px + path_dim])):
                 path_is_valid = False
                 break
 
@@ -194,11 +257,13 @@ class Pathing:
                                         key=lambda p: math.hypot(p[0] - crossing_point[0], p[1] - crossing_point[1]))
 
                     other_def = config.features.get(other_node.feature_type, {})
-                    if other_door_tile := other_def.get('door_tile_type'):
-                        openings.append({'pos': crossing_point, 'type': other_door_tile})
                     path_def = config.features.get(path_node.feature_type, {})
-                    if path_door_tile := path_def.get('door_tile_type'):
-                        openings.append({'pos': path_door_pos, 'type': path_door_tile})
+
+                    if other_def.get("feature_type") != "PORTAL" and path_def.get("feature_type") != "PORTAL":
+                        if other_door_tile := other_def.get('door_tile_type'):
+                            openings.append({'pos': crossing_point, 'type': other_door_tile})
+                        if path_door_tile := path_def.get('door_tile_type'):
+                            openings.append({'pos': path_door_pos, 'type': path_door_tile})
         return openings
 
     def create_all_connections(self, initial_feature_branches: List[FeatureNode]) -> Tuple[
@@ -216,10 +281,15 @@ class Pathing:
             node_a, node_b = conn.get('node_a'), conn.get('node_b')
             coords = conn.get('door_coords')
             if not node_a or not node_b or not coords or len(coords) < 2: continue
+
             node_a_def = config.features.get(node_a.feature_type, {})
+            node_b_def = config.features.get(node_b.feature_type, {})
+
+            if node_a_def.get("feature_type") == "PORTAL" or node_b_def.get("feature_type") == "PORTAL":
+                continue
+
             if door_tile := node_a_def.get('door_tile_type'):
                 door_placements.append({'pos': coords[0], 'type': door_tile})
-            node_b_def = config.features.get(node_b.feature_type, {})
             if door_tile := node_b_def.get('door_tile_type'):
                 door_placements.append({'pos': coords[1], 'type': door_tile})
         door_placements.extend(path_intersection_openings)
@@ -237,15 +307,13 @@ class Pathing:
             node_a, node_b = conn['node_a'], conn['node_b']
             door_a, door_b = conn['door_coords'][0], conn['door_coords'][1]
 
-            # Check if door_a is adjacent to node_b's perimeter, and vice-versa
             is_a_connected = any(
                 math.hypot(door_a[0] - x, door_a[1] - y) < 1.5 for x, y in self._get_node_wall_perimeter(node_b))
             is_b_connected = any(
                 math.hypot(door_b[0] - x, door_b[1] - y) < 1.5 for x, y in self._get_node_wall_perimeter(node_a))
 
-            if is_a_connected and is_b_connected: continue  # Path is fine
+            if is_a_connected and is_b_connected: continue
 
-            # Bridge the gap
             start_pos = door_a
             end_pos = min(list(self._get_node_exterior_perimeter(node_b)),
                           key=lambda p: math.hypot(p[0] - start_pos[0], p[1] - start_pos[1]))
@@ -261,7 +329,6 @@ class Pathing:
                     "path_coords": list(path_coords),
                     "source_a_type": node_a.feature_type, "source_b_type": node_b.feature_type
                 })
-                # We can reuse the original door positions as they are on the correct features
                 reconnections.append(
                     {'node_a': node_a, 'node_b': node_b, 'position': door_a, 'door_coords': [door_a, door_b]})
         return reconnections, new_hallways

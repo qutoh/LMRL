@@ -14,13 +14,11 @@ from ...common.config_loader import config
 MIN_FEATURE_SIZE = 3
 
 # --- Growth Algorithm Constants ---
-GROWTH_COVERAGE_THRESHOLD = 0.40  # Stop when 40% of the map is filled
-MAX_GROWTH_ITERATIONS = 200  # Safety break for the growth loop (per tick)
+GROWTH_COVERAGE_THRESHOLD = 0.40
+MAX_GROWTH_ITERATIONS = 200
 SIZE_TIER_TARGET_AREA_FACTOR = {'large': 0.15, 'medium': 0.08, 'small': 0.04}
-# Predefined W:H integer ratios for the 'rectangle' shape
 RECTANGLE_ASPECT_RATIOS = [(4, 3), (3, 2), (5, 3), (16, 9), (2, 1), (3, 4), (2, 3), (3, 5), (9, 16), (1, 2)]
 
-# A map to easily find the opposite direction for scaling.
 OPPOSITE_DIRECTION_MAP = {
     'NORTH': 'SOUTH', 'SOUTH': 'NORTH', 'EAST': 'WEST', 'WEST': 'EAST',
     'NORTHEAST': 'SOUTHWEST', 'SOUTHWEST': 'NORTHEAST',
@@ -100,26 +98,17 @@ class Placement:
         defined in the feature's 'intersects_ok' list.
         """
         x, y, w, h = rect_to_check
-        # 1. Boundary Check
         if not (x >= 1 and y >= 1 and (x + w) <= (self.map_width - 1) and (y + h) <= (self.map_height - 1)):
             return False
 
-        # 2. Build the set of allowed intersection tile indices. By default, only VOID_SPACE is allowed.
         allowed_indices = {self.void_space_index}
-
-        # Add indices ONLY from the 'intersects_ok' list.
         for rule in feature_def.get('intersects_ok', []):
             if intersect_type := rule.get('type'):
                 if intersect_type in config.tile_type_map:
                     allowed_indices.add(config.tile_type_map[intersect_type])
-
-        # 3. Perform the vectorized collision check
         placement_slice = terrain_grid[y:y + h, x:x + w]
-        # `invert=True` creates a mask where `True` means the tile is NOT in the allowed list.
-        # This gives us a mask of invalid collisions.
         invalid_collisions_mask = np.isin(placement_slice, list(allowed_indices), invert=True)
 
-        # 4. If any invalid collision is found, the placement is invalid.
         if np.any(invalid_collisions_mask):
             return False
 
@@ -269,55 +258,6 @@ class Placement:
                     placements.append((x, y, parent, face))
         return placements
 
-    def place_initial_features(self, feature_specs: List[Dict]) -> List[FeatureNode]:
-        """Iteratively places and shrinks initial features, returning a list of root FeatureNode branches."""
-        utils.log_message('debug', "[PEGv3 Placement] Placing initial features...")
-        initial_feature_branches = []
-        scaling_cycle = ['NORTH', 'NORTHEAST', 'EAST', 'SOUTHEAST', 'SOUTH', 'SOUTHWEST', 'WEST', 'NORTHWEST']
-        size_tier_map = {'large': 0.8, 'medium': 0.5, 'small': 0.25}
-
-        spec = feature_specs[0]
-        rel_dim = size_tier_map.get(spec['size_tier'], 0.5)
-        w = int((self.map_width - 2) * rel_dim)
-        h = int((self.map_height - 2) * rel_dim)
-        x = (self.map_width - w) // 2
-        y = (self.map_height - h) // 2
-        root_node = FeatureNode(spec['name'], spec['type'], rel_dim, rel_dim, w, h, x, y)
-        root_node.narrative_log = spec.get('description_sentence', '')
-        initial_feature_branches.append(root_node)
-        utils.log_message('debug', f"  Placed root feature '{spec['name']}' at ({x},{y}) size ({w},{h}).")
-
-        for i, spec in enumerate(feature_specs[1:]):
-            rel_dim = size_tier_map.get(spec['size_tier'], 0.5)
-            w = int((self.map_width - 2) * rel_dim)
-            h = int((self.map_height - 2) * rel_dim)
-            placement_found = False
-            current_shrink_factor = 0.25
-            max_retries = 5
-            feature_def = config.features.get(spec['type'], {})
-
-            for retry_count in range(max_retries):
-                temp_grid = self._get_temp_grid(initial_feature_branches)
-                valid_placements = self._find_valid_placements(w, h, temp_grid, initial_feature_branches, feature_def)
-                if valid_placements:
-                    x, y, adjacent_node, face = random.choice(valid_placements)
-                    new_node = FeatureNode(spec['name'], spec['type'], rel_dim, rel_dim, w, h, x, y)
-                    new_node.narrative_log = spec.get('description_sentence', '')
-                    initial_feature_branches.append(new_node)
-                    placement_found = True
-                    break
-                else:
-                    scale_dir = scaling_cycle[(i + retry_count) % len(scaling_cycle)]
-                    utils.log_message('debug',
-                                      f"  [RETRY {retry_count + 1}] No space for '{spec['name']}'. Shrinking towards {scale_dir} (factor: {current_shrink_factor:.2f}).")
-                    for branch in initial_feature_branches:
-                        self._apply_shrink_transform_to_branch(branch, scale_dir, current_shrink_factor)
-                    current_shrink_factor *= 0.8
-            if not placement_found:
-                utils.log_message('debug',
-                                  f"[PEGv3 FATAL] Could not place '{spec['name']}' after {max_retries} retries. Skipping.")
-        return initial_feature_branches
-
     def find_and_place_subfeature(self, feature_data: dict, parent_branch: FeatureNode, all_branches: List[FeatureNode],
                                   chosen_parent_name: str, shrink_factor: float) -> Optional[FeatureNode]:
         """
@@ -403,6 +343,131 @@ class Placement:
                                                    shrink_factor)
 
         return new_subfeature
+
+    def handle_connector_placement(self, feature_data: dict, parent_branch: FeatureNode,
+                                   all_branches: List[FeatureNode], llm, pathing, semantic_search, grow_coroutine,
+                                   draw_callback) -> Optional[List[FeatureNode]]:
+        """Handles the 'bridging' and 'seeding' logic for a CONNECTOR feature."""
+        feature_def = config.features.get(feature_data['type'], {})
+        min_len_ft, max_len_ft = feature_def.get('min_dimensions_ft', [5, 5])[1], \
+        feature_def.get('max_dimensions_ft', [10, 80])[1]
+        min_len_tiles, max_len_tiles = int(min_len_ft / 5), int(max_len_ft / 5)
+
+        # --- Bridging Method ---
+        valid_targets = []
+        all_other_nodes = [node for branch in all_branches if branch is not parent_branch for node in
+                           branch.get_all_nodes_in_branch()]
+
+        for target_node in all_other_nodes:
+            px, py, _, _ = parent_branch.get_rect()
+            tx, ty, _, _ = target_node.get_rect()
+            dist = math.hypot(tx - px, ty - py)
+            if dist > max_len_tiles * 1.5: continue
+
+            parent_points = pathing.get_valid_connection_points(parent_branch, 1, all_branches)
+            target_points = pathing.get_valid_connection_points(target_node, 1, all_branches)
+            if not parent_points or not target_points: continue
+
+            for start_pos in parent_points:
+                for end_pos in target_points:
+                    path = pathing.find_path_with_clearance(start_pos, end_pos, 1, all_branches, feature_def)
+                    if path and min_len_tiles <= len(path) <= max_len_tiles:
+                        valid_targets.append({'node': target_node, 'path': path})
+                        break
+                if any(t['node'] == target_node for t in valid_targets): break
+
+        target_options = sorted(list(set(t['node'].name for t in valid_targets)))
+        choice = llm.decide_connector_strategy(feature_data['name'], feature_data['description'], target_options)
+
+        if "CREATE_NEW" not in choice:
+            chosen_target_node = next((t['node'] for t in valid_targets if t['node'].name == choice), None)
+            if chosen_target_node:
+                chosen_path = next(t['path'] for t in valid_targets if t['node'] == chosen_target_node)
+                new_node = FeatureNode(name=feature_data['name'], feature_type=feature_data['type'], rel_w=0, rel_h=0,
+                                       abs_w=0, abs_h=0, x=0, y=0, parent=parent_branch)
+                new_node.path_coords = chosen_path
+                new_node.is_blended_portal = True
+                new_node.blend_source_a = parent_branch.feature_type
+                new_node.blend_source_b = chosen_target_node.feature_type
+                parent_branch.subfeatures.append(new_node)
+                return [new_node]
+
+        # --- Seeding Method ---
+        placement_result = self._find_placement_for_seed_connector(feature_data, feature_data.get('size_tier', 'small'),
+                                                                   parent_branch, all_branches)
+        if not placement_result:
+            return None
+
+        placement, child_growth_rect = placement_result
+        parent_node, face, conn_rect = placement['parent'], placement['face'], placement['rect']
+        cx, cy, cw, ch = conn_rect
+
+        connector_node = FeatureNode(feature_data['name'], feature_data['type'], 0, 0, cw, ch, cx, cy,
+                                     parent=parent_node, anchor_face=face)
+        connector_node.narrative_log = feature_data.get('description_sentence', feature_data.get('description', ''))
+
+        child_feature_data = llm.create_connector_child(parent_node, connector_node)
+        if not child_feature_data:
+            return None
+
+        child_node = FeatureNode(child_feature_data['name'], child_feature_data['type'], 0, 0, 1, 1,
+                                 child_growth_rect[0], child_growth_rect[1], parent=connector_node,
+                                 anchor_face=OPPOSITE_DIRECTION_MAP.get(face))
+        child_node.target_growth_rect = child_growth_rect
+        child_node.narrative_log = child_feature_data.get('description_sentence', '')
+
+        parent_node.subfeatures.append(connector_node)
+        connector_node.subfeatures.append(child_node)
+
+        growth_anim = grow_coroutine(child_node, draw_callback)
+        for _ in growth_anim:
+            pass
+
+        return [connector_node, child_node]
+
+    def _find_placement_for_seed_connector(self, connector_data: dict, child_size_tier: str, parent_node: FeatureNode,
+                                           all_branches: List[FeatureNode]) -> Optional[
+        Tuple[dict, Tuple[int, int, int, int]]]:
+        """Finds a valid placement for a connector and its guaranteed child space."""
+        temp_grid = self._get_temp_grid(all_branches)
+        connector_def = config.features.get(connector_data.get('type'), {})
+
+        c_min_w, c_min_h = [d // 5 for d in connector_def.get('min_dimensions_ft', [5, 5])]
+
+        size_tier_map = {'large': (12, 12), 'medium': (8, 8), 'small': (4, 4)}
+        child_w, child_h = size_tier_map.get(child_size_tier, (4, 4))
+
+        px, py, pw, ph = parent_node.get_rect()
+
+        faces_to_check = list(OPPOSITE_DIRECTION_MAP.keys())
+        random.shuffle(faces_to_check)
+
+        for face in faces_to_check:
+            if face in ('N', 'S'):
+                for x_offset in range(pw - c_min_w + 1):
+                    conn_x, child_x = px + x_offset, px + x_offset + (c_min_w - child_w) // 2
+                    conn_y = py - c_min_h if face == 'N' else py + ph
+                    child_y = py - c_min_h - child_h if face == 'N' else py + ph + c_min_h
+
+                    conn_rect = (conn_x, conn_y, c_min_w, c_min_h)
+                    child_rect = (child_x, child_y, child_w, child_h)
+
+                    if self._is_placement_valid(conn_rect, temp_grid, connector_def) and \
+                            self._is_placement_valid(child_rect, temp_grid, {}):
+                        return {'parent': parent_node, 'face': face, 'rect': conn_rect}, child_rect
+            else:
+                for y_offset in range(ph - c_min_h + 1):
+                    conn_y, child_y = py + y_offset, py + y_offset + (c_min_h - child_h) // 2
+                    conn_x = px - c_min_w if face == 'W' else px + pw
+                    child_x = px - c_min_w - child_w if face == 'W' else px + pw + c_min_w
+
+                    conn_rect = (conn_x, conn_y, c_min_w, c_min_h)
+                    child_rect = (child_x, child_y, child_w, child_h)
+
+                    if self._is_placement_valid(conn_rect, temp_grid, connector_def) and \
+                            self._is_placement_valid(child_rect, temp_grid, {}):
+                        return {'parent': parent_node, 'face': face, 'rect': conn_rect}, child_rect
+        return None
 
     def _apply_shrink_transform_to_branch(self, feature: FeatureNode, direction: str, shrink_factor: float,
                                           parent_new_rect: Optional[Tuple[int, int, int, int]] = None,

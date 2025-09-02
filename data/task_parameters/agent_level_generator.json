@@ -88,6 +88,15 @@
     "source_agent": "LEVEL_GENERATOR",
     "enable_reasoning": false
   },
+   "PEG_V3_DECIDE_CONNECTOR_STRATEGY": {
+    "task_prompt_key": "task_prompt_peg_v3_decide_connector_strategy",
+    "source_agent": "LEVEL_GENERATOR",
+    "enable_reasoning": false
+  },
+  "PEG_V3_CREATE_CONNECTOR_CHILD": {
+    "task_prompt_key": "task_prompt_peg_v3_create_connector_child",
+    "source_agent": "LEVEL_GENERATOR"
+  },
   "PROCGEN_GENERATE_NARRATIVE_BEAT": {
     "task_prompt_key": "task_prompt_peg_narrative_beat",
     "source_agent": "LEVEL_GENERATOR",

@@ -33,7 +33,7 @@ class GenerationState:
         self.character_creation_queue = []
         self.door_locations = []
         self.blended_hallways = []
-        self.exterior_tile_type = "VOID_SPACE"  # Default fallback
+        self.exterior_tile_type = "DEFAULT_FLOOR"  # Default fallback
         self.feature_embeddings = {}
 
 
@@ -133,17 +133,15 @@ class MapArtist:
         def_a = config.features.get(type_a, {})
         def_b = config.features.get(type_b, {})
 
-        tile_a_floor = self._get_tile_data_from_type(def_a.get('tile_type', 'VOID_SPACE'))
-        tile_a_border = self._get_tile_data_from_type(def_a.get('border_tile_type', 'VOID_SPACE'))
-        tile_b_floor = self._get_tile_data_from_type(def_b.get('tile_type', 'VOID_SPACE'))
-        tile_b_border = self._get_tile_data_from_type(def_b.get('border_tile_type', 'VOID_SPACE'))
+        tile_a_floor = self._get_tile_data_from_type(def_a.get('tile_type', 'DEFAULT_FLOOR'))
+        tile_a_border = self._get_tile_data_from_type(def_a.get('border_tile_type', 'DEFAULT_WALL'))
+        tile_b_floor = self._get_tile_data_from_type(def_b.get('tile_type', 'DEFAULT_FLOOR'))
+        tile_b_border = self._get_tile_data_from_type(def_b.get('border_tile_type', 'DEFAULT_WALL'))
         if not all([tile_a_floor, tile_a_border, tile_b_floor, tile_b_border]): return
 
-        # Draw blended floor
         for x, y in path_coords:
             game_map.tiles[x, y] = tile_a_floor if random.random() < 0.5 else tile_b_floor
 
-        # Draw blended border
         midpoint_index = len(hallway_data['path_coords']) // 2
         path_list = hallway_data['path_coords']
 
@@ -155,10 +153,10 @@ class MapArtist:
                         game_map.tiles[nx, ny] = border_tile
 
     def _draw_path_feature(self, game_map: 'GameMap', path_coords: set, feature_data: dict, all_features: dict):
-        """Draws a path with context-aware tiles based on intersection rules."""
+        """Draws a path with context-aware tiles, ensuring it doesn't overwrite existing walls."""
         feature_def = config.features.get(feature_data.get('type'), {})
-        default_floor_type = feature_def.get('tile_type', 'VOID_SPACE')
-        default_border_type = feature_def.get('border_tile_type', 'VOID_SPACE')
+        default_floor_type = feature_def.get('tile_type', 'PATH_FLOOR')
+        default_border_type = feature_def.get('border_tile_type', 'DEFAULT_WALL')
         intersection_rules = {rule['type']: rule for rule in feature_def.get('intersects_ok', [])}
 
         # Pass 1: Draw the floor, considering what it intersects.
@@ -171,29 +169,82 @@ class MapArtist:
             if floor_tile_data := self._get_tile_data_from_type(floor_type):
                 game_map.tiles[x, y] = floor_tile_data
 
-        # Pass 2: Draw the border.
+        # Pass 2: Draw the border, respecting intersection rules.
+        void_space_index = config.tile_type_map.get("VOID_SPACE", -1)
         for x, y in path_coords:
             for nx in range(x - 1, x + 2):
                 for ny in range(y - 1, y + 2):
                     if (nx, ny) == (x, y) or not game_map.is_in_bounds(nx, ny): continue
                     if (nx, ny) not in path_coords:
-                        current_terrain_index = game_map.tiles["terrain_type"][nx, ny]
-                        intersected_type_key = config.tile_type_map_reverse.get(current_terrain_index)
-                        rule = intersection_rules.get(intersected_type_key)
-                        border_type = rule.get('replaces_with_border',
-                                               default_border_type) if rule else default_border_type
-                        if border_tile_data := self._get_tile_data_from_type(border_type):
-                            game_map.tiles[nx, ny] = border_tile_data
+                        target_terrain_index = game_map.tiles["terrain_type"][nx, ny]
+
+                        # Only draw border on void space or on a tile type that is explicitly allowed in intersects_ok
+                        if target_terrain_index == void_space_index or config.tile_type_map_reverse.get(
+                                target_terrain_index) in intersection_rules:
+                            intersected_type_key = config.tile_type_map_reverse.get(target_terrain_index)
+                            rule = intersection_rules.get(intersected_type_key)
+                            border_type = rule.get('replaces_with_border',
+                                                   default_border_type) if rule else default_border_type
+                            if border_tile_data := self._get_tile_data_from_type(border_type):
+                                game_map.tiles[nx, ny] = border_tile_data
+
+    def _carve_portal_openings(self, game_map: 'GameMap', generation_state: 'GenerationState'):
+        """Finds connections involving a PORTAL feature and removes the border between them."""
+        if not generation_state.layout_graph: return
+
+        for p_tag, c_tag, _ in generation_state.layout_graph.edges:
+            parent_data = generation_state.placed_features.get(p_tag)
+            child_data = generation_state.placed_features.get(c_tag)
+            if not parent_data or not child_data: continue
+
+            parent_def = config.features.get(parent_data.get('type'), {})
+            child_def = config.features.get(child_data.get('type'), {})
+
+            if parent_def.get('feature_type') != 'PORTAL' and child_def.get('feature_type') != 'PORTAL':
+                continue
+
+            portal_data = parent_data if parent_def.get('feature_type') == 'PORTAL' else child_data
+            other_data = child_data if parent_def.get('feature_type') == 'PORTAL' else parent_data
+
+            portal_rect = portal_data.get('bounding_box')
+            other_rect = other_data.get('bounding_box')
+            if not portal_rect or not other_rect: continue
+
+            px1, py1, pw, ph = [int(c) for c in portal_rect]
+            ox1, oy1, ow, oh = [int(c) for c in other_rect]
+            px2, py2 = px1 + pw, py1 + ph
+            ox2, oy2 = ox1 + ow, oy1 + oh
+
+            # Find shared border coordinates
+            x_overlap_start, x_overlap_end = max(px1, ox1), min(px2, ox2)
+            y_overlap_start, y_overlap_end = max(py1, oy1), min(py2, oy2)
+
+            border_to_carve = []
+            if px2 == ox1 or ox2 == px1:  # Vertical border
+                border_to_carve = [(px2 - 1, y) for y in range(y_overlap_start, y_overlap_end)]
+            elif py2 == oy1 or oy2 == py1:  # Horizontal border
+                border_to_carve = [(x, py2 - 1) for x in range(x_overlap_start, x_overlap_end)]
+
+            if len(border_to_carve) > 2:
+                border_to_carve = border_to_carve[1:-1]  # Trim corners
+
+            portal_floor_type = config.features.get(portal_data.get('type'), {}).get('tile_type', 'DEFAULT_FLOOR')
+            carving_tile_data = self._get_tile_data_from_type(portal_floor_type)
+            if carving_tile_data:
+                for x, y in border_to_carve:
+                    if game_map.is_in_bounds(x, y): game_map.tiles[x, y] = carving_tile_data
+                    if game_map.is_in_bounds(x + 1, y): game_map.tiles[x + 1, y] = carving_tile_data
 
     def draw_map(self, game_map: 'GameMap', generation_state: 'GenerationState', features_definitions: dict):
         if not generation_state or not features_definitions:
             return
 
-        # Step 1: Initialize the entire map with primordial, unwalkable space.
         void_space_data = self._get_tile_data_from_type("VOID_SPACE")
+        if not void_space_data:
+            print("FATAL ERROR: 'VOID_SPACE' not found in tile_types.json")
+            exit()
         game_map.tiles[...] = void_space_data
 
-        # Separate features for ordered drawing
         standard_features = {}
         path_features = {}
         for tag, data in generation_state.placed_features.items():
@@ -202,25 +253,20 @@ class MapArtist:
             else:
                 standard_features[tag] = data
 
-        # Step 2: Draw standard (non-path) features.
         for feature_tag, feature_data in standard_features.items():
             feature_type_key = feature_data.get('type')
             if not feature_type_key or feature_type_key not in features_definitions: continue
             feature_def = features_definitions[feature_type_key]
-
             bounds = feature_data.get('bounding_box')
             if not bounds: continue
-
             x1, y1, w, h = [int(c) for c in bounds]
             x2, y2 = x1 + w, y1 + h
             x1, y1 = max(0, x1), max(0, y1)
             x2, y2 = min(game_map.width, x2), min(game_map.height, y2)
             if x1 >= x2 or y1 >= y2: continue
-
             floor_tile_type = feature_def.get('tile_type', 'VOID_SPACE')
             if floor_tile_data := self._get_tile_data_from_type(floor_tile_type):
                 game_map.tiles[x1:x2, y1:y2] = floor_tile_data
-
             border_thickness = feature_def.get('border_thickness', 1)
             if border_thickness > 0:
                 border_tile_type = feature_def.get('border_tile_type', 'VOID_SPACE')
@@ -232,18 +278,18 @@ class MapArtist:
                         game_map.tiles[x1:x1 + effective_border, y1:y2] = border_tile_data
                         game_map.tiles[x2 - effective_border:x2, y1:y2] = border_tile_data
 
-        # Step 3: Draw blended hallways.
         if generation_state.blended_hallways:
             for hallway_data in generation_state.blended_hallways:
                 self._draw_blended_hallway(game_map, hallway_data)
 
-        # Step 4: Draw path features.
         for feature_tag, feature_data in path_features.items():
             path_coords = feature_data.get("path_tiles") or feature_data.get("path_coords")
             path_coords_set = set(map(tuple, path_coords))
             self._draw_path_feature(game_map, path_coords_set, feature_data, generation_state.placed_features)
 
-        # Step 5: Draw doors. This must be the absolute last tile-drawing step before the exterior fill.
+        # New Pass: Carve openings for portals
+        self._carve_portal_openings(game_map, generation_state)
+
         if generation_state.door_locations:
             for door_info in generation_state.door_locations:
                 pos, tile_type = door_info.get('pos'), door_info.get('type')
@@ -253,7 +299,6 @@ class MapArtist:
                     if door_tile_data := self._get_tile_data_from_type(tile_type):
                         game_map.tiles[x, y] = door_tile_data
 
-        # Step 6: Post-processing to replace any remaining void space.
         exterior_tile_name = getattr(generation_state, 'exterior_tile_type', 'DEFAULT_FLOOR')
         if exterior_tile_data := self._get_tile_data_from_type(exterior_tile_name):
             void_space_index = config.tile_type_map.get("VOID_SPACE", -1)
