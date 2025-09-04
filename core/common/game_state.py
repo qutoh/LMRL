@@ -35,6 +35,7 @@ class GenerationState:
         self.blended_hallways = []
         self.exterior_tile_type = "DEFAULT_FLOOR"  # Default fallback
         self.feature_embeddings = {}
+        self.clearance_mask = None
 
 
 graphic_dt = np.dtype(
@@ -140,12 +141,16 @@ class MapArtist:
         if not all([tile_a_floor, tile_a_border, tile_b_floor, tile_b_border]): return
 
         for x, y in path_coords:
+            if not game_map.is_in_bounds(x, y):
+                continue
             game_map.tiles[x, y] = tile_a_floor if random.random() < 0.5 else tile_b_floor
 
         midpoint_index = len(hallway_data['path_coords']) // 2
         path_list = hallway_data['path_coords']
 
         for i, (x, y) in enumerate(path_list):
+            if not game_map.is_in_bounds(x, y):
+                continue
             border_tile = tile_a_border if i < midpoint_index else tile_b_border
             for nx in range(x - 1, x + 2):
                 for ny in range(y - 1, y + 2):

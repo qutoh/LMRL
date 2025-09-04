@@ -88,7 +88,8 @@ class MapArchitectV3:
         yield
 
     def _handle_pathing_placement(self, feature_data: dict, parent_branch: FeatureNode, narrative_log: str,
-                                  narrative_beat: str) -> Optional[FeatureNode]:
+                                  narrative_beat: str, gen_state: GenerationState) -> Generator[
+        Tuple[str, GenerationState], None, Optional[FeatureNode]]:
         """Orchestrates finding and creating a feature via the LLM-guided, clearance-aware pathfinder."""
         size_tier = feature_data.get('size_tier', 'medium')
         clearance_map = {'small': 0, 'medium': 1, 'large': 2}
@@ -148,30 +149,32 @@ class MapArchitectV3:
                               f"  FAIL: No valid connection points found on parent or target for clearance {clearance}.")
             return None
 
-        random.shuffle(valid_start_points)
-        random.shuffle(valid_end_points)
-        utils.log_message('full',
-                          f"  Found {len(valid_start_points)} start points and {len(valid_end_points)} end points.")
-
         path_feature_def = config.features.get(feature_data.get('type'), {})
 
-        for start_pos in valid_start_points:
-            for end_pos in valid_end_points:
-                path = self.pathing.find_path_with_clearance(start_pos, end_pos, clearance,
-                                                             self.initial_feature_branches, path_feature_def)
-                if path:
-                    utils.log_message('debug', f"  SUCCESS: Pathfinder connected from {start_pos} to {end_pos}.")
-                    path_tile_coords = set()
-                    for x, y in path:
-                        for i in range(-clearance, clearance + 1):
-                            for j in range(-clearance, clearance + 1):
-                                path_tile_coords.add((x + i, y + j))
+        start_pos, end_pos = self.pathing.find_first_valid_connection(valid_start_points, valid_end_points, clearance,
+                                                                      self.initial_feature_branches)
 
-                    new_path_node = FeatureNode(name=feature_data['name'], feature_type=feature_data['type'],
-                                                rel_w=0, rel_h=0, abs_w=0, abs_h=0, x=0, y=0, parent=parent_branch)
-                    new_path_node.path_coords = list(path_tile_coords)
-                    parent_branch.subfeatures.append(new_path_node)
-                    return new_path_node
+        if start_pos and end_pos:
+            clearance_mask = self.pathing._create_clearance_mask(clearance, self.initial_feature_branches)
+            gen_state.clearance_mask = clearance_mask
+            yield "PRE_PATH_DRAW", gen_state
+            gen_state.clearance_mask = None  # Clear mask after use
+
+            path = self.pathing.find_path_with_clearance(start_pos, end_pos, clearance, self.initial_feature_branches,
+                                                         path_feature_def)
+            if path:
+                utils.log_message('debug', f"  SUCCESS: Pathfinder connected from {start_pos} to {end_pos}.")
+                path_tile_coords = set()
+                for x, y in path:
+                    for i in range(-clearance, clearance + 1):
+                        for j in range(-clearance, clearance + 1):
+                            path_tile_coords.add((x + i, y + j))
+
+                new_path_node = FeatureNode(name=feature_data['name'], feature_type=feature_data['type'],
+                                            rel_w=0, rel_h=0, abs_w=0, abs_h=0, x=0, y=0, parent=parent_branch)
+                new_path_node.path_coords = list(path_tile_coords)
+                parent_branch.subfeatures.append(new_path_node)
+                return new_path_node
 
         utils.log_message('debug', f"  FAIL: Could not connect '{parent_branch.name}' to '{target_branch.name}'.")
         return None
@@ -378,8 +381,10 @@ class MapArchitectV3:
                                 for _ in growth_anim: yield "SUBFEATURE_GROWTH_STEP", gen_state
 
             elif placement_strategy == 'PATHING':
-                new_node = self._handle_pathing_placement(feature_data, parent_branch, parent_branch.narrative_log,
-                                                          narrative_beat)
+                pathing_generator = self._handle_pathing_placement(feature_data, parent_branch,
+                                                                   parent_branch.narrative_log,
+                                                                   narrative_beat, gen_state)
+                new_node = yield from pathing_generator
                 if new_node:
                     was_placed_successfully = True
                     path_anim = self._draw_path_coroutine(new_node, update_and_draw_with_delay)

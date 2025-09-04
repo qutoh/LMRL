@@ -25,19 +25,21 @@ class GameView(View):
         self.game_state = None
         self.generation_state = None
         self.mouse_pos = (0, 0)
+        self.overlay_mask: Optional[np.ndarray] = None
 
         self.log_boxes: list[DynamicTextBox] = []
         self.active_streaming_box: Optional[DynamicTextBox] = None
         self.active_streaming_buffer = ""
 
-        # Dedicate the bottom part of the screen to the scrollable log
         self.log_area_height = 15
         self.log_area_y = self.console_height - self.log_area_height
+
+    def set_overlay_mask(self, mask: Optional[np.ndarray]):
+        self.overlay_mask = mask
 
     def update_state(self, game_state, generation_state=None, path_tracer=None):
         self.game_state = game_state
         self.generation_state = generation_state
-        # The path_tracer is now handled by the base View's SDL primitives
 
     def start_new_log_entry(self, speaker: str):
         """Creates a new, empty text box for an incoming stream."""
@@ -78,8 +80,13 @@ class GameView(View):
 
     def render(self, console: tcod.console.Console):
         if self.game_state:
-            # 1. Blit the static base map
             console.rgb[...] = self.game_state.game_map.tiles["graphic"]
+
+            # Draw the overlay mask if it exists
+            if self.overlay_mask is not None:
+                console.bg[self.overlay_mask.T] = (255, 255, 0) # Use transpose for correct orientation
+                console.fg[self.overlay_mask.T] = (0, 0, 0)
+                console.ch[self.overlay_mask.T] = ord('X')
 
             # 2. Apply dynamic "shimmer" effects for specific tile types
             terrain_types = self.game_state.game_map.tiles["terrain_type"]

@@ -3,10 +3,11 @@
 import math
 import random
 from typing import List, Dict, Tuple, Optional
+from collections import deque
 
 import numpy as np
 import tcod
-from scipy.ndimage import distance_transform_edt
+from scipy.ndimage import distance_transform_edt, gaussian_filter, binary_dilation
 
 from core.common import utils
 from core.common.game_state import GameMap
@@ -37,10 +38,22 @@ class Pathing:
         then validates its clearance.
         """
         terrain_grid = self.placement_utils._get_temp_grid(all_branches)
-        cost = np.full((self.map_height, self.map_width), np.inf, dtype=np.float32)
 
-        # 1. Base Cost from Terrain Intersection Rules
-        cost[terrain_grid == self.void_space_index] = 1.0
+        allowed_indices = {self.void_space_index}
+        for rule in path_feature_def.get('intersects_ok', []):
+            if intersect_type_name := rule.get('type'):
+                if intersect_type_name in config.tile_type_map:
+                    allowed_indices.add(config.tile_type_map[intersect_type_name])
+
+        obstacle_grid = ~np.isin(terrain_grid, list(allowed_indices))
+
+        if clearance > 0:
+            structure = np.ones((clearance * 2 + 1, clearance * 2 + 1), dtype=bool)
+            clearance_mask = binary_dilation(obstacle_grid, structure=structure)
+        else:
+            clearance_mask = obstacle_grid
+
+        cost = np.full((self.map_height, self.map_width), 1.0, dtype=np.float32)
         for rule in path_feature_def.get('intersects_ok', []):
             intersect_type_name = rule.get('type')
             cost_mod = rule.get('cost_mod', 1.0)
@@ -49,27 +62,22 @@ class Pathing:
                 base_cost = config.tile_types.get(intersect_type_name, {}).get('movement_cost', 1.0)
                 cost[terrain_grid == intersect_type_index] = base_cost * cost_mod
 
-        # 2. Apply Turbulence Field (Perlin Noise)
-        turbulence = path_feature_def.get('turbulence', 0.0)
-        if turbulence > 0.0:
-            noise = tcod.noise.Noise(
-                dimensions=2,
-                algorithm=tcod.noise.Algorithm.PERLIN,
-                implementation=tcod.noise.Implementation.TURBULENCE,
-                hurst=0.0, # Does nothing to this implementation except at values we don't want.
-                lacunarity=min(max(0.0, turbulence), 10),
-                octaves=2,
-                seed=None
-            )
-            scale = path_feature_def.get('turbulence_scale', 0.1)
-            grid_y, grid_x = np.ogrid[0:self.map_height, 0:self.map_width]
-            samples = noise.sample_ogrid([grid_x * scale, grid_y * scale])
+        organic_modifiers = self._build_organic_modifiers(all_branches, path_feature_def)
+        cost *= organic_modifiers
 
-            # Use turbulence value again to control the *amplitude* of the noise
-            turbulence_modifier = 1.0 + (samples.T * turbulence)
-            cost *= turbulence_modifier
+        cost[clearance_mask] = np.inf
 
-        # 3. Apply Attraction/Repulsion Fields
+        astar = tcod.path.AStar(cost=cost.T, diagonal=0)
+        start_x, start_y = start_coords
+        end_x, end_y = end_coords
+        path_xy = astar.get_path(start_x, start_y, end_x, end_y)
+
+        return path_xy if path_xy else None
+
+    def _build_organic_modifiers(self, all_branches: List[FeatureNode], path_feature_def: dict) -> np.ndarray:
+        """Calculates and returns a single grid representing all aesthetic modifiers."""
+        modifier_grid = np.ones((self.map_height, self.map_width), dtype=np.float32)
+
         if modifiers := path_feature_def.get('pathfinding_modifiers'):
             feature_type_coords = {}
             all_nodes = [node for branch in all_branches for node in branch.get_all_nodes_in_branch()]
@@ -82,61 +90,105 @@ class Pathing:
                 else:
                     x, y, w, h = node.get_rect()
                     coords_to_add = [(i, j) for i in range(x, x + w) for j in range(y, y + h)]
-
                 for i, j in coords_to_add:
                     if 0 <= i < self.map_width and 0 <= j < self.map_height:
                         feature_type_coords[node.feature_type].add((i, j))
 
-            final_modifier_grid = np.ones((self.map_height, self.map_width), dtype=np.float32)
             for rule in modifiers:
                 target_type = rule.get('type')
                 influence = rule.get('influence', 1.0)
                 decay = rule.get('decay', 0.1)
-                if not target_type or influence == 1.0:
-                    continue
-
+                if not target_type or influence == 1.0: continue
                 source_map = np.ones((self.map_height, self.map_width), dtype=bool)
                 if target_coords := feature_type_coords.get(target_type):
                     cols, rows = zip(*target_coords)
                     source_map[list(rows), list(cols)] = False
-
                 distance_grid = distance_transform_edt(source_map)
                 influence_grid = 1 + (influence - 1) * np.exp(-decay * distance_grid)
-                final_modifier_grid *= influence_grid
+                modifier_grid *= influence_grid
 
-            cost *= final_modifier_grid
+            modifier_grid = gaussian_filter(modifier_grid, sigma=1.5)
 
-        # Clamp cost to prevent errors and create the path
-        cost[cost <= 0] = 0.01
-        astar = tcod.path.AStar(cost=cost.T, diagonal=0)
-        start_x, start_y = start_coords
-        end_x, end_y = end_coords
-        path_xy = astar.get_path(start_x, start_y, end_x, end_y)
+        turbulence = path_feature_def.get('turbulence', 0.0)
+        if turbulence > 0.0:
+            noise = tcod.noise.Noise(
+                dimensions=2, algorithm=tcod.noise.Algorithm.PERLIN,
+                implementation=tcod.noise.Implementation.TURBULENCE, hurst=1.0,
+                lacunarity=min(max(0.0, turbulence), 10.0), octaves=2, seed=None
+            )
+            scale = path_feature_def.get('turbulence_scale', 0.1)
+            grid_y, grid_x = np.ogrid[0:self.map_height, 0:self.map_width]
+            samples = noise.sample_ogrid([grid_x * scale, grid_y * scale])
+            turbulence_modifier = 1.0 + (samples.T * turbulence)
+            modifier_grid *= turbulence_modifier
 
-        if not path_xy:
-            return None
+        return gaussian_filter(modifier_grid, sigma=0.5)
 
-        path_is_valid = True
-        path_radius = clearance
-        path_dim = clearance * 2 + 1
+    def _create_clearance_mask(self, clearance: int, all_branches: List[FeatureNode]) -> np.ndarray:
+        """Creates a boolean mask where True indicates areas impassable for the given clearance."""
+        obstacle_grid = self.placement_utils._get_temp_grid(all_branches) != self.void_space_index
+        if clearance > 0:
+            structure = np.ones((clearance * 2 + 1, clearance * 2 + 1), dtype=bool)
+            return binary_dilation(obstacle_grid, structure=structure)
+        return obstacle_grid
 
-        for x_center, y_center in path_xy:
-            px, py = x_center - path_radius, y_center - path_radius
-            if not (px >= 0 and py >= 0 and (px + path_dim) <= self.map_width and (py + path_dim) <= self.map_height):
-                path_is_valid = False
-                break
-            if np.any(np.isinf(cost[py:py + path_dim, px:px + path_dim])):
-                path_is_valid = False
-                break
+    def find_first_valid_connection(self, start_points: List[Tuple[int, int]], end_points: List[Tuple[int, int]],
+                                    clearance: int, all_branches: List[FeatureNode]) -> Optional[
+        Tuple[Tuple[int, int], Tuple[int, int]]]:
+        """
+        Uses a fast BFS flood-fill with culling to find the first valid pair of
+        start/end points that can be connected with the required clearance.
+        """
+        clearance_mask = self._create_clearance_mask(clearance, all_branches)
 
-        if not path_is_valid:
-            return None
+        shuffled_starts = list(start_points)
+        random.shuffle(shuffled_starts)
 
-        return path_xy
+        visited_starts = set()
+        end_points_set = set(end_points)
+
+        for start_pos in shuffled_starts:
+            if start_pos in visited_starts:
+                continue
+
+            if not (0 <= start_pos[1] < self.map_height and 0 <= start_pos[0] < self.map_width) or clearance_mask[
+                start_pos[1], start_pos[0]]:
+                continue
+
+            q = deque([start_pos])
+            current_flood = {start_pos}
+            visited_starts.add(start_pos)
+
+            found_target = None
+
+            while q:
+                cx, cy = q.popleft()
+
+                if (cx, cy) in end_points_set:
+                    found_target = (cx, cy)
+                    break
+
+                for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                    nx, ny = cx + dx, cy + dy
+
+                    if not (0 <= ny < self.map_height and 0 <= nx < self.map_width):
+                        continue
+
+                    neighbor = (nx, ny)
+                    if neighbor not in current_flood and not clearance_mask[ny, nx]:
+                        current_flood.add(neighbor)
+                        q.append(neighbor)
+                        if neighbor in start_points:
+                            visited_starts.add(neighbor)
+
+            if found_target:
+                return start_pos, found_target
+
+        return None, None
+
 
     def _get_connection_points_for_rectangle(self, node: FeatureNode, clearance: int,
                                              all_branches: List[FeatureNode]) -> List[Tuple[int, int]]:
-        """Finds valid connection points on the exterior faces of a rectangular feature."""
         valid_points = []
         x, y, w, h = node.get_rect()
         temp_grid = self.placement_utils._get_temp_grid(all_branches, exclude_node=node)
@@ -170,7 +222,6 @@ class Pathing:
 
     def _get_connection_points_for_path(self, node: FeatureNode, clearance: int, all_branches: List[FeatureNode]) -> \
             List[Tuple[int, int]]:
-        """Finds valid connection points by checking the perimeter of a path feature."""
         if not node.path_coords: return []
         valid_points_set = set()
         path_tiles_set = set(map(tuple, node.path_coords))
@@ -197,10 +248,6 @@ class Pathing:
 
     def get_valid_connection_points(self, node: FeatureNode, clearance: int, all_branches: List[FeatureNode]) -> List[
         Tuple[int, int]]:
-        """
-        Finds valid connection points on a feature's exterior, dispatching to the
-        correct algorithm based on the feature's defined shape.
-        """
         feature_def = config.features.get(node.feature_type, {})
         shape = feature_def.get('default_shape', 'rectangle')
         if shape == 'path':
@@ -209,7 +256,6 @@ class Pathing:
             return self._get_connection_points_for_rectangle(node, clearance, all_branches)
 
     def _get_contiguous_border_segments(self, border_points: set) -> List[List[Tuple[int, int]]]:
-        """Groups a set of border points into contiguous line segments."""
         if not border_points: return []
         segments = []
         visited = set()
@@ -232,7 +278,6 @@ class Pathing:
         return segments
 
     def _create_path_intersection_openings(self, all_branches: List[FeatureNode]) -> List[Dict]:
-        """Finds where paths cross the borders of other features and creates door pairs for each contiguous segment."""
         openings = []
         all_nodes = [node for branch in all_branches for node in branch.get_all_nodes_in_branch()]
         path_nodes = [node for node in all_nodes if node.path_coords and config.features.get(node.feature_type, {}).get(
@@ -266,9 +311,6 @@ class Pathing:
 
     def create_all_connections(self, initial_feature_branches: List[FeatureNode]) -> Tuple[
         List[Dict], List[Dict], List[Dict]]:
-        """
-        Creates all connections and returns the physics joints and a list of door placements.
-        """
         displaced_conns, new_hallways = self._connect_displaced_subfeatures(initial_feature_branches)
         internal_connections = self._connect_internal_branch_doors(initial_feature_branches)
         external_connections = self._connect_external_branches(initial_feature_branches)
@@ -296,7 +338,6 @@ class Pathing:
 
     def _reconnect_detached_paths(self, all_branches: List[FeatureNode], existing_connections: List[Dict]) -> Tuple[
         List[Dict], List[Dict]]:
-        """Finds paths that are no longer connected to their intended start/end points and bridges the gap."""
         reconnections = []
         new_hallways = []
         path_connections = [c for c in existing_connections if c['node_a'].path_coords or c['node_b'].path_coords]
@@ -345,12 +386,10 @@ class Pathing:
                 child_ext_perimeter = list(self._get_node_exterior_perimeter(child))
                 if not parent_ext_perimeter or not child_ext_perimeter: continue
 
-                point_pairs = sorted(
-                    ((p1, p2) for p1 in parent_ext_perimeter for p2 in child_ext_perimeter),
-                    key=lambda points: math.hypot(points[0][0] - points[1][0], points[0][1] - points[1][1])
-                )
-                path_found = False
-                for start_pos, end_pos in point_pairs[:10]:
+                start_pos, end_pos = self.find_first_valid_connection(parent_ext_perimeter, child_ext_perimeter, 1,
+                                                                      all_branches)
+
+                if start_pos and end_pos:
                     path_centerline = self.find_path_with_clearance(start_pos, end_pos, 1, all_branches, {})
                     if path_centerline:
                         path_coords = set()
@@ -373,11 +412,9 @@ class Pathing:
                             {'node_a': parent, 'node_b': child, 'position': parent_door,
                              'door_coords': [parent_door, child_door]}
                         )
-                        path_found = True
-                        break
-                if not path_found:
-                    utils.log_message('debug',
-                                      f"  [HALLWAY FAIL] Could not connect displaced subfeature '{child.name}'.")
+                    else:
+                        utils.log_message('debug',
+                                          f"  [HALLWAY FAIL] Could not connect displaced subfeature '{child.name}'.")
         return connections, new_hallway_data
 
     def _connect_internal_branch_doors(self, initial_feature_branches: List[FeatureNode]) -> List[Dict]:
@@ -434,7 +471,7 @@ class Pathing:
         return connections
 
     def _connect_external_branches(self, initial_feature_branches: List[FeatureNode]) -> List[Dict]:
-        utils.log_message('debug', "[PEGv3 Pathing] Creating external branch connections (A*)...")
+        utils.log_message('debug', "[PEGv3 Pathing] Creating external branch connections...")
         connectable_roots = [
             b for b in initial_feature_branches
             if config.features.get(b.feature_type, {}).get('placement_strategy') != 'BLOCKING'
@@ -443,57 +480,53 @@ class Pathing:
         connections = []
         uf = UnionFind(connectable_roots)
 
-        for _ in range(len(connectable_roots) - 1):
+        all_root_nodes = list(uf.parent.keys())
+        random.shuffle(all_root_nodes)
+
+        for source_root in all_root_nodes:
             if uf.num_sets <= 1: break
-            source_root, dest_root = None, None
-            shuffled_roots = random.sample(connectable_roots, len(connectable_roots))
-            for i in range(len(shuffled_roots)):
-                for j in range(i + 1, len(shuffled_roots)):
-                    if not uf.connected(shuffled_roots[i], shuffled_roots[j]):
-                        source_root, dest_root = shuffled_roots[i], shuffled_roots[j]
+
+            unconnected_targets = [r for r in all_root_nodes if not uf.connected(source_root, r)]
+            if not unconnected_targets: continue
+
+            source_perimeters = [p for node in source_root.get_all_nodes_in_branch() for p in
+                                 self._get_node_exterior_perimeter(node)]
+            target_perimeters = [p for r in unconnected_targets for node in r.get_all_nodes_in_branch() for p in
+                                 self._get_node_exterior_perimeter(node)]
+
+            if not source_perimeters or not target_perimeters: continue
+
+            start_pos, end_pos = self.find_first_valid_connection(source_perimeters, target_perimeters, 0,
+                                                                  initial_feature_branches)
+
+            if start_pos and end_pos:
+                s_node = min(source_root.get_all_nodes_in_branch(),
+                             key=lambda n: math.hypot(n.current_x - start_pos[0], n.current_y - start_pos[1]))
+
+                target_root = None
+                for r in unconnected_targets:
+                    if any(math.hypot(node.current_x - end_pos[0], node.current_y - end_pos[1]) < 100 for node in
+                           r.get_all_nodes_in_branch()):
+                        target_root = r
                         break
-                if source_root: break
-            if not source_root: break
+                if not target_root: continue
 
-            source_nodes = source_root.get_all_nodes_in_branch()
-            dest_nodes = dest_root.get_all_nodes_in_branch()
-            random.shuffle(source_nodes)
-            random.shuffle(dest_nodes)
+                d_node = min(target_root.get_all_nodes_in_branch(),
+                             key=lambda n: math.hypot(n.current_x - end_pos[0], n.current_y - end_pos[1]))
 
-            path_found = False
-            for s_node in source_nodes:
-                for d_node in dest_nodes:
-                    s_perimeter = list(self._get_node_exterior_perimeter(s_node))
-                    d_perimeter = list(self._get_node_exterior_perimeter(d_node))
-                    if not s_perimeter or not d_perimeter: continue
+                s_wall_points = list(self._get_node_wall_perimeter(s_node))
+                d_wall_points = list(self._get_node_wall_perimeter(d_node))
+                if not s_wall_points or not d_wall_points: continue
 
-                    start_pos, end_pos = min(
-                        ((p1, p2) for p1 in s_perimeter for p2 in d_perimeter),
-                        key=lambda points: math.hypot(points[0][0] - points[1][0], points[0][1] - points[1][1])
-                    )
+                start_door = min(s_wall_points, key=lambda p: math.hypot(p[0] - start_pos[0], p[1] - start_pos[1]))
+                end_door = min(d_wall_points, key=lambda p: math.hypot(p[0] - end_pos[0], p[1] - end_pos[1]))
 
-                    path = self.find_path_with_clearance(start_pos, end_pos, 0, initial_feature_branches, {})
-                    if path:
-                        start_path_pos, end_path_pos = path[0], path[-1]
-                        s_wall_points, d_wall_points = list(self._get_node_wall_perimeter(s_node)), list(
-                            self._get_node_wall_perimeter(d_node))
-                        if not s_wall_points or not d_wall_points: continue
-
-                        start_door = min(s_wall_points,
-                                         key=lambda p: math.hypot(p[0] - start_path_pos[0], p[1] - start_path_pos[1]))
-                        end_door = min(d_wall_points,
-                                       key=lambda p: math.hypot(p[0] - end_path_pos[0], p[1] - end_path_pos[1]))
-
-                        connections.append({'node_a': s_node, 'node_b': d_node, 'position': start_pos,
-                                            'door_coords': [start_door, end_door]})
-                        uf.union(source_root, dest_root)
-                        path_found = True
-                        break
-                if path_found: break
+                connections.append({'node_a': s_node, 'node_b': d_node, 'position': start_pos,
+                                    'door_coords': [start_door, end_door]})
+                uf.union(source_root, target_root)
         return connections
 
     def _get_node_wall_perimeter(self, node: FeatureNode) -> set:
-        """Helper to get all wall coordinates for a node or its entire branch."""
         wall_points = set()
         for sub_node in node.get_all_nodes_in_branch():
             if sub_node.path_coords:
@@ -519,7 +552,6 @@ class Pathing:
         return wall_points
 
     def _get_node_exterior_perimeter(self, node: FeatureNode) -> set:
-        """Helper to get all coordinates just outside a given node."""
         perimeter = set()
         if node.path_coords:
             path_set = set(map(tuple, node.path_coords))

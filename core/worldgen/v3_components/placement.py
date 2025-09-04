@@ -368,13 +368,11 @@ class Placement:
             target_points = pathing.get_valid_connection_points(target_node, 1, all_branches)
             if not parent_points or not target_points: continue
 
-            for start_pos in parent_points:
-                for end_pos in target_points:
-                    path = pathing.find_path_with_clearance(start_pos, end_pos, 1, all_branches, feature_def)
-                    if path and min_len_tiles <= len(path) <= max_len_tiles:
-                        valid_targets.append({'node': target_node, 'path': path})
-                        break
-                if any(t['node'] == target_node for t in valid_targets): break
+            start_pos, end_pos = pathing.find_first_valid_connection(parent_points, target_points, 1, all_branches)
+            if start_pos and end_pos:
+                path = pathing.find_path_with_clearance(start_pos, end_pos, 1, all_branches, feature_def)
+                if path and min_len_tiles <= len(path) <= max_len_tiles:
+                    valid_targets.append({'node': target_node, 'path': path})
 
         target_options = sorted(list(set(t['node'].name for t in valid_targets)))
         choice = llm.decide_connector_strategy(feature_data['name'], feature_data['description'], target_options)

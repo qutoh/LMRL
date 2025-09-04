@@ -300,8 +300,6 @@ class SpecialModeManager:
         utils.log_message('debug', f"[MOCK] Received call for task: {task_key}")
         response_data = None
 
-        # --- DYNAMIC RESPONSE TASKS ---
-        # These tasks generate a response and do not read from the mock file.
         if task_key == 'PROCGEN_GENERATE_NARRATIVE_BEAT':
             combined_features = self.plausible_subfeatures + self.scenario_subfeatures
             feature_name, _ = random.choice(combined_features)
@@ -334,8 +332,6 @@ class SpecialModeManager:
             options = [line.strip().lstrip('- ') for line in option_list_str.split('\n') if line.strip()]
             response_data = random.choice(options) if options else "NONE"
 
-        # --- STATIC RESPONSE TASKS ---
-        # These tasks read their response directly from the mock data file.
         else:
             mock_response_template = self.mock_data_source.get(task_key)
             if mock_response_template is None:
@@ -401,7 +397,6 @@ class SpecialModeManager:
         DEBUG_SCENE_PROMPT = f"PEG V3 Test Scenario: {scenario_name}"
         DEBUG_SAVE_NAME = f"peg_v3_{file_io.sanitize_filename(scenario_name)}"
 
-        # 1. Create World structure
         world_dir = file_io.join_path(file_io.PROJECT_ROOT, 'data', 'worlds', DEBUG_WORLD_NAME)
         file_io.create_directory(world_dir)
         world_json_path = file_io.join_path(world_dir, 'world.json')
@@ -414,7 +409,6 @@ class SpecialModeManager:
         file_io.write_json(world_json_path, world_data)
         file_io.write_json(file_io.join_path(world_dir, 'casting_npcs.json'), [])
 
-        # 2. Save generated scene to world's scene list
         scenes_path = file_io.join_path(world_dir, 'generated_scenes.json')
         scenes_data = file_io.read_json(scenes_path, default=[])
         scenes_data = [s for s in scenes_data if s.get('scene_prompt') != DEBUG_SCENE_PROMPT]
@@ -426,7 +420,6 @@ class SpecialModeManager:
         scenes_data.append(new_scene)
         file_io.write_json(scenes_path, scenes_data)
 
-        # 3. Cache the generated level to world's levels.json
         levels_path = file_io.join_path(world_dir, 'levels.json')
         levels_cache = file_io.read_json(levels_path, default={})
 
@@ -451,16 +444,15 @@ class SpecialModeManager:
         if gen_state.physics_layout:
             level_data_to_cache['physics_layout'] = gen_state.physics_layout
         else:
-            level_data_to_cache['physics_layout'] = {"bodies": [], "joints": []}  # Placeholder for safety
+            level_data_to_cache['physics_layout'] = {"bodies": [], "joints": []}
 
         levels_cache[DEBUG_SCENE_PROMPT] = level_data_to_cache
         file_io.write_json(levels_path, levels_cache)
         self.ui_manager.event_log.add_message(f"Saved level data for '{scenario_name}'.")
 
-        # 4. Create a save game directory (overwrite old one)
         world_save_path = file_io.join_path(file_io.SAVE_DATA_ROOT, DEBUG_WORLD_NAME)
         final_save_path = file_io.join_path(world_save_path, DEBUG_SAVE_NAME)
-        file_io.remove_directory(final_save_path)  # Overwrite logic
+        file_io.remove_directory(final_save_path)
 
         temp_run_path = file_io.setup_new_run_directory(config.data_dir, DEBUG_WORLD_NAME)
         final_run_path, error = file_io.finalize_run_directory(temp_run_path, DEBUG_SAVE_NAME)
@@ -468,7 +460,6 @@ class SpecialModeManager:
             self.ui_manager.event_log.add_message(f"Error creating save directory: {error}", (255, 100, 100))
             return
 
-        # 5. Save a minimal story_state.json
         story_state_data = {
             "dialogue_log": [{"speaker": "Scene Setter", "content": gen_state.narrative_log or DEBUG_SCENE_PROMPT}],
             "summaries": [],
@@ -509,13 +500,16 @@ class SpecialModeManager:
         game_state = GameState()
         architect = MapArchitectV3(ui.app.atlas_engine, game_state.game_map, "PEG V3 Test", scenario['name'])
 
-        # This mode takes direct control of the active view
         ui.active_view = ui.game_view
         ui.active_view.update_state(game_state)
 
         def ui_render_callback(gen_state):
             if isinstance(ui.active_view, GameView):
                 ui.active_view.update_state(game_state, gen_state)
+                if hasattr(gen_state, 'clearance_mask') and gen_state.clearance_mask is not None:
+                    ui.active_view.set_overlay_mask(gen_state.clearance_mask)
+                else:
+                    ui.active_view.set_overlay_mask(None)
 
         self._start_peg_patches()
         self.peg_test_generator = architect.generate_layout_in_steps(ui_render_callback)
@@ -530,7 +524,8 @@ class SpecialModeManager:
             return
 
         animation_phases = ['INITIAL_GROWTH_STEP', 'SUBFEATURE_GROWTH_STEP', 'PATH_DRAW_STEP']
-        major_decision_phases = ['POST_GROWTH', 'PRE_JITTER', 'PRE_INTERIOR_PLACEMENT', 'PRE_CONNECT', 'POST_CONNECT']
+        major_decision_phases = ['POST_GROWTH', 'PRE_JITTER', 'PRE_INTERIOR_PLACEMENT', 'PRE_CONNECT', 'POST_CONNECT',
+                                 'PRE_PATH_DRAW']
 
         for _ in range(500):
             try:
@@ -558,6 +553,7 @@ class SpecialModeManager:
             'INITIAL_GROWTH_STEP': "Growing initial features... [ENTER] Step | [SPACE] Fast-forward",
             'POST_GROWTH': "Initial placement complete. [ENTER] to begin placing subfeatures.",
             'SUBFEATURE_GROWTH_STEP': "Growing sub-feature... [ENTER] Step | [SPACE] Fast-forward",
+            'PRE_PATH_DRAW': "Showing clearance mask for upcoming path. [ENTER] to draw.",
             'PATH_DRAW_STEP': "Drawing path... [ENTER] Step | [SPACE] Fast-forward",
             'PRE_JITTER': "[ENTER] Apply Jitter",
             'PRE_INTERIOR_PLACEMENT': "[ENTER] Begin placing interior features",
@@ -579,7 +575,6 @@ class SpecialModeManager:
         self.noise_visualizer_active = True
         ui = self.ui_manager
 
-        # 1. Generate a base map
         game_state = GameState()
         architect = MapArchitectV3(ui.app.atlas_engine, game_state.game_map, "Noise Test", "Noise Test")
 
@@ -600,9 +595,10 @@ class SpecialModeManager:
         for branches in growth_generator:
             architect.initial_feature_branches = branches
 
+        architect.map_ops.JITTER_ITERATIONS = 150
         architect.map_ops.apply_jitter(architect.initial_feature_branches, on_iteration_end=lambda: None)
+        architect.map_ops.JITTER_ITERATIONS = 50
 
-        # Connect all pairs of root features
         root_nodes = architect.initial_feature_branches
         for i in range(len(root_nodes)):
             for j in range(i + 1, len(root_nodes)):
@@ -610,13 +606,14 @@ class SpecialModeManager:
                 start_points = architect.pathing.get_valid_connection_points(node_a, 0, root_nodes)
                 end_points = architect.pathing.get_valid_connection_points(node_b, 0, root_nodes)
                 if start_points and end_points:
-                    start_pos = random.choice(start_points)
-                    end_pos = random.choice(end_points)
-                    path = architect.pathing.find_path_with_clearance(start_pos, end_pos, 0, root_nodes, {})
-                    if path:
-                        path_node = FeatureNode(f"Path {i}-{j}", "GENERIC_PATH", 0, 0, 0, 0)
-                        path_node.path_coords = path
-                        node_a.subfeatures.append(path_node)
+                    start_pos, end_pos = architect.pathing.find_first_valid_connection(start_points, end_points, 0,
+                                                                                       root_nodes)
+                    if start_pos and end_pos:
+                        path = architect.pathing.find_path_with_clearance(start_pos, end_pos, 0, root_nodes, {})
+                        if path:
+                            path_node = FeatureNode(f"Path {i}-{j}", "GENERIC_PATH", 0, 0, 0, 0)
+                            path_node.path_coords = path
+                            node_a.subfeatures.append(path_node)
 
         gen_state = GenerationState(game_state.game_map)
         architect.converter.populate_generation_state(gen_state, architect.initial_feature_branches)
@@ -625,7 +622,9 @@ class SpecialModeManager:
         artist = MapArtist()
         artist.draw_map(game_state.game_map, gen_state, config.features)
 
-        # 2. Create and set the view
+        clearance_mask = architect.pathing._create_clearance_mask(1,
+                                                                  architect.initial_feature_branches)  # Use clearance 1 for vis
+
         def on_exit():
             self.noise_visualizer_active = False
             self.ui_manager.app.app_state = AppState.WORLD_SELECTION
@@ -635,5 +634,5 @@ class SpecialModeManager:
             console_width=ui.root_console.width,
             console_height=ui.root_console.height
         )
-        view.set_base_map(game_state, gen_state)
+        view.set_base_map(game_state, gen_state, clearance_mask)
         ui.active_view = view

@@ -21,10 +21,11 @@ class NoiseVisualizerView(View):
 
         self.base_game_state: GameState | None = None
         self.base_gen_state: GenerationState | None = None
+        self.clearance_mask: np.ndarray | None = None
+        self.show_mask = False
 
         self.noise_console = tcod.console.Console(console_width, console_height, order="F")
 
-        # Define noise parameters, their ranges, and step values
         self.params = {
             'lacunarity': 2.0,
             'scale': 0.1
@@ -36,10 +37,11 @@ class NoiseVisualizerView(View):
         self.param_keys = list(self.params.keys())
         self.selected_param_index = 0
 
-    def set_base_map(self, game_state: GameState, generation_state: GenerationState):
-        """Receives the pre-generated map to draw as a background."""
+    def set_base_map(self, game_state: GameState, generation_state: GenerationState, clearance_mask: np.ndarray):
+        """Receives the pre-generated map and clearance mask to draw."""
         self.base_game_state = game_state
         self.base_gen_state = generation_state
+        self.clearance_mask = clearance_mask
         self.regenerate_noise_texture()
 
     def regenerate_noise_texture(self):
@@ -76,6 +78,10 @@ class NoiseVisualizerView(View):
             self.on_exit()
             return
 
+        if key == tcod.event.KeySym.TAB:
+            self.show_mask = not self.show_mask
+            return
+
         key_handled = False
         if key == tcod.event.KeySym.RIGHT or key == tcod.event.KeySym.LEFT:
             self.selected_param_index = (self.selected_param_index + 1) % len(self.param_keys)
@@ -100,6 +106,12 @@ class NoiseVisualizerView(View):
     def render(self, console: tcod.console.Console):
         if self.base_game_state:
             console.rgb[...] = self.base_game_state.game_map.tiles["graphic"]
+
+            # Draw the clearance mask if toggled
+            if self.show_mask and self.clearance_mask is not None:
+                # Transpose mask because numpy is (row, col) but tcod is (x, y)
+                console.bg[self.clearance_mask.T] = (255, 255, 0)
+
             for entity in self.base_game_state.entities:
                 console.print(x=entity.x, y=entity.y, string=entity.char, fg=entity.color)
 
@@ -113,7 +125,7 @@ class NoiseVisualizerView(View):
 
         y_offset = 2
         console.print_box(
-            x=0, y=0, width=self.console_width, height=len(self.param_keys) + 3,
+            x=0, y=0, width=self.console_width, height=len(self.param_keys) + 4,
             string="", bg=(0, 0, 0)
         )
         console.print(x=2, y=1, string="Noise Parameters (Perlin FBM)", fg=(255, 255, 255))
@@ -122,5 +134,9 @@ class NoiseVisualizerView(View):
             fg = (255, 255, 0) if i == self.selected_param_index else (200, 200, 200)
             value_str = f"{self.params[key]:.2f}"
             console.print(x=2, y=y_offset + i, string=f"{key.capitalize()}: {value_str}", fg=fg)
+
+        mask_status = "ON" if self.show_mask else "OFF"
+        console.print(x=2, y=y_offset + len(self.param_keys) + 1, string=f"[TAB] Show Clearance Mask: {mask_status}",
+                      fg=(200, 200, 255))
 
         super().render(console)
