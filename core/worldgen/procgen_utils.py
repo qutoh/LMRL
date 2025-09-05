@@ -5,6 +5,23 @@ from collections import deque
 from typing import List, Set, Tuple
 import numpy as np
 
+# /core/worldgen/procgen_utils.py
+
+import re
+from collections import deque
+from typing import List, Set, Tuple
+import numpy as np
+
+from ..common.localization import loc_raw
+
+_RELATIONSHIPS_DATA_CACHE = None
+
+def get_relationships_data():
+    """Loads and caches the relationships data from localization files."""
+    global _RELATIONSHIPS_DATA_CACHE
+    if _RELATIONSHIPS_DATA_CACHE is None:
+        _RELATIONSHIPS_DATA_CACHE = loc_raw("relationships_data", default={'hierarchical': [], 'lattice': {}})
+    return _RELATIONSHIPS_DATA_CACHE
 
 def find_contiguous_regions(grid: np.ndarray, traversable_indices: set) -> List[Set[Tuple[int, int]]]:
     """

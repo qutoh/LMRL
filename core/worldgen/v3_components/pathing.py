@@ -30,6 +30,50 @@ class Pathing:
         self.placement_utils = Placement(self.map_width, self.map_height)
         self.void_space_index = config.tile_type_map.get("VOID_SPACE", -1)
 
+    def get_border_coordinates_for_direction(self, direction: str) -> List[Tuple[int, int]]:
+        """
+        Calculates all (x, y) coordinates on the map border that fall within a given
+        directional wedge, calculated from the center of the map.
+        """
+        direction = direction.upper()
+        # Wedges defined in degrees: 0/360 is East.
+        wedges = {
+            'EAST': (315, 45),
+            'NORTHEAST': (45, 90),
+            'NORTH': (90, 135),
+            'NORTHWEST': (135, 180),
+            'WEST': (180, 225),
+            'SOUTHWEST': (225, 270),
+            'SOUTH': (270, 315),
+            'SOUTHEAST': (315, 360)
+        }
+        if direction not in wedges:
+            return []
+
+        center_x, center_y = self.map_width / 2.0, self.map_height / 2.0
+        min_angle, max_angle = wedges[direction]
+
+        border_coords = []
+        for x in range(self.map_width):
+            border_coords.append((x, 0))
+            border_coords.append((x, self.map_height - 1))
+        for y in range(1, self.map_height - 1):
+            border_coords.append((0, y))
+            border_coords.append((self.map_width - 1, y))
+
+        valid_points = []
+        for x, y in set(border_coords):
+            angle = math.degrees(math.atan2(y - center_y, x - center_x))
+            angle = (angle + 360) % 360
+
+            if min_angle > max_angle:  # Handle the EAST crossover at 360/0
+                if angle >= min_angle or angle < max_angle:
+                    valid_points.append((x, y))
+            elif min_angle <= angle < max_angle:
+                valid_points.append((x, y))
+
+        return valid_points
+
     def find_path_with_clearance(self, start_coords: Tuple[int, int], end_coords: Tuple[int, int], clearance: int,
                                  all_branches: List[FeatureNode], path_feature_def: dict) -> Optional[
         List[Tuple[int, int]]]:
@@ -185,7 +229,6 @@ class Pathing:
                 return start_pos, found_target
 
         return None, None
-
 
     def _get_connection_points_for_rectangle(self, node: FeatureNode, clearance: int,
                                              all_branches: List[FeatureNode]) -> List[Tuple[int, int]]:
@@ -500,30 +543,32 @@ class Pathing:
                                                                   initial_feature_branches)
 
             if start_pos and end_pos:
-                s_node = min(source_root.get_all_nodes_in_branch(),
-                             key=lambda n: math.hypot(n.current_x - start_pos[0], n.current_y - start_pos[1]))
+                path = self.find_path_with_clearance(start_pos, end_pos, 0, initial_feature_branches, {})
+                if path:
+                    s_node = min(source_root.get_all_nodes_in_branch(),
+                                 key=lambda n: math.hypot(n.current_x - start_pos[0], n.current_y - start_pos[1]))
 
-                target_root = None
-                for r in unconnected_targets:
-                    if any(math.hypot(node.current_x - end_pos[0], node.current_y - end_pos[1]) < 100 for node in
-                           r.get_all_nodes_in_branch()):
-                        target_root = r
-                        break
-                if not target_root: continue
+                    target_root = None
+                    for r in unconnected_targets:
+                        if any(math.hypot(node.current_x - end_pos[0], node.current_y - end_pos[1]) < 100 for node in
+                               r.get_all_nodes_in_branch()):
+                            target_root = r
+                            break
+                    if not target_root: continue
 
-                d_node = min(target_root.get_all_nodes_in_branch(),
-                             key=lambda n: math.hypot(n.current_x - end_pos[0], n.current_y - end_pos[1]))
+                    d_node = min(target_root.get_all_nodes_in_branch(),
+                                 key=lambda n: math.hypot(n.current_x - end_pos[0], n.current_y - end_pos[1]))
 
-                s_wall_points = list(self._get_node_wall_perimeter(s_node))
-                d_wall_points = list(self._get_node_wall_perimeter(d_node))
-                if not s_wall_points or not d_wall_points: continue
+                    s_wall_points = list(self._get_node_wall_perimeter(s_node))
+                    d_wall_points = list(self._get_node_wall_perimeter(d_node))
+                    if not s_wall_points or not d_wall_points: continue
 
-                start_door = min(s_wall_points, key=lambda p: math.hypot(p[0] - start_pos[0], p[1] - start_pos[1]))
-                end_door = min(d_wall_points, key=lambda p: math.hypot(p[0] - end_pos[0], p[1] - end_pos[1]))
+                    start_door = min(s_wall_points, key=lambda p: math.hypot(p[0] - path[0][0], p[1] - path[0][1]))
+                    end_door = min(d_wall_points, key=lambda p: math.hypot(p[0] - path[-1][0], p[1] - path[-1][1]))
 
-                connections.append({'node_a': s_node, 'node_b': d_node, 'position': start_pos,
-                                    'door_coords': [start_door, end_door]})
-                uf.union(source_root, target_root)
+                    connections.append({'node_a': s_node, 'node_b': d_node, 'position': start_pos,
+                                        'door_coords': [start_door, end_door]})
+                    uf.union(source_root, target_root)
         return connections
 
     def _get_node_wall_perimeter(self, node: FeatureNode) -> set:

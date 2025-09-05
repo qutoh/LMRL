@@ -16,6 +16,7 @@ from .v3_components.v3_llm import V3_LLM
 from ..common import utils
 from ..common.config_loader import config
 from ..common.game_state import GenerationState, MapArtist
+from ..worldgen import procgen_utils
 
 # Set extremely high because we expect to reach a natural geometric limit before then
 # only here to catch short infinite loops
@@ -105,52 +106,57 @@ class MapArchitectV3:
                         valid_target_branches.append(b)
                         break
 
-        if not valid_target_branches:
-            utils.log_message('debug', "  FAIL: No other branches are physically reachable to path to.")
-            return None
-
         target_options = [b.name for b in valid_target_branches]
-        target_options_str = "\n".join(f"- {name}" for name in target_options)
 
+        # Add map border options
+        vertical_rels = ['UP', 'DOWN', 'ABOVE', 'BELOW']
+        relationships_data = procgen_utils.get_relationships_data()
+        lattice_rels = relationships_data.get("lattice", {})
+        border_options = [f"{direction}_BORDER" for direction in lattice_rels if direction not in vertical_rels]
+        target_options.extend(border_options)
+
+        target_options_str = "\n".join(f"- {name}" for name in target_options)
         chosen_target_name = self.llm.choose_path_target_feature(narrative_log, narrative_beat, target_options_str)
 
         if not chosen_target_name or 'none' in chosen_target_name.lower():
             utils.log_message('debug', "  LLM decided not to place a path. Discarding feature.")
             return None
 
-        target_branch = next((b for b in valid_target_branches if b.name.lower() == chosen_target_name.lower().strip()),
-                             None)
+        target_branch = None
+        valid_end_points = []
 
-        if not target_branch:
-            utils.log_message('debug',
-                              f"  LLM chose an invalid target '{chosen_target_name}'. Attempting semantic fallback.")
-            best_match_name = self.semantic_search.find_best_match(chosen_target_name, target_options)
-            if best_match_name:
-                target_branch = next((b for b in valid_target_branches if b.name == best_match_name), None)
-            if not target_branch:
-                utils.log_message('debug',
-                                  f"  FAIL: Semantic fallback could not find a match for '{chosen_target_name}'.")
+        if "_BORDER" in chosen_target_name.upper():
+            direction = chosen_target_name.upper().replace("_BORDER", "")
+            valid_end_points = self.pathing.get_border_coordinates_for_direction(direction)
+            if not valid_end_points:
+                utils.log_message('debug', f"  FAIL: No valid border coordinates found for direction '{direction}'.")
                 return None
+        else:
+            target_branch = next(
+                (b for b in valid_target_branches if b.name.lower() == chosen_target_name.lower().strip()), None)
+            if not target_branch:
+                best_match_name = self.semantic_search.find_best_match(chosen_target_name,
+                                                                       [b.name for b in valid_target_branches])
+                if best_match_name:
+                    target_branch = next((b for b in valid_target_branches if b.name == best_match_name), None)
+                if not target_branch:
+                    utils.log_message('debug', f"  FAIL: Could not find a match for '{chosen_target_name}'.")
+                    return None
 
-        utils.log_message('debug', f"  LLM chose target branch: '{target_branch.name}'")
+            for node in target_branch.get_all_nodes_in_branch():
+                valid_end_points.extend(
+                    self.pathing.get_valid_connection_points(node, clearance, self.initial_feature_branches))
 
         valid_start_points = []
         for node in parent_branch.get_all_nodes_in_branch():
             valid_start_points.extend(
                 self.pathing.get_valid_connection_points(node, clearance, self.initial_feature_branches))
 
-        valid_end_points = []
-        for node in target_branch.get_all_nodes_in_branch():
-            valid_end_points.extend(
-                self.pathing.get_valid_connection_points(node, clearance, self.initial_feature_branches))
-
         if not valid_start_points or not valid_end_points:
-            utils.log_message('debug',
-                              f"  FAIL: No valid connection points found on parent or target for clearance {clearance}.")
+            utils.log_message('debug', f"  FAIL: No valid start or end points found for path.")
             return None
 
         path_feature_def = config.features.get(feature_data.get('type'), {})
-
         start_pos, end_pos = self.pathing.find_first_valid_connection(valid_start_points, valid_end_points, clearance,
                                                                       self.initial_feature_branches)
 
@@ -158,7 +164,7 @@ class MapArchitectV3:
             clearance_mask = self.pathing._create_clearance_mask(clearance, self.initial_feature_branches)
             gen_state.clearance_mask = clearance_mask
             yield "PRE_PATH_DRAW", gen_state
-            gen_state.clearance_mask = None  # Clear mask after use
+            gen_state.clearance_mask = None
 
             path = self.pathing.find_path_with_clearance(start_pos, end_pos, clearance, self.initial_feature_branches,
                                                          path_feature_def)
@@ -176,7 +182,7 @@ class MapArchitectV3:
                 parent_branch.subfeatures.append(new_path_node)
                 return new_path_node
 
-        utils.log_message('debug', f"  FAIL: Could not connect '{parent_branch.name}' to '{target_branch.name}'.")
+        utils.log_message('debug', f"  FAIL: Could not connect '{parent_branch.name}' to '{chosen_target_name}'.")
         return None
 
     def _resolve_parent_node(self, chosen_parent_name: str, valid_parent_nodes: List[FeatureNode]) -> Optional[

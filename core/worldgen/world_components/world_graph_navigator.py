@@ -2,7 +2,7 @@
 
 from core.common import file_io
 from core.common.config_loader import config
-from core.common.localization import loc_raw
+from ..procgen_utils import get_relationships_data
 
 
 class WorldGraphNavigator:
@@ -12,7 +12,7 @@ class WorldGraphNavigator:
     """
 
     def __init__(self):
-        self.RELATIONSHIPS_DATA = loc_raw("relationships_data", default={'hierarchical': [], 'lattice': {}})
+        self.RELATIONSHIPS_DATA = get_relationships_data()
         self.HIERARCHICAL_RELATIONSHIPS = self.RELATIONSHIPS_DATA.get("hierarchical", [])
         self.LATTICE_RELATIONSHIPS = self.RELATIONSHIPS_DATA.get("lattice", {})
         self.VALID_RELATIONSHIPS = self.HIERARCHICAL_RELATIONSHIPS + list(self.LATTICE_RELATIONSHIPS.keys())
