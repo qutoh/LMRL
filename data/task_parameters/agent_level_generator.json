@@ -27,16 +27,75 @@
   },
   "PEG_V3_CHOOSE_PARENT": {
     "task_prompt_key": "task_prompt_peg_v3_choose_parent",
+	"model_override": "",
     "source_agent": "LEVEL_GENERATOR"
   },
   "PEG_V3_GET_INITIAL_FEATURES_JSON": {
     "task_prompt_key": "task_prompt_peg_v3_get_initial_features_json",
+	"model_override": "",
     "source_agent": "LEVEL_GENERATOR"
   },
   "PEG_V3_GET_NARRATIVE_SEED": {
     "task_prompt_key": "task_prompt_peg_v3_get_narrative_seed",
     "source_agent": "LEVEL_GENERATOR",
     "default_adjustment": 0.1
+  },
+  "PEG_V3_CHOOSE_PATH_TARGET": {
+    "task_prompt_key": "task_prompt_peg_v3_choose_path_target",
+    "calibration_group": "peg_choice",
+    "enable_reasoning": false,
+    "description": "Asks the LLM to choose a destination for a new path from a list of options."
+  },
+  "PEG_V3_CREATE_NEARBY_FEATURE_SENTENCE": {
+    "task_prompt_key": "task_prompt_peg_v3_create_nearby_feature_sentence",
+    "source_agent": "LEVEL_GENERATOR",
+    "default_adjustment": 0.1
+  },
+  "PEG_V3_CHOOSE_EXTERIOR_TILE": {
+    "task_prompt_key": "task_prompt_peg_v3_choose_exterior_tile",
+    "source_agent": "LEVEL_GENERATOR",
+    "enable_reasoning": false
+  },
+  "PEG_V3_CREATE_TILE_JSON": {
+    "task_prompt_key": "task_prompt_gen_tile_full_json",
+    "source_agent": "LEVEL_GENERATOR"
+  },
+  "PEG_V3_CREATE_TILE_NAME_STEPWISE": {
+    "task_prompt_key": "task_prompt_gen_tile_name_stepwise",
+    "source_agent": "LEVEL_GENERATOR"
+  },
+  "PEG_V3_CREATE_TILE_DESC_STEPWISE": {
+    "task_prompt_key": "task_prompt_gen_tile_desc_stepwise",
+    "source_agent": "LEVEL_GENERATOR"
+  },
+  "PEG_V3_CREATE_TILE_CHAR_STEPWISE": {
+    "task_prompt_key": "task_prompt_gen_tile_char_stepwise",
+    "source_agent": "LEVEL_GENERATOR",
+    "enable_reasoning": false
+  },
+  "PEG_V3_CREATE_TILE_COLOR_STEPWISE": {
+    "task_prompt_key": "task_prompt_gen_tile_color_stepwise",
+    "source_agent": "LEVEL_GENERATOR",
+    "enable_reasoning": false
+  },
+  "PEG_V3_CREATE_TILE_PASS_METHODS_STEPWISE": {
+    "task_prompt_key": "task_prompt_gen_tile_pass_methods_stepwise",
+    "source_agent": "LEVEL_GENERATOR",
+    "enable_reasoning": false
+  },
+  "PEG_V3_CREATE_TILE_MATERIALS_STEPWISE": {
+    "task_prompt_key": "task_prompt_gen_tile_materials_stepwise",
+    "source_agent": "LEVEL_GENERATOR",
+    "enable_reasoning": false
+  },
+   "PEG_V3_DECIDE_CONNECTOR_STRATEGY": {
+    "task_prompt_key": "task_prompt_peg_v3_decide_connector_strategy",
+    "source_agent": "LEVEL_GENERATOR",
+    "enable_reasoning": false
+  },
+  "PEG_V3_CREATE_CONNECTOR_CHILD": {
+    "task_prompt_key": "task_prompt_peg_v3_create_connector_child",
+    "source_agent": "LEVEL_GENERATOR"
   },
   "PROCGEN_GENERATE_NARRATIVE_BEAT": {
     "task_prompt_key": "task_prompt_peg_narrative_beat",

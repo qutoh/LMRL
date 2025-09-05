@@ -1,12 +1,42 @@
 {
-    "pantheon-of-cydonia-realm-i1@q4_k_s": {
-        "DIRECTOR_GET_COMMAND": 1.8,
-        "CALIBRATION_CHOOSE_KEYWORD_FROM_NARRATIVE": 1.8,
-        "DIRECTOR_CHECK_NPC_SURVIVAL": 0.2
+    "cydonia-22b-v1.3": {
+        "POSITION_PARSE_MOVEMENT": {
+            "temperature": 0.8,
+            "score": 0.968
+        },
+        "POSITION_FIX_MOVEMENT_JSON": {
+            "temperature": 0.2,
+            "score": 0.795
+        },
+        "ESTIMATE_ACTION_DURATION": {
+            "temperature": 0.6,
+            "score": 0.404
+        }
     },
-    "phi-3-mini-4k-instruct": {
-        "POSITION_PARSE_MOVEMENT": 0.2,
-        "POSITION_FIX_MOVEMENT_JSON": 0.2,
-        "ESTIMATE_ACTION_DURATION": 0.2
+    "pantheon-of-cydonia-realm-i1@q4_k_s": {
+        "POSITION_PARSE_MOVEMENT": {
+            "temperature": 1.0,
+            "score": 0.962
+        },
+        "POSITION_FIX_MOVEMENT_JSON": {
+            "temperature": 0.2,
+            "score": 0.795
+        },
+        "ESTIMATE_ACTION_DURATION": {
+            "temperature": 0.4,
+            "score": 0.528
+        },
+        "DIRECTOR_GET_COMMAND": {
+            "temperature": 1.6,
+            "score": 1.198
+        },
+        "CALIBRATION_CHOOSE_KEYWORD_FROM_NARRATIVE": {
+            "temperature": 0.8,
+            "score": 0.0
+        },
+        "DIRECTOR_CONFIRM_NPC_SAVE": {
+            "temperature": 0.2,
+            "score": 1.0
+        }
     }
 }

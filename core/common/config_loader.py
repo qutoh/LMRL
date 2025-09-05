@@ -1,7 +1,7 @@
-# /core/config_loader.py
+# /core/common/config_loader.py
 
-from .localization import loc
 from . import file_io
+from .localization import loc
 
 
 class Config:
@@ -9,12 +9,13 @@ class Config:
         self.data_dir = file_io.join_path(file_io.PROJECT_ROOT, data_dir_name)
 
         self.settings = self._load_json('settings.json')
-        self.default_settings = self._load_json('default_settings.json', default={})  # NEW
+        self.default_settings = self._load_json('default_settings.json', default={})
 
         self.leads = self._load_json('leads.json')
         self.dm_roles = self._load_json('dm_roles.json')
         self.agents = self._load_json('agents.json', default={})
         self.scene = self._load_json('scene.json', default=[{"scene_prompt": "A story begins."}])
+        self.model_tuning = self._load_json('model_tuning.json', default={})
 
         self.levels = {}
         self.generated_scenes = []
@@ -22,6 +23,12 @@ class Config:
 
         self.features = self._load_json('features.json', default={})
         self.tile_types = self._load_json('tile_types.json', default={})
+        self.travel = self._load_json('travel.json', default={})
+        self.materials = self._load_json('materials.json', default={})
+
+        # --- Programmatically ensure core definitions exist ---
+        self._ensure_core_definitions()
+
         self.tile_type_map = {name: i for i, name in enumerate(self.tile_types.keys())}
         self.tile_type_map_reverse = {i: name for name, i in self.tile_type_map.items()}
 
@@ -29,16 +36,37 @@ class Config:
         self.casting_npcs = self._load_json('casting_npcs.json')
         self.casting_dms = self._load_json('casting_dms.json')
 
-        # --- MODIFIED: Load task parameters from a directory ---
         self.task_parameters = self._load_task_parameters()
 
         self.calibration_groups = self._load_json('calibration_groups.json', default={})
         self.calibrated_temperatures = self._load_json('calibrated_temperatures.json', default={})
         self.calibration_tasks = self._load_json('calibration_tasks.json', default=[])
         self.ideation_blacklist = self._load_json('ideation_blacklist.json', default={})
+        self.global_blacklist = self._load_json('global_blacklist.json', default={})
 
         self._apply_defaults_to_agents()
         self._apply_api_keys()
+
+    def _ensure_core_definitions(self):
+        """Ensures that critical, hard-coded features and tiles exist."""
+        if "VOID_SPACE" not in self.tile_types:
+            self.tile_types["VOID_SPACE"] = {
+                "description": "The primordial, unformed space of the map before generation.",
+                "movement_cost": 1.0,
+                "is_transparent": True,
+                "materials": ["NONE"],
+                "pass_methods": [],  # Not walkable
+                "colors": [[10, 0, 10]],
+                "characters": [" "]
+            }
+
+        if "CHARACTER" not in self.features:
+            self.features["CHARACTER"] = {
+                "display_name": "A character or creature.",
+                "feature_type": "CHARACTER",
+                "placement_strategy": "SPECIAL_FUNC",
+                "border_thickness": 0
+            }
 
     def _load_task_parameters(self) -> dict:
         """Loads and merges all task parameter JSON files from the dedicated directory."""
@@ -52,7 +80,6 @@ class Config:
             if filename.endswith('.json'):
                 file_path = file_io.join_path(params_dir, filename)
                 params_data = file_io.read_json(file_path, default={})
-                # Check for duplicate keys before merging
                 for key in params_data:
                     if key in merged_params:
                         print(
@@ -61,9 +88,10 @@ class Config:
 
         return merged_params
 
-    def save_settings(self):  # NEW
+    def save_settings(self):
         """Saves the current settings dictionary to settings.json."""
         path = file_io.join_path(self.data_dir, 'settings.json')
+        self.settings.pop('GEMINI_API_KEY', '')  # Yeah lol
         return file_io.write_json(path, self.settings)
 
     def load_world_data(self, world_name: str):
@@ -81,6 +109,19 @@ class Config:
         scenes_file = file_io.join_path(world_data_path, 'generated_scenes.json')
         self.generated_scenes = file_io.read_json(scenes_file, default=[])
 
+        # --- MERGE TILE TYPES ---
+        self.tile_types = self._load_json('tile_types.json', default={})  # Reload base
+        world_tiles_file = file_io.join_path(world_data_path, 'generated_tiles.json')
+        world_tiles = file_io.read_json(world_tiles_file, default={})
+        self.tile_types.update(world_tiles)
+
+        # --- RE-ENSURE CORE DEFINITIONS ---
+        self._ensure_core_definitions()
+
+        # Regenerate maps after merge
+        self.tile_type_map = {name: i for i, name in enumerate(self.tile_types.keys())}
+        self.tile_type_map_reverse = {i: name for name, i in self.tile_type_map.items()}
+
         world_npcs_file = file_io.join_path(world_data_path, 'casting_npcs.json')
         world_npcs = file_io.read_json(world_npcs_file, default=[])
 
@@ -90,6 +131,14 @@ class Config:
         for npc in world_npcs:
             if npc['name'].lower() not in existing_npc_names:
                 self.casting_npcs.append(npc)
+
+        # --- MERGE DM CASTING LISTS ---
+        world_dms_file = file_io.join_path(world_data_path, 'casting_dms.json')
+        world_dms = file_io.read_json(world_dms_file, default=[])
+        existing_dm_names = {dm['name'].lower() for dm in self.casting_dms}
+        for dm in world_dms:
+            if dm['name'].lower() not in existing_dm_names:
+                self.casting_dms.append(dm)
 
     def _load_json(self, filename, default=None):
         """Helper function to load a JSON file with error handling."""
@@ -126,7 +175,7 @@ class Config:
     def _apply_api_keys(self):
         """Get API keys from environment variables via the file_io module."""
         gemini_env_var = self.settings.get("GEMINI_API_KEY_ENV_VAR")
-        if gemini_env_var:
+        if gemini_env_var:  # This will spill your API key to settings, recommended to leave uncommented but
             self.settings['GEMINI_API_KEY'] = file_io.get_env_variable(gemini_env_var)
 
 

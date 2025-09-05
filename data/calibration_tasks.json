@@ -5,6 +5,7 @@
             "target_task_key": "DIRECTOR_GET_COMMAND",
             "target_task_prompt_key": "task_prompt_director_main",
             "prompt_args": {
+                "prompt_substring_world_scene_context": "### World Theme:\nA world of grim fantasy and political intrigue.\n\n### Scene Context:\nEntering a forgotten crypt.",
                 "character_name": "Evelyn, the Shadow",
                 "character_instructions": "You are a cunning rogue. Your goal is to acquire wealth and secrets.",
                 "conversation_str": "Here is a summary of the story so far:\nThe party entered a forgotten crypt, bypassing a rusty gate. Inside, they found a sarcophagus which Evelyn, the Shadow, skillfully opened, revealing a strange, pulsing gemstone.\n\n--- RECENT DIALOGUE ---\n- Narrator: A low grinding sound echoes from the far end of the chamber as a stone door begins to slide open.\n- Brother Theron: By the light! What new evil approaches?\n- Evelyn, the Shadow: I pocket the gemstone while no one is looking. This could be valuable.",
@@ -15,30 +16,13 @@
             "validation": { 
                 "type": "json", 
                 "temperature_reward_factor": 0.15,
-                "mutually_exclusive_actions": ["UPDATE", "REMOVE", "LOAD"], 
+                "mutually_exclusive_actions": ["UPDATE", "REMOVE", "LOAD", "UNFUSE_DM"], 
                 "rules": [
                     { "check": "has_key", "key": "action" },
-                    { "check": "key_value_in", "key": "action", "values": ["UPDATE", "REMOVE", "LOAD"] },
+                    { "check": "key_value_in", "key": "action", "values": ["UPDATE", "REMOVE", "LOAD", "UNFUSE_DM"] },
                     { "check": "key_requires_key", "if_key": "action", "if_value": "UPDATE", "then_key": "new_instructions" },
                     { "check": "key_requires_key", "if_key": "action", "if_value": "LOAD", "then_key": "target_name" }
                 ]
-            }
-        },
-        {
-            "calibration_id": "PROMETHEUS_TOOL_USE_VALIDATION",
-            "target_task_key": "PROMETHEUS_DETERMINE_TOOL_USE",
-            "target_task_prompt_key": "task_prompt_prometheus_tool_use",
-            "prompt_args": {
-                "character_list": "Evelyn, the Shadow; Silas the Merchant",
-                "recent_events": "Narrator: The ceiling groans and with a final crack, collapses in a shower of stone and dust. When the air clears, Silas the Merchant is nowhere to be seen, buried under tons of rock."
-            },
-            "validation": {
-                "type": "key_value_checklist",
-                "temperature_reward_factor": 0.05,
-                "expected_pairs": {
-                    "summarize_for_memory": [true, false],
-                    "remove_character": true
-                }
             }
         },
         {
@@ -77,13 +61,60 @@
         },
         {
             "calibration_id": "LOGICAL_KEYWORD_VALIDATION",
-            "target_task_key": "DIRECTOR_CHECK_NPC_SURVIVAL",
-            "target_task_prompt_key": "task_prompt_director_npc_survival",
-            "prompt_args": { "context": "The party spoke briefly with Silas the Merchant to buy some rope, then descended into the crypt, leaving him at the entrance.", "npc_name": "Silas the Merchant", "npc_description": "A portly, jovial merchant." },
+            "target_task_key": "DIRECTOR_CONFIRM_NPC_SAVE",
+            "target_task_prompt_key": "task_prompt_director_npc_save_confirmation",
+            "prompt_args": { "npc_name": "Silas the Merchant", "npc_description": "A portly, jovial merchant who was a minor character." },
             "validation": { "type": "exact_keyword", "valid_keywords": ["YES", "NO"] }
         }
     ],
     "sequence_tasks": [
+        {
+            "calibration_id": "PROMETHEUS_TOOL_USE_VALIDATION",
+            "target_task_key": "PROMETHEUS_DETERMINE_TOOL_USE",
+            "target_task_prompt_key": "task_prompt_prometheus_tool_use",
+            "validation": {
+                "type": "sequence",
+                "subtype": "key_value_checklist",
+                "temperature_reward_factor": 0.05
+            },
+            "steps": [
+                {
+                    "prompt_args": {
+                        "character_list": "Evelyn, the Shadow; Silas the Merchant",
+                        "recent_events": "Narrator: The ceiling groans and with a final crack, collapses in a shower of stone and dust. When the air clears, Silas the Merchant is nowhere to be seen, buried under tons of rock."
+                    },
+                    "validation": { "type": "key_value_checklist", "expected_pairs": { "remove_character": true, "new_character": false, "select_next_actor": false, "modify_equipment": false, "summarize_for_memory": true } }
+                },
+                {
+                    "prompt_args": {
+                        "character_list": "Evelyn, the Shadow",
+                        "recent_events": "Evelyn: 'The barkeep mentioned a man named Corvus who might have information. I'll have to track him down.'"
+                    },
+                    "validation": { "type": "key_value_checklist", "expected_pairs": { "remove_character": false, "new_character": true, "select_next_actor": false, "modify_equipment": false, "summarize_for_memory": true } }
+                },
+                {
+                    "prompt_args": {
+                        "character_list": "Evelyn, the Shadow; Brother Theron",
+                        "recent_events": "Evelyn: 'Wait, Theron, before you go...' She holds out the strange gemstone. 'You should take this. It feels... holy. It belongs with you.'"
+                    },
+                    "validation": { "type": "key_value_checklist", "expected_pairs": { "remove_character": false, "new_character": false, "select_next_actor": true, "modify_equipment": true, "summarize_for_memory": true } }
+                },
+                {
+                    "prompt_args": {
+                        "character_list": "Evelyn, the Shadow; Brother Theron",
+                        "recent_events": "Brother Theron: 'The prophecy is clear. The Crimson King will return when the twin moons align. That alignment happens tonight.'"
+                    },
+                    "validation": { "type": "key_value_checklist", "expected_pairs": { "remove_character": false, "new_character": false, "select_next_actor": false, "modify_equipment": false, "summarize_for_memory": true } }
+                },
+                {
+                    "prompt_args": {
+                        "character_list": "Evelyn, the Shadow",
+                        "recent_events": "Narrator: Evelyn dons the horned helmet she took from the cultist leader."
+                    },
+                    "validation": { "type": "key_value_checklist", "expected_pairs": { "remove_character": false, "new_character": false, "select_next_actor": false, "modify_equipment": true, "summarize_for_memory": false } }
+                }
+            ]
+        },
         {
             "calibration_id": "CREATIVE_KEYWORD_CHOICE_VALIDATION",
             "target_task_key": "CALIBRATION_CHOOSE_KEYWORD_FROM_NARRATIVE",

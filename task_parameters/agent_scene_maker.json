@@ -1,3 +1,0 @@
-{
-	"GENERATE_NEW_SCENE": { "task_prompt_key": "task_prompt_scene_maker", "source_agent": "SCENE_MAKER", "default_adjustment": 0.1, "player_takeover_notification": "Write a new opening scene for the story." }
-}

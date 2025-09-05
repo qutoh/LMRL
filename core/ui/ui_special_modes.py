@@ -1,30 +1,31 @@
 # /core/ui/ui_special_modes.py
 
-import threading
-import time
+import copy
 import json
 import random
 import re
-import copy
+import threading
+import time
 from collections import defaultdict
-from unittest.mock import patch
-import tcod
 from datetime import datetime
 from queue import Queue
+from unittest.mock import patch
 
-from ..llm.calibration_manager import CalibrationManager
-from ..llm.llm_api import execute_task
-from ..common.game_state import GameState, GenerationState, MapArtist
-from ..worldgen.map_architect import MapArchitect
-from ..worldgen.map_architect_v2 import MapArchitectV2
-from ..worldgen.map_architect_v3 import MapArchitectV3
-from ..common import file_io, utils, command_parser
-from ..common.config_loader import config
+import tcod
+
 from .app_states import AppState
 from .ui_framework import DynamicTextBox
-from .views.game_view import GameView
 from .views.character_generation_test_view import CharacterGenerationTestView
+from .views.game_view import GameView
+from .views.noise_visualizer_view import NoiseVisualizerView
+from ..common import file_io, utils, command_parser
+from ..common.config_loader import config
+from ..common.game_state import GameState, GenerationState
 from ..components import game_functions, character_factory
+from ..llm.calibration_manager import CalibrationManager
+from ..llm.llm_api import execute_task
+from ..worldgen.map_architect_v3 import MapArchitectV3
+from ..worldgen.v3_components.feature_node import FeatureNode
 
 
 class SpecialModeManager:
@@ -35,13 +36,14 @@ class SpecialModeManager:
 
     def __init__(self, ui_manager):
         self.ui_manager = ui_manager
+        self.active_mode = None
         self.plausible_subfeatures = [
             ("Bookshelf", "GENERIC_INTERACTABLE"), ("Small Alcove", "GENERIC_CONTAINER"),
             ("Weapon Rack", "GENERIC_INTERACTABLE"), ("Fireplace", "GENERIC_INTERACTABLE"),
             ("Archway", "GENERIC_PORTAL"), ("Window", "GENERIC_PORTAL"),
-            ("Storage Closet", "GENERIC_CONTAINER"), ("Support Pillar", "SOLID_BARRIER")
+            ("Storage Closet", "GENERIC_CONTAINER"), ("Support Pillar", "SOLID_BARRIER"),
+            ("Connecting Tunnel", "GENERIC_PATH")
         ]
-        # PEG Test attributes
         self.peg_test_generator = None
         self.current_peg_phase = 'INIT'
         self.active_patchers = []
@@ -49,13 +51,89 @@ class SpecialModeManager:
         self.last_peg_state = None
         self.last_path_tracer = []
         self.original_find_path = None
-
-        # Character Generation Test attributes
         self.char_gen_context = None
         self.char_gen_thread = None
         self.char_gen_queue = None
         self.char_gen_stop_event = None
         self.generated_characters = []
+        self.peg_v3_scenarios = []
+        self.peg_v3_scenario_index = 0
+        self.noise_visualizer_active = False
+
+    def set_active_mode(self, app_state: AppState):
+        """Sets the active special mode based on the application state."""
+        if app_state == AppState.PEG_V3_TEST:
+            self.active_mode = "PEG_V3_TEST"
+        elif app_state == AppState.CHARACTER_GENERATION_TEST:
+            self.active_mode = "CHAR_GEN_TEST"
+        elif app_state == AppState.CALIBRATING:
+            self.active_mode = "CALIBRATING"
+        elif app_state == AppState.NOISE_VISUALIZER_TEST:
+            self.active_mode = "NOISE_VISUALIZER"
+        else:
+            self.active_mode = None
+
+    def process_logic(self, app_state: AppState):
+        """Handles the logic tick for the currently active special mode."""
+        if app_state == AppState.PEG_V3_TEST:
+            if self.peg_test_generator is None:
+                self.run_peg_v3_test()
+        elif app_state == AppState.CHARACTER_GENERATION_TEST:
+            self.handle_character_generation_updates()
+        elif app_state == AppState.NOISE_VISUALIZER_TEST:
+            if not self.noise_visualizer_active:
+                self.run_noise_visualizer_test()
+
+    def handle_event(self, event: tcod.event.Event) -> bool:
+        """
+        Handles events for active special modes. Returns True if the event was
+        consumed, False otherwise.
+        """
+        if not self.active_mode:
+            return False
+
+        if self.active_mode == "PEG_V3_TEST":
+            if isinstance(event, tcod.event.KeyDown):
+                key = event.sym
+                phase = self.current_peg_phase
+
+                if key in (tcod.event.KeySym.LEFT, tcod.event.KeySym.RIGHT, tcod.event.KeySym.ESCAPE):
+                    self.stop_peg_patches()
+                    if key == tcod.event.KeySym.LEFT:
+                        self.peg_v3_scenario_index = (self.peg_v3_scenario_index - 1) % len(self.peg_v3_scenarios)
+                        self.run_peg_v3_test()
+                    elif key == tcod.event.KeySym.RIGHT:
+                        self.peg_v3_scenario_index = (self.peg_v3_scenario_index + 1) % len(self.peg_v3_scenarios)
+                        self.run_peg_v3_test()
+                    elif key == tcod.event.KeySym.ESCAPE:
+                        self.ui_manager.app.app_state = AppState.WORLD_SELECTION
+                        self.ui_manager.active_view = None
+                    return True
+
+                if key in (tcod.event.KeySym.RETURN, tcod.event.KeySym.KP_ENTER, tcod.event.KeySym.SPACE):
+                    if phase in ('DONE', 'FINAL'):
+                        self.run_peg_v3_test()
+                    else:
+                        self.advance_peg_test_step(key)
+                    return True
+
+        elif self.active_mode == "CHAR_GEN_TEST":
+            if isinstance(event, tcod.event.KeyDown) and event.sym == tcod.event.KeySym.ESCAPE:
+                self.stop_character_generation_test()
+                return True
+
+        elif self.active_mode == "NOISE_VISUALIZER":
+            if self.ui_manager.active_view:
+                self.ui_manager.active_view.handle_event(event)
+                return True
+
+        return False
+
+    def stop_all(self):
+        """Stops all active special mode processes (threads, patches)."""
+        self.stop_peg_patches()
+        self.stop_character_generation_test()
+        self.noise_visualizer_active = False
 
     def start_character_generation_test(self, context: str):
         """Initializes and kicks off the character generation test."""
@@ -72,13 +150,13 @@ class SpecialModeManager:
             console_width=self.ui_manager.root_console.width,
             console_height=self.ui_manager.root_console.height
         )
-        self.ui_manager.special_mode_active = "CHAR_GEN_TEST"
+        self.active_mode = "CHAR_GEN_TEST"
 
     def _generate_initial_equipment_stepwise_for_test(self, equipment_agent, physical_description: str) -> list[dict]:
         """A copy of the stepwise fallback for use in the isolated test environment."""
         utils.log_message('debug', "[CHAR_GEN_TEST] JSON generation failed, using stepwise fallback.")
         names_kwargs = {"physical_description": physical_description}
-        names_response = execute_task(self.ui_manager.atlas_engine, equipment_agent,
+        names_response = execute_task(self.ui_manager.app.atlas_engine, equipment_agent,
                                       'EQUIPMENT_GET_ITEM_NAMES_FROM_DESC', [], task_prompt_kwargs=names_kwargs)
 
         item_names = [name.strip() for name in names_response.split(';') if name.strip()]
@@ -86,11 +164,12 @@ class SpecialModeManager:
             return []
 
         desc_kwargs = {"item_names_list": "; ".join(item_names), "context": physical_description}
-        raw_desc_response = execute_task(self.ui_manager.atlas_engine, equipment_agent, 'EQUIPMENT_DESCRIBE_ITEMS', [],
+        raw_desc_response = execute_task(self.ui_manager.app.atlas_engine, equipment_agent, 'EQUIPMENT_DESCRIBE_ITEMS',
+                                         [],
                                          task_prompt_kwargs=desc_kwargs)
 
         command = command_parser.parse_structured_command(
-            self.ui_manager.atlas_engine, raw_desc_response, equipment_agent.get('name'),
+            self.ui_manager.app.atlas_engine, raw_desc_response, equipment_agent.get('name'),
             fallback_task_key='CH_FIX_INITIAL_EQUIPMENT_JSON'
         )
 
@@ -109,7 +188,7 @@ class SpecialModeManager:
 
         while not self.char_gen_stop_event.is_set():
             initial_char = character_factory.create_lead_from_role_and_scene(
-                self.ui_manager.atlas_engine, director_agent,
+                self.ui_manager.app.atlas_engine, director_agent,
                 self.char_gen_context, generic_role
             )
             if not initial_char:
@@ -144,7 +223,7 @@ class SpecialModeManager:
                 else:
                     update_desc_kwargs = {"original_description": char_state.get('physical_description', ''),
                                           "items_added": "None", "items_removed": item_to_remove['name']}
-                    new_desc = execute_task(self.ui_manager.atlas_engine, director_agent,
+                    new_desc = execute_task(self.ui_manager.app.atlas_engine, director_agent,
                                             'DIRECTOR_UPDATE_PHYSICAL_DESCRIPTION', [],
                                             task_prompt_kwargs=update_desc_kwargs)
                     if new_desc: char_state['physical_description'] = new_desc.strip()
@@ -180,7 +259,7 @@ class SpecialModeManager:
                     utils.log_message('debug', "[CHAR_GEN_TEST_WARNING] Outfit hashing failed on re-add.")
                     update_desc_kwargs = {"original_description": char_state.get('physical_description', ''),
                                           "items_added": item_to_add['name'], "items_removed": "None"}
-                    new_desc = execute_task(self.ui_manager.atlas_engine, director_agent,
+                    new_desc = execute_task(self.ui_manager.app.atlas_engine, director_agent,
                                             'DIRECTOR_UPDATE_PHYSICAL_DESCRIPTION', [],
                                             task_prompt_kwargs=update_desc_kwargs)
                     if new_desc: char_state['physical_description'] = new_desc.strip()
@@ -213,106 +292,58 @@ class SpecialModeManager:
         self.char_gen_stop_event = None
         self.generated_characters = []
 
-        self.ui_manager.app_state = AppState.WORLD_SELECTION
-        self.ui_manager.active_view = None
-        self.ui_manager.special_mode_active = None
-
-    def start_calibration(self):
-        """Initializes and kicks off the calibration process."""
-        ui = self.ui_manager
-        cal_manager = CalibrationManager(ui.atlas_engine, ui.model_manager.embedding_model, ui.event_log)
-        ui.calibration_jobs = cal_manager.get_calibration_plan()
-        ui.current_job_index = 0
-        ui.event_log.add_message("Starting targeted calibration...", (150, 200, 255))
-
-    def _run_single_calibration_job(self, job):
-        """The target function for the calibration thread. Runs one job."""
-        ui = self.ui_manager
-        model_id = job['model_id']
-        task = job['task']
-
-        ui.calibration_status_message = f"Loading model for calibration: {model_id}..."
-        ui.model_manager.set_active_models([model_id])
-        ui.model_manager.models_loaded.wait()
-
-        ui.calibration_status_message = f"Calibrating task '{task['target_task_key']}' for: {model_id}..."
-        cal_manager = CalibrationManager(ui.atlas_engine, ui.model_manager.embedding_model, ui.event_log)
-        cal_manager.run_calibration_test(job)
-
-    def handle_calibration_step(self):
-        """Checks calibration progress and starts the next job if ready."""
-        ui = self.ui_manager
-        if ui.calibration_thread is None or not ui.calibration_thread.is_alive():
-            if ui.current_job_index >= len(ui.calibration_jobs):
-                ui.calibration_status_message = "Calibration complete for all models."
-                ui.event_log.add_message(ui.calibration_status_message, (150, 255, 150))
-                ui.app_state = AppState.WORLD_SELECTION
-            else:
-                job = ui.calibration_jobs[ui.current_job_index]
-                ui.calibration_thread = threading.Thread(target=self._run_single_calibration_job, args=(job,),
-                                                         daemon=True)
-                ui.calibration_thread.start()
-                ui.current_job_index += 1
+        self.ui_manager.app.app_state = AppState.WORLD_SELECTION
+        self.active_mode = None
 
     def _mock_execute_task_for_peg(self, engine, agent, task_key, messages, **kwargs):
         """A stateful mock function to replace llm_api.execute_task for the PEG tests."""
+        utils.log_message('debug', f"[MOCK] Received call for task: {task_key}")
         response_data = None
 
-        log_message = f"[MOCK] Received call for task: {task_key}"
-        utils.log_message('debug', log_message)
-
-        # --- Mocks for V2 & V3 Initial Phase ---
-        if task_key == 'PEG_V2_DEFINE_AREA_DATA':
-            area_name = kwargs['task_prompt_kwargs']['area_name']
-            response_data = self.mock_data_source[task_key].get(area_name)
-
-        # --- Mocks for V3 Conversational Subfeature Phase ---
-        elif task_key == 'PEG_V3_GET_NARRATIVE_SEED':
-            area_name = kwargs['task_prompt_kwargs']['area_name']
-            response_data = f"The {area_name} is a vast and open space, defining the center of the complex."
-
-        elif task_key == 'PROCGEN_GENERATE_NARRATIVE_BEAT':
-            # This now picks from a combined list of generic and scenario-specific features for stress testing.
+        if task_key == 'PROCGEN_GENERATE_NARRATIVE_BEAT':
             combined_features = self.plausible_subfeatures + self.scenario_subfeatures
             feature_name, _ = random.choice(combined_features)
-
             self.call_counters[feature_name] += 1
             unique_name = f"{feature_name} {self.call_counters[feature_name]}"
-            response_data = f"Nearby, there is a {unique_name} that is medium-sized."
+            response_data = f"There is a {unique_name} here."
 
         elif task_key == 'PEG_CREATE_FEATURE_JSON':
             sentence = kwargs['task_prompt_kwargs']['sentence']
-            match = re.search(r'there is a (.+?) that is', sentence)
+            match = re.search(r'is a (.+?) here\.', sentence)
             if not match:
-                return json.dumps({})
+                response_data = {}
+            else:
+                feature_name = match.group(1).strip()
+                base_name = re.sub(r'\s\d+$', '', feature_name)
+                all_feature_types = self.plausible_subfeatures + self.scenario_subfeatures
+                feature_type = next((ftype for name, ftype in all_feature_types if name == base_name),
+                                    "GENERIC_CONTAINER")
+                feature_def = config.features.get(feature_type, {})
+                response_data = {
+                    "name": feature_name,
+                    "description": f"A standard {base_name.lower()} as described.",
+                    "type": feature_type,
+                    "dimensions": "1x1 tile" if feature_def.get('feature_type') == "INTERACTABLE" else "medium"
+                }
 
-            feature_name = match.group(1).strip()
-            base_name = re.sub(r'\s\d+$', '', feature_name)
-
-            all_feature_types = self.plausible_subfeatures + self.scenario_subfeatures
-            feature_type = "GENERIC_CONTAINER"  # Default
-            for name, f_type in all_feature_types:
-                if name == base_name:
-                    feature_type = f_type
-                    break
-
-            feature_def = config.features.get(feature_type, {})
-            mock_json = {
-                "name": feature_name,
-                "description": f"A standard {base_name.lower()} as described.",
-                "type": feature_type,
-                "dimensions": "1x1 tile" if feature_def.get('feature_type') == "INTERACTABLE" else "medium"
-            }
-            response_data = mock_json
-
-        elif task_key == 'PEG_V3_CHOOSE_PARENT':
-            parent_list_str = kwargs['task_prompt_kwargs']['parent_options_list']
-            options = [line.strip().lstrip('- ') for line in parent_list_str.split('\n') if line.strip()]
+        elif task_key in ['PEG_V3_CHOOSE_PARENT', 'PEG_V3_CHOOSE_PATH_TARGET']:
+            option_list_str = kwargs['task_prompt_kwargs'].get('parent_options_list') or kwargs[
+                'task_prompt_kwargs'].get('target_options_list', '')
+            options = [line.strip().lstrip('- ') for line in option_list_str.split('\n') if line.strip()]
             response_data = random.choice(options) if options else "NONE"
 
-        # --- Default V2/V3 mocks ---
         else:
-            response_data = self.mock_data_source.get(task_key)
+            mock_response_template = self.mock_data_source.get(task_key)
+            if mock_response_template is None:
+                utils.log_message('debug', f"  [MOCK WARNING] No mock data found for task: {task_key}")
+                return ""
+
+            if task_key in ['PEG_V3_GET_NARRATIVE_SEED', 'PEG_V2_DEFINE_AREA_DATA']:
+                area_name = kwargs['task_prompt_kwargs']['area_name']
+                if isinstance(mock_response_template, dict):
+                    response_data = mock_response_template.get(area_name)
+            else:
+                response_data = mock_response_template
 
         utils.log_message('debug', f"  [MOCK] Responding for {task_key} with: {response_data}")
         if response_data is None: return ""
@@ -329,25 +360,20 @@ class SpecialModeManager:
             for i in range(len(path) - 1):
                 start_tx, start_ty = path[i]
                 end_tx, end_ty = path[i + 1]
-
                 start_px = start_tx * tile_w + tile_w // 2
                 start_py = start_ty * tile_h + tile_h // 2
                 end_px = end_tx * tile_w + tile_w // 2
                 end_py = end_ty * tile_h + tile_h // 2
-
                 self.ui_manager.active_view.add_line((start_px, start_py), (end_px, end_py), (255, 255, 0))
         return path
 
     def _start_peg_patches(self):
         """Starts and tracks manual mock patches for the PEG test modes."""
         self.stop_peg_patches()
-        # Patch LLM calls
         llm_patcher = patch('core.worldgen.v3_components.v3_llm.execute_task',
                             side_effect=self._mock_execute_task_for_peg)
         llm_patcher.start()
         self.active_patchers.append(llm_patcher)
-
-        # Monkey-patch the pathfinding function to intercept its results
         if self.original_find_path is None:
             self.original_find_path = game_functions.find_path
             game_functions.find_path = self._find_path_wrapper
@@ -357,12 +383,9 @@ class SpecialModeManager:
         for p in self.active_patchers:
             p.stop()
         self.active_patchers.clear()
-
-        # Restore the original pathfinding function
         if self.original_find_path:
             game_functions.find_path = self.original_find_path
             self.original_find_path = None
-
         self.peg_test_generator = None
         self.current_peg_phase = 'INIT'
 
@@ -374,7 +397,6 @@ class SpecialModeManager:
         DEBUG_SCENE_PROMPT = f"PEG V3 Test Scenario: {scenario_name}"
         DEBUG_SAVE_NAME = f"peg_v3_{file_io.sanitize_filename(scenario_name)}"
 
-        # 1. Create World structure
         world_dir = file_io.join_path(file_io.PROJECT_ROOT, 'data', 'worlds', DEBUG_WORLD_NAME)
         file_io.create_directory(world_dir)
         world_json_path = file_io.join_path(world_dir, 'world.json')
@@ -387,7 +409,6 @@ class SpecialModeManager:
         file_io.write_json(world_json_path, world_data)
         file_io.write_json(file_io.join_path(world_dir, 'casting_npcs.json'), [])
 
-        # 2. Save generated scene to world's scene list
         scenes_path = file_io.join_path(world_dir, 'generated_scenes.json')
         scenes_data = file_io.read_json(scenes_path, default=[])
         scenes_data = [s for s in scenes_data if s.get('scene_prompt') != DEBUG_SCENE_PROMPT]
@@ -399,7 +420,6 @@ class SpecialModeManager:
         scenes_data.append(new_scene)
         file_io.write_json(scenes_path, scenes_data)
 
-        # 3. Cache the generated level to world's levels.json
         levels_path = file_io.join_path(world_dir, 'levels.json')
         levels_cache = file_io.read_json(levels_path, default={})
 
@@ -420,17 +440,19 @@ class SpecialModeManager:
                 'nodes': gen_state.layout_graph.nodes,
                 'edges': gen_state.layout_graph.edges
             }
+
         if gen_state.physics_layout:
             level_data_to_cache['physics_layout'] = gen_state.physics_layout
+        else:
+            level_data_to_cache['physics_layout'] = {"bodies": [], "joints": []}
 
         levels_cache[DEBUG_SCENE_PROMPT] = level_data_to_cache
         file_io.write_json(levels_path, levels_cache)
         self.ui_manager.event_log.add_message(f"Saved level data for '{scenario_name}'.")
 
-        # 4. Create a save game directory (overwrite old one)
         world_save_path = file_io.join_path(file_io.SAVE_DATA_ROOT, DEBUG_WORLD_NAME)
         final_save_path = file_io.join_path(world_save_path, DEBUG_SAVE_NAME)
-        file_io.remove_directory(final_save_path)  # Overwrite logic
+        file_io.remove_directory(final_save_path)
 
         temp_run_path = file_io.setup_new_run_directory(config.data_dir, DEBUG_WORLD_NAME)
         final_run_path, error = file_io.finalize_run_directory(temp_run_path, DEBUG_SAVE_NAME)
@@ -438,7 +460,6 @@ class SpecialModeManager:
             self.ui_manager.event_log.add_message(f"Error creating save directory: {error}", (255, 100, 100))
             return
 
-        # 5. Save a minimal story_state.json
         story_state_data = {
             "dialogue_log": [{"speaker": "Scene Setter", "content": gen_state.narrative_log or DEBUG_SCENE_PROMPT}],
             "summaries": [],
@@ -456,14 +477,14 @@ class SpecialModeManager:
         self.last_peg_state = None
         self.last_path_tracer.clear()
 
-        if not hasattr(self, 'peg_v3_scenarios'):
-            scenarios_path = file_io.join_path(config.data_dir, 'peg_v2_test_scenarios.json')
+        if not self.peg_v3_scenarios:
+            scenarios_path = file_io.join_path(config.data_dir, 'peg_v3_test_scenarios.json')
             self.peg_v3_scenarios = file_io.read_json(scenarios_path, default=[])
             self.peg_v3_scenario_index = 0
 
         if not self.peg_v3_scenarios:
-            ui.event_log.add_message("peg_v2_test_scenarios.json not found or empty.", (255, 100, 100))
-            ui.app_state = AppState.WORLD_SELECTION
+            ui.event_log.add_message("peg_v3_test_scenarios.json not found or empty.", (255, 100, 100))
+            ui.app.app_state = AppState.WORLD_SELECTION
             return
 
         scenario = self.peg_v3_scenarios[self.peg_v3_scenario_index]
@@ -477,80 +498,141 @@ class SpecialModeManager:
                                      area_names]
 
         game_state = GameState()
-        architect = MapArchitectV3(ui.atlas_engine, game_state.game_map, "PEG V3 Test", scenario['name'])
-        title = "PEG V3 (Iterative Placement) Debug"
+        architect = MapArchitectV3(ui.app.atlas_engine, game_state.game_map, "PEG V3 Test", scenario['name'])
 
-        ui.active_view = GameView(ui.event_log, None, is_debug_mode=True)
+        ui.active_view = ui.game_view
         ui.active_view.update_state(game_state)
 
         def ui_render_callback(gen_state):
             if isinstance(ui.active_view, GameView):
                 ui.active_view.update_state(game_state, gen_state)
-                ui._render()
+                if hasattr(gen_state, 'clearance_mask') and gen_state.clearance_mask is not None:
+                    ui.active_view.set_overlay_mask(gen_state.clearance_mask)
+                else:
+                    ui.active_view.set_overlay_mask(None)
 
         self._start_peg_patches()
         self.peg_test_generator = architect.generate_layout_in_steps(ui_render_callback)
         self.advance_peg_test_step()
 
     def advance_peg_test_step(self, key_sym=None):
-        """Runs the next step of the current PEG test generator, driven by user input."""
-        ui = self.ui_manager
+        """
+        Runs the PEG generator, looping internally until it hits a "pause" state
+        (an animation frame or a major decision point).
+        """
         if self.peg_test_generator is None:
             return
 
-        # Handle fast-forwarding
-        if self.current_peg_phase in ('SUBFEATURE_STEP',
-                                      'INTERIOR_PLACEMENT_STEP') and key_sym == tcod.event.KeySym.SPACE:
-            target_phase = self.current_peg_phase
-            while self.current_peg_phase == target_phase:
-                try:
-                    phase, state = next(self.peg_test_generator)
-                    self.current_peg_phase = phase
-                    self.last_peg_state = state
-                except StopIteration:
-                    self.current_peg_phase = 'DONE'
-                    break
-        else:
-            # Handle a normal single step
+        animation_phases = ['INITIAL_GROWTH_STEP', 'SUBFEATURE_GROWTH_STEP', 'PATH_DRAW_STEP']
+        major_decision_phases = ['POST_GROWTH', 'PRE_JITTER', 'PRE_INTERIOR_PLACEMENT', 'PRE_CONNECT', 'POST_CONNECT',
+                                 'PRE_PATH_DRAW']
+
+        for _ in range(500):
             try:
                 phase, state = next(self.peg_test_generator)
                 self.current_peg_phase = phase
                 self.last_peg_state = state
             except StopIteration:
                 self.current_peg_phase = 'DONE'
+                break
 
-        # Determine the prompt text based on the new phase
+            if self.current_peg_phase in animation_phases:
+                break
+            if key_sym == tcod.event.KeySym.SPACE:
+                if self.current_peg_phase in major_decision_phases:
+                    break
+            elif self.current_peg_phase in major_decision_phases:
+                break
+
         scenario = self.peg_v3_scenarios[self.peg_v3_scenario_index]
         title_str = "PEG V3 (Iterative)"
         base_text = f"Scenario: {scenario['name']} | [LEFT/RIGHT] Change | [ESC] Back"
-        prompt_text = ""
+        prompt_text = f"\nPhase: {self.current_peg_phase}"
 
-        if self.current_peg_phase == 'INITIAL_PLACEMENT':
-            prompt_text = "\n[ENTER] Begin placing sub-features"
-        elif self.current_peg_phase == 'SUBFEATURE_STEP':
-            prompt_text = "\n[ENTER] Place next sub-feature | [SPACE] Skip to Jitter"
-        elif self.current_peg_phase == 'PRE_JITTER':
-            prompt_text = "\n[ENTER] Apply Jitter"
-        elif self.current_peg_phase == 'PRE_INTERIOR_PLACEMENT':
-            prompt_text = "\n[ENTER] Begin placing interior features"
-        elif self.current_peg_phase == 'INTERIOR_PLACEMENT_STEP':
-            prompt_text = "\n[ENTER] Place next interior feature | [SPACE] Skip to Connections"
-        elif self.current_peg_phase == 'PRE_CONNECT':
-            prompt_text = "\n[ENTER] Create Connections"
-        elif self.current_peg_phase == 'POST_CONNECT':
-            prompt_text = "\nConnections complete. [ENTER] to finalize."
-        else:  # FINAL or DONE
+        phase_prompts = {
+            'INITIAL_GROWTH_STEP': "Growing initial features... [ENTER] Step | [SPACE] Fast-forward",
+            'POST_GROWTH': "Initial placement complete. [ENTER] to begin placing subfeatures.",
+            'SUBFEATURE_GROWTH_STEP': "Growing sub-feature... [ENTER] Step | [SPACE] Fast-forward",
+            'PRE_PATH_DRAW': "Showing clearance mask for upcoming path. [ENTER] to draw.",
+            'PATH_DRAW_STEP': "Drawing path... [ENTER] Step | [SPACE] Fast-forward",
+            'PRE_JITTER': "[ENTER] Apply Jitter",
+            'PRE_INTERIOR_PLACEMENT': "[ENTER] Begin placing interior features",
+            'INTERIOR_PLACEMENT_STEP': "[ENTER] Place next interior feature | [SPACE] Fast-forward",
+            'PRE_CONNECT': "[ENTER] Create Connections",
+            'POST_CONNECT': "Connections complete. [ENTER] to finalize.",
+        }
+
+        prompt_text += f"\n{phase_prompts.get(self.current_peg_phase, '[ENTER] Next Step')}"
+
+        if self.current_peg_phase in ('FINAL', 'DONE', 'VERTEX_DATA'):
             prompt_text = "\nGeneration Complete. [ENTER] to regenerate."
             self.stop_peg_patches()
             if self.last_peg_state:
                 self._save_peg_test_output(self.last_peg_state, scenario['name'])
 
-        # Update the UI
-        log_text = f"{title_str}: {base_text}{prompt_text}"
-        game_log_box = DynamicTextBox(
-            title=title_str, text=log_text,
-            x=0, y=ui.root_console.height - 10, max_width=ui.root_console.width, max_height=9
+    def run_noise_visualizer_test(self):
+        """Sets up and runs the noise visualizer test."""
+        self.noise_visualizer_active = True
+        ui = self.ui_manager
+
+        game_state = GameState()
+        architect = MapArchitectV3(ui.app.atlas_engine, game_state.game_map, "Noise Test", "Noise Test")
+
+        possible_features = [
+            key for key, data in config.features.items()
+            if data.get('placement_strategy') == 'EXTERIOR'
+        ]
+        if len(possible_features) < 5:
+            possible_features.extend(['GENERIC_ROOM'] * (5 - len(possible_features)))
+
+        initial_specs = [
+            {'name': f'Area {i}', 'type': random.choice(possible_features),
+             'size_tier': random.choice(['small', 'medium', 'large'])}
+            for i in range(5)
+        ]
+
+        growth_generator = architect.placement.place_and_grow_initial_features(initial_specs)
+        for branches in growth_generator:
+            architect.initial_feature_branches = branches
+
+        architect.map_ops.JITTER_ITERATIONS = 150
+        architect.map_ops.apply_jitter(architect.initial_feature_branches, on_iteration_end=lambda: None)
+        architect.map_ops.JITTER_ITERATIONS = 50
+
+        root_nodes = architect.initial_feature_branches
+        for i in range(len(root_nodes)):
+            for j in range(i + 1, len(root_nodes)):
+                node_a, node_b = root_nodes[i], root_nodes[j]
+                start_points = architect.pathing.get_valid_connection_points(node_a, 0, root_nodes)
+                end_points = architect.pathing.get_valid_connection_points(node_b, 0, root_nodes)
+                if start_points and end_points:
+                    start_pos, end_pos = architect.pathing.find_first_valid_connection(start_points, end_points, 0,
+                                                                                       root_nodes)
+                    if start_pos and end_pos:
+                        path = architect.pathing.find_path_with_clearance(start_pos, end_pos, 0, root_nodes, {})
+                        if path:
+                            path_node = FeatureNode(f"Path {i}-{j}", "GENERIC_PATH", 0, 0, 0, 0)
+                            path_node.path_coords = path
+                            node_a.subfeatures.append(path_node)
+
+        gen_state = GenerationState(game_state.game_map)
+        architect.converter.populate_generation_state(gen_state, architect.initial_feature_branches)
+
+        from ..common.game_state import MapArtist
+        artist = MapArtist()
+        artist.draw_map(game_state.game_map, gen_state, config.features)
+
+        clearance_mask = architect.pathing._create_clearance_mask(1,
+                                                                  architect.initial_feature_branches)  # Use clearance 1 for vis
+
+        def on_exit():
+            self.noise_visualizer_active = False
+            self.ui_manager.app.app_state = AppState.WORLD_SELECTION
+
+        view = NoiseVisualizerView(
+            on_exit=on_exit,
+            console_width=ui.root_console.width,
+            console_height=ui.root_console.height
         )
-        if ui.active_view:
-            ui.active_view.game_log_box = game_log_box
-            ui.active_view.widgets = [game_log_box]
+        view.set_base_map(game_state, gen_state, clearance_mask)
+        ui.active_view = view

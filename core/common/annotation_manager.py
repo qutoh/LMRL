@@ -1,4 +1,4 @@
-# /core/annotation_manager.py
+# /core/common/annotation_manager.py
 
 from core.common import file_io, utils
 

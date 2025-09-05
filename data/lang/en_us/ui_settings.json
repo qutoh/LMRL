@@ -1,0 +1,37 @@
+{
+  "settings_view_title": "Settings",
+  "settings_tab_general": "General",
+  "settings_tab_llm": "LLM",
+  "settings_tab_models": "Models",
+  "settings_tab_peg": "PEG",
+  "settings_tab_atlas": "Atlas",
+  "settings_tab_gameplay": "Gameplay",
+  "settings_tab_calibration": "Calibration",
+  "settings_tab_ui": "UI",
+  "settings_tab_profiles": "Profiles",
+
+  "settings_page_no_settings": "No settings in this category.",
+  "settings_error_uneditable": "This value is auto-calibrated and cannot be edited here.",
+  "settings_error_invalid_value": "Invalid value. Reverting to '{original_value}'.",
+
+  "settings_exit_confirm_title": "Unsaved Changes",
+  "settings_exit_confirm_text": "You have unsaved changes. What would you like to do?",
+  "settings_exit_confirm_save": "[S] Save & Exit",
+  "settings_exit_confirm_discard": "[D] Discard & Exit",
+  "settings_exit_confirm_cancel": "[ESC] Cancel",
+
+  "settings_profiles_menu_title": "Settings Profiles",
+  "settings_profiles_load": "Load Profile",
+  "settings_profiles_save": "Save Current as Profile...",
+  "settings_profiles_delete": "Delete Profile...",
+  "settings_profiles_no_profiles": "No saved profiles found.",
+  "settings_profiles_prompt_save_name": "Enter a name for the new settings profile:",
+  "settings_profiles_prompt_delete": "Select a profile to delete:",
+  "settings_profiles_save_success": "Profile '{name}' saved successfully.",
+  "settings_profiles_load_success": "Profile '{name}' loaded successfully.",
+  "settings_profiles_delete_success": "Profile '{name}' deleted successfully.",
+  "settings_profiles_error_invalid_name": "Invalid profile name. Must be 1-4 words, no special characters.",
+
+  "settings_footer_nav": "[W/S] Nav | [A/D] Change | [ENTER] Edit | [DEL] Default | [BKSP] Revert | [ESC] Exit | [LEFT/RIGHT] Tab",
+  "settings_footer_edit": "[ENTER] Confirm | [ESC] Cancel Edit"
+}

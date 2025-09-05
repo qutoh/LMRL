@@ -1,6 +1,7 @@
 # /core/ui/views/prometheus_view.py
 
 from typing import Callable, Optional
+
 import tcod
 
 from ..ui_framework import View, DynamicTextBox
@@ -16,6 +17,7 @@ class PrometheusView(View):
         self.on_submit = on_submit
         self.selected_index = 0
         self.tool_states = {tool: False for tool in tools}
+        self.help_context_key = "PROMETHEUS_TAKEOVER"
 
         # --- Layout Calculations ---
         self.menu_width = max(len(t) for t in tools) + 15 if tools else 30

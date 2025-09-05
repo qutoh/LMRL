@@ -9,19 +9,23 @@
 			"GET_CHARACTER_PLACEMENT",
 			"PEG_CREATE_FEATURE_JSON",
 			"PEG_V3_GET_INITIAL_FEATURES_JSON",
-			"WORLDGEN_CREATE_LOCATION_JSON",
+			"WORLDGEN_CREATE_LOCATION_JSON_EXPLORE",
+            "WORLDGEN_CREATE_LOCATION_JSON_INTERSTITIAL",
 			"DIRECTOR_CREATE_FULL_NPC_PROFILE",
 			"EQUIPMENT_GENERATE_INITIAL",
 			"EQUIPMENT_DESCRIBE_ITEMS",
 			"DIRECTOR_CREATE_FULL_LEAD_PROFILE_FROM_ROLE",
 			"EQUIPMENT_GENERATE_GEAR_FROM_PROFILE",
-			"SUMMARIZE_SYNTHESIZE_DMS"
+            "WORLDGEN_CREATE_LOCATION_FROM_SCENE",
+			"DIRECTOR_DEFINE_LEAD_ROLES_FOR_SCENE",
+			"DIRECTOR_GET_INDIVIDUAL_ACTIONS",
+            "PEG_V3_CREATE_TILE_JSON"
 		]
 	},
 	"Narrative_JSON_Extraction": {
 		"representative_task": "MOVEMENT_PARSE_VALIDATION",
 		"description": "Reads and interprets natural language prose to extract structured information into a JSON object.",
-		"calibrate_sampling_params": false,
+		"calibrate_sampling_params": true,
 		"members": [
 			"POSITION_PARSE_MOVEMENT"
 		]
@@ -29,27 +33,28 @@
 	"Formatting_JSON_Repair": {
 		"representative_task": "MOVEMENT_FIX_VALIDATION",
 		"description": "Handles low-level, non-creative formatting tasks, primarily fixing broken or incomplete text and forcing it into a valid JSON structure.",
-		"calibrate_sampling_params": false,
+		"calibrate_sampling_params": true,
 		"members": [
 			"CH_FIX_ATLAS",
 			"CH_FIX_DIRECTOR",
-			"CH_FIX_FULL_CHAR_JSON",
-			"CH_FIX_FULL_LEAD_JSON",
-			"CH_FIX_INITIAL_EQUIPMENT_JSON",
-			"CH_FIX_LEAD_ROLES_JSON",
 			"CH_FIX_NPC_JSON_FROM_PROCGEN",
 			"CH_FIX_PEG_JSON",
 			"CH_FIX_PEG_V2_JSON",
 			"CH_FIX_PEG_V3_JSON",
-			"CH_FIX_PROCGEN",
-			"CH_FIX_SYNTHESIZED_DM_JSON",
-			"POSITION_FIX_MOVEMENT_JSON"
+			"POSITION_FIX_MOVEMENT_JSON",
+			"CH_FIX_FULL_CHAR_JSON",
+			"CH_FIX_FULL_LEAD_JSON",
+			"CH_FIX_INITIAL_EQUIPMENT_JSON",
+			"CH_FIX_LEAD_ROLES_JSON",
+			"CH_FIX_GROUP_PLACEMENT_JSON",
+			"CH_FIX_INDIVIDUAL_ACTIONS_JSON",
+            "CH_FIX_TILE_JSON"
 		]
 	},
 	"Logical_JSON_Estimation": {
 		"representative_task": "TEMPORAL_ESTIMATION_VALIDATION",
 		"description": "Makes a reasonable, logical estimation from a narrative context and returns it as a value within a JSON.",
-		"calibrate_sampling_params": false,
+		"calibrate_sampling_params": true,
 		"members": [
 			"ESTIMATE_ACTION_DURATION"
 		]
@@ -57,7 +62,7 @@
 	"Rule_Based_JSON_Classification": {
 		"representative_task": null,
 		"description": "Handles pure classification where the model is given a single piece of data and a clear menu of options to categorize into a JSON.",
-		"calibrate_sampling_params": false,
+		"calibrate_sampling_params": true,
 		"members": []
 	},
 	"Narrative_Keyword_Extraction": {
@@ -68,30 +73,41 @@
 			"CALIBRATION_CHOOSE_KEYWORD_FROM_NARRATIVE",
 			"DIRECTOR_CAST_LEAD_FOR_ROLE",
 			"DIRECTOR_CHOOSE_DMS_FOR_SCENE",
+			"DIRECTOR_CHOOSE_DM_TO_UNFUSE",
 			"DIRECTOR_CHOOSE_NEXT_ACTOR",
-			"DIRECTOR_DEFINE_LEAD_ROLES_FOR_SCENE_FALLBACK",
-			"EQUIPMENT_GET_ITEM_NAMES_FROM_DESC",
-			"EQUIPMENT_MODIFY",
 			"PEG_V3_CHOOSE_PARENT",
+		  	"PEG_V3_CHOOSE_PATH_TARGET",
 			"POSITION_GET_MOVEMENT_KEYWORD",
 			"RESOLVE_CHARACTER_DESCRIPTION",
-			"WORLDGEN_CHOOSE_NAVIGATION_TARGET",
-			"WORLDGEN_DECIDE_ACTION"
+			"WORLDGEN_CHOOSE_NAVIGATION_TARGET_EXPLORE",
+            "WORLDGEN_CHOOSE_NAVIGATION_TARGET_SCENEPLACE",
+			"EQUIPMENT_MODIFY",
+			"EQUIPMENT_GET_ITEM_NAMES_FROM_DESC",
+			"EQUIPMENT_IDENTIFY_TARGETS",
+			"DIRECTOR_GET_GROUP_PLACEMENT",
+		  	"PEG_V3_CREATE_TILE_COLOR_STEPWISE",
+            "PEG_V3_CREATE_TILE_PASS_METHODS_STEPWISE",
+            "PEG_V3_CREATE_TILE_MATERIALS_STEPWISE"
 		]
 	},
 	"Logical_Keyword_Choice": {
 		"representative_task": "LOGICAL_KEYWORD_VALIDATION",
 		"description": "Handles simple, logical, non-narrative decisions that result in a single keyword output (e.g., YES/NO).",
-		"calibrate_sampling_params": false,
+		"calibrate_sampling_params": true,
 		"members": [
 			"DIRECTOR_CONFIRM_NPC_SAVE",
-			"WORLDGEN_ANALYZE_SCENE_FIT"
+			"WORLDGEN_ANALYZE_SCENE_FIT",
+            "WORLDGEN_DECIDE_ACTION_SCENEPLACE",
+            "WORLDGEN_DETERMINE_FINAL_RELATIONSHIP"
 		]
 	},
-	"Creative_Prose_Generation": {
+    "Creative_Prose_Generation": {
 		"representative_task": null,
 		"description": "Generates free-form creative text (prose). This group is not calibrated as its output is subjective.",
 		"members": [
+		  	"CHARACTER_TURN",
+            "DM_TURN",
+			"CHARACTER_UPDATE_STATE",
 			"DIRECTOR_CREATE_INSTR_FROM_DESC",
 			"DIRECTOR_CREATE_INSTR_FROM_ROLE",
 			"DIRECTOR_CREATE_LEAD_DESC_FROM_ROLE",
@@ -100,10 +116,6 @@
 			"DIRECTOR_CREATE_LEAD_INSTR_FROM_SCENE",
 			"DIRECTOR_CREATE_LEAD_NAME_FROM_ROLE",
 			"DIRECTOR_CREATE_LEAD_NAME_FROM_SCENE",
-			"DIRECTOR_DEFINE_LEAD_ROLES_FOR_SCENE",
-            "DIRECTOR_UPDATE_PHYSICAL_DESCRIPTION",
-			"DIRECTOR_CREATE_LEAD_PHYS_DESC_FROM_ROLE",
-			"DIRECTOR_CREATE_BASE_PHYS_DESC_FROM_PROFILE",
 			"DIRECTOR_GET_DM_ANNOTATION",
 			"DIRECTOR_TUNE_DM_INSTRUCTIONS",
 			"GENERATE_NEW_SCENE",
@@ -117,15 +129,23 @@
 			"NPC_CREATE_NAME_FROM_PROCGEN",
 			"PEG_V3_GET_NARRATIVE_SEED",
 			"PROCGEN_GENERATE_NARRATIVE_BEAT",
-			"WORLDGEN_CREATE_LOCATION_DESC",
-			"WORLDGEN_CREATE_LOCATION_NAME",
-			"WORLDGEN_CREATE_LOCATION_TYPE",
 			"WORLDGEN_CREATE_THEME",
 			"WORLDGEN_NAME_WORLD",
 			"WORLDGEN_SUGGEST_NEW_LOCATION",
 			"WORLDGEN_SUGGEST_PARENT_LOCATION",
 			"DIRECTOR_UPDATE_PHYSICAL_DESCRIPTION",
-			"DIRECTOR_CREATE_LEAD_PHYS_DESC_FROM_ROLE"
+			"DIRECTOR_CREATE_LEAD_PHYS_DESC_FROM_ROLE",
+			"DIRECTOR_CREATE_BASE_PHYS_DESC_FROM_PROFILE",
+            "WORLDGEN_CREATE_EXPLORE_NAME",
+            "WORLDGEN_CREATE_EXPLORE_DESC",
+            "WORLDGEN_CREATE_EXPLORE_TYPE",
+            "WORLDGEN_CREATE_INTERSTITIAL_NAME",
+            "WORLDGEN_CREATE_INTERSTITIAL_DESC",
+            "WORLDGEN_CREATE_INTERSTITIAL_TYPE",
+			"DIRECTOR_DEFINE_LEAD_ROLES_FOR_SCENE_FALLBACK",
+            "PEG_V3_CREATE_TILE_NAME_STEPWISE",
+            "PEG_V3_CREATE_TILE_DESC_STEPWISE",
+            "PEG_V3_CREATE_TILE_CHAR_STEPWISE"
 		]
 	},
 	"Narrative_Summarization": {

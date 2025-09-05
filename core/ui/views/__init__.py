@@ -1,15 +1,19 @@
 # /core/ui/views/__init__.py
 
-from .world_selection_view import WorldSelectionView
-from .scene_selection_view import SceneSelectionView
-from .load_or_new_view import LoadOrNewView
-from .save_selection_view import SaveSelectionView
+from .calibration_view import CalibrationView
+from .character_generation_test_view import CharacterGenerationTestView
 from .game_view import GameView
-from .text_input_view import TextInputView
-from .settings_view import SettingsView
+from .load_or_new_view import LoadOrNewView
 from .menu_view import MenuView
 from .prometheus_view import PrometheusView
-from .character_generation_test_view import CharacterGenerationTestView
+from .save_selection_view import SaveSelectionView
+from .scene_selection_view import SceneSelectionView
+from .tabbed_settings_view import TabbedSettingsView
+from .text_input_view import TextInputView
+from .world_graph_view import WorldGraphView
+from .world_selection_view import WorldSelectionView
+from .noise_visualizer_view import NoiseVisualizerView
+from .role_creator_view import RoleCreatorView
 
 __all__ = [
     "WorldSelectionView",
@@ -18,8 +22,11 @@ __all__ = [
     "SaveSelectionView",
     "GameView",
     "TextInputView",
-    "SettingsView",
+    "TabbedSettingsView",
     "MenuView",
     "PrometheusView",
-    "CharacterGenerationTestView"
+    "CharacterGenerationTestView",
+    "CalibrationView",
+    "WorldGraphView",
+    "RoleCreatorView"
 ]

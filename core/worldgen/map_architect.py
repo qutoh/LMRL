@@ -1,19 +1,17 @@
 # /core/worldgen/map_architect.py
 
-import random
 from typing import Callable
 
-from .v3_components.v3_llm import V3_LLM
-from .v3_components.placement import Placement
-from .v3_components.map_ops import MapOps
-from .v3_components.interior import Interior
-from .v3_components.pathing import Pathing
 from .v3_components.converter import Converter
 from .v3_components.feature_node import FeatureNode
-
-from ..common.game_state import GenerationState, MapArtist
-from ..common.config_loader import config
+from .v3_components.interior import Interior
+from .v3_components.map_ops import MapOps
+from .v3_components.pathing import Pathing
+from .v3_components.placement import Placement
+from .v3_components.v3_llm import V3_LLM
 from ..common import utils
+from ..common.config_loader import config
+from ..common.game_state import GenerationState, MapArtist
 
 
 class MapArchitect:
@@ -79,7 +77,13 @@ class MapArchitect:
         shrink_factor = 0.1
 
         while features_placed < max_features:
-            narrative_beat = self.llm.get_next_narrative_beat(self.narrative_log)
+            other_features_context_list = [
+                f"({branch.feature_type} - \"{branch.narrative_log}...\")"
+                for branch in self.initial_feature_branches
+            ]
+            other_features_context = "\n".join(other_features_context_list) if other_features_context_list else "None."
+
+            narrative_beat = self.llm.get_next_narrative_beat(self.narrative_log, other_features_context)
             if not narrative_beat: break
             self.narrative_log += " " + narrative_beat
             utils.log_message('story', f"-> {narrative_beat}")
@@ -120,15 +124,15 @@ class MapArchitect:
             update_and_draw()
 
         # --- Phase 4: Pathing ---
-        all_connections = self.pathing.create_all_connections(self.initial_feature_branches)
-        all_door_coords = [coord for conn in all_connections for coord in conn.get('door_coords', [])]
-        gen_state.door_locations = all_door_coords
+        all_connections, all_door_placements, all_hallways = self.pathing.create_all_connections(self.initial_feature_branches)
+        gen_state.door_locations = all_door_placements
+        gen_state.blended_hallways = all_hallways
 
         # --- Phase 5: Final Conversion ---
         gen_state.layout_graph = self.converter.serialize_feature_tree_to_graph(self.initial_feature_branches)
         self.converter.populate_generation_state(gen_state, self.initial_feature_branches)
         gen_state.physics_layout = self.converter.convert_to_vertex_representation(gen_state.layout_graph,
-                                                                                    all_connections)
+                                                                                   all_connections)
         gen_state.narrative_log = self.narrative_log
         artist.draw_map(self.game_map, gen_state, config.features)
         ui_callback(gen_state)

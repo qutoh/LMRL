@@ -1,10 +1,12 @@
 # /core/ui/views/text_input_view.py
 
 from typing import Callable
+
 import tcod
 
-from ..ui_framework import View
 from ..input_handler import TextInputHandler
+from ..ui_framework import View
+
 
 class TextInputView(View):
     """A modal view that renders the state of a TextInputHandler."""
@@ -15,6 +17,7 @@ class TextInputView(View):
         self.on_submit = on_submit
         self._cursor_timer = 0
         self._show_cursor = True
+        self.help_context_key = "IN_GAME_INPUT" if "Your turn" in self.handler.prompt else "PLAYER_TAKEOVER"
 
     def handle_event(self, event: tcod.event.Event):
         result = self.handler.handle_event(event)

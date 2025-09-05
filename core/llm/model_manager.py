@@ -1,9 +1,12 @@
-# /core/model_manager.py
+# /core/llm/model_manager.py
 
 import threading
+
+from sentence_transformers import SentenceTransformer
+
 from core.common.config_loader import config
 from .llm_api import get_model_context_length
-from sentence_transformers import SentenceTransformer
+
 
 class ModelManager:
     """

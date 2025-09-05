@@ -1,69 +1,81 @@
 # /core/components/roster_manager.py
 
+import ast
 import random
-from ..common.config_loader import config
-from ..common import utils
+
+from . import character_factory
 from ..common import file_io
+from ..common import utils
+from ..common.config_loader import config
 from ..common.game_state import Entity
 from ..common.localization import loc
+from ..common.utils import log_message
 from ..llm.llm_api import execute_task
-from . import character_factory
 
 
-def get_or_create_npc_from_data(engine, npc_data: dict | str, location_context: dict) -> dict | None:
+def get_or_create_character_from_concept(engine, char_concept: dict | str, location_context: dict) -> tuple[
+    dict | None, str | None]:
     """
-    Takes high-level NPC data, finds a full profile in casting,
-    or creates one using the Director with full context if it doesn't exist.
-    The newly created NPC is then cached to the world's casting file.
+    Takes a high-level character concept, finds a full profile in any casting list (inhabitant, lead, or NPC),
+    or creates one if it doesn't exist. The newly created inhabitant is then cached.
     """
-    npc_concept_dict = {}
-    if isinstance(npc_data, str):
-        parts = npc_data.split(' - ', 1)
-        npc_concept_dict['name'] = parts[0].strip()
-        npc_concept_dict['description'] = parts[1].strip() if len(parts) > 1 else "An individual."
-    elif isinstance(npc_data, dict):
-        npc_concept_dict = npc_data
+    concept_dict = {}
+    if isinstance(char_concept, str):
+        parts = char_concept.split(' - ', 1)
+        concept_dict['name'] = parts[0].strip()
+        concept_dict['description'] = parts[1].strip() if len(parts) > 1 else "An individual."
+    elif isinstance(char_concept, dict):
+        concept_dict = char_concept
     else:
-        return None
+        return None, None
 
-    npc_name = npc_concept_dict.get('name')
-    if not npc_name: return None
+    char_name = concept_dict.get('name')
+    if not char_name: return None, None
 
-    # Check world-specific casting file first
-    world_casting_path = file_io.join_path(engine.config.data_dir, 'worlds', engine.world_name, 'casting_npcs.json')
-    world_casting_list = file_io.read_json(world_casting_path, default=[])
-    if found_char := find_character_in_list(npc_name, world_casting_list):
-        utils.log_message('debug', f"[ROSTER] Found pre-existing NPC '{npc_name}' in world casting file.")
-        return found_char
+    # --- SEARCH PHASE: Check all casting files first, with inhabitant cache as top priority ---
+    inhabitant_path = file_io.join_path(engine.config.data_dir, 'worlds', engine.world_name,
+                                        'inhabitants.json')
+    inhabitant_list = file_io.read_json(inhabitant_path, default=[])
 
-    # Check global casting file
-    if found_char := find_character_in_list(npc_name, config.casting_npcs):
-        utils.log_message('debug', f"[ROSTER] Found pre-existing NPC '{npc_name}' in global casting file.")
-        return found_char
+    # Priority 1: Check the dedicated inhabitant cache for this world.
+    if found_char := find_character_in_list(char_name, inhabitant_list):
+        utils.log_message('debug', f"[ROSTER] Found pre-existing inhabitant '{char_name}' in world's inhabitant cache.")
+        return found_char, 'npc'  # Inhabitants are always treated as NPCs
 
-    utils.log_message('debug', f"[ROSTER] NPC '{npc_name}' not in casting. Generating full profile from concept.")
-    director_agent = config.agents['DIRECTOR']
+    # Priority 2: Check standard world/global casting files
+    world_leads_path = file_io.join_path(engine.config.data_dir, 'worlds', engine.world_name, 'casting_leads.json')
+    world_leads_list = file_io.read_json(world_leads_path, default=[])
+    world_npcs_path = file_io.join_path(engine.config.data_dir, 'worlds', engine.world_name, 'casting_npcs.json')
+    world_npcs_list = file_io.read_json(world_npcs_path, default=[])
 
-    # Pass full context to the instruction creation step
-    instructions = character_factory.create_instructions_from_description(
-        engine, director_agent, npc_name, npc_concept_dict.get('description', 'An ordinary person.'),
-        location_context
-    )
-    if not instructions:
-        return None
+    if found_char := find_character_in_list(char_name, world_leads_list): return found_char, 'lead'
+    if found_char := find_character_in_list(char_name, world_npcs_list): return found_char, 'npc'
+    if found_char := find_character_in_list(char_name, config.casting_leads): return found_char, 'lead'
+    if found_char := find_character_in_list(char_name, config.casting_npcs): return found_char, 'npc'
 
-    full_npc_profile = {
-        "name": npc_name,
-        "description": npc_concept_dict.get('description'),
-        "instructions": instructions
-    }
+    # --- CREATION PHASE: Only if not found anywhere ---
+    utils.log_message('debug', f"[ROSTER] Inhabitant concept '{char_name}' not found. Generating full profile.")
 
-    # Save the newly generated full profile back to the world's casting file for future use
-    world_casting_list.append(full_npc_profile)
-    file_io.write_json(world_casting_path, world_casting_list)
-    utils.log_message('debug', f"[ROSTER] Saved newly generated NPC '{npc_name}' to world casting file.")
+    # Check if the concept came from proc-gen, which has richer data
+    if 'source_sentence' in concept_dict:
+        full_char_profile = character_factory.create_npc_from_generation_sentence(engine, concept_dict)
+    else: # It's a simple inhabitant from the world file
+        char_data_for_creation = {
+            "name": char_name,
+            "source_sentence": concept_dict.get('description', 'An individual encountered in the scene.')
+        }
+        full_char_profile = character_factory.create_npc_from_generation_sentence(engine, char_data_for_creation)
 
-    return full_npc_profile
+
+    if not full_char_profile:
+        return None, None
+
+    # Save the newly generated profile to the inhabitant cache for persistence.
+    inhabitant_list.append(full_char_profile)
+    file_io.write_json(inhabitant_path, inhabitant_list)
+    utils.log_message('debug', f"[ROSTER] Saved newly generated inhabitant '{char_name}' to world's inhabitant cache.")
+
+    return full_char_profile, 'npc'
 
 
 def resolve_character_from_description(engine, description: str, existing_characters: list[str]) -> str | None:
@@ -114,30 +126,52 @@ def find_character_in_list(name: str, char_list: list) -> dict | None:
 def decorate_and_add_character(engine, character_data, role_type):
     """
     Adds internal attributes, default settings, adds character to the engine's
-    roster, and saves them to persistent world files.
+    roster, and saves NPCs as persistent inhabitants of their location.
     """
     if find_character(engine, character_data['name']):
         return
 
     # --- Persist the new character to world files ---
-    if engine.world_name:
-        # 1. Save the full profile to the world's casting file.
-        file_io.save_character_to_world_casting(engine.world_name, character_data, role_type)
+    if engine.world_name and role_type == 'npc' and engine.location_breadcrumb:
+        # 1. Save a simple concept to the location's inhabitant list within world.json
+        concept = {
+            "name": character_data.get("name"),
+            "description": character_data.get("description")
+        }
+        file_io.add_inhabitant_to_location(engine.world_name, engine.location_breadcrumb, concept)
 
-        # 2. Save a simple concept to the location's inhabitant list.
-        if role_type in ['lead', 'npc'] and engine.location_breadcrumb:
-            concept = {
-                "name": character_data.get("name"),
-                "description": character_data.get("description")
-            }
-            file_io.add_inhabitant_to_location(engine.world_name, engine.location_breadcrumb, concept)
+        # 2. Save the full character profile to the world's dedicated inhabitant cache.
+        inhabitant_path = file_io.join_path(engine.config.data_dir, 'worlds', engine.world_name, 'inhabitants.json')
+        inhabitant_list = file_io.read_json(inhabitant_path, default=[])
+        char_name_lower = character_data.get('name', '').lower()
+        if not any(c.get('name', '').lower() == char_name_lower for c in inhabitant_list):
+            inhabitant_list.append(character_data)
+            file_io.write_json(inhabitant_path, inhabitant_list)
 
     # --- Decorate with in-memory run-time attributes ---
     char = character_data.copy()
+
+    # Convert stringified tuple keys back to tuples upon loading a saved meta-DM.
+    if 'fused_personas' in char and isinstance(char['fused_personas'], dict):
+        tuple_keyed_personas = {}
+        for key, value in char['fused_personas'].items():
+            # Use ast.literal_eval to safely convert string back to tuple
+            try:
+                tuple_key = ast.literal_eval(key)
+                if isinstance(tuple_key, tuple):
+                    tuple_keyed_personas[tuple_key] = value
+                else:  # Fallback if key isn't a tuple string (shouldn't happen with our save logic)
+                    tuple_keyed_personas[key] = value
+            except (ValueError, SyntaxError):
+                # Key was not a string representation of a tuple, keep as is.
+                tuple_keyed_personas[key] = value
+        char['fused_personas'] = tuple_keyed_personas
+
     char['role_type'] = role_type
 
     if role_type == 'lead':
         char.update({'is_positional': True, 'is_director_managed': True, 'is_essential': True, 'is_controllable': True})
+        engine.lead_roster_changed = True
     elif role_type == 'npc':
         char.update(
             {'is_positional': True, 'is_director_managed': False, 'is_essential': False, 'is_controllable': True})
@@ -159,15 +193,20 @@ def decorate_and_add_character(engine, character_data, role_type):
     char['temperature'] = char.get('temperature', default_temp)
     char['scaling_factor'] = char.get('scaling_factor', default_scale)
 
-    if 'physical_description' not in char:
-        char['physical_description'] = "No specific description available."
-    if 'equipment' not in char:
-        char['equipment'] = {"equipped": [], "removed": [], "outfits": {}}
+    # Only add positional attributes if the character is meant to be in the scene.
+    if char.get('is_positional'):
+        char['character_state'] = ""
+        if 'physical_description' not in char:
+            char['physical_description'] = "No specific description available."
+        if 'equipment' not in char:
+            char['equipment'] = {"equipped": [], "removed": [], "outfits": {}}
 
     add_character(engine, char)
-    utils.log_message('game', f"{char.get('name', 'A new character')} has joined the story.")
-    if phys_desc := char.get('physical_description'):
-        utils.log_message('game', f"-> {phys_desc}")
+    log_message('game', f"{char.get('name', 'A new character')} has joined the story.")
+    if char.get('is_positional'):
+        if phys_desc := char.get('physical_description'):
+            log_message('game', f"-> {phys_desc}")
+
     utils.log_message('debug', loc('system_roster_loaded', role_type=role_type.upper(), char_name=char['name'],
                                    model_name=char.get('model')))
 
@@ -175,6 +214,17 @@ def decorate_and_add_character(engine, character_data, role_type):
 def load_initial_roster(engine):
     """Loads all characters from their respective files for a given run."""
     run_path = engine.run_path
+
+    # --- Global Characters (loaded into every game) ---
+    global_leads = file_io.read_json(file_io.join_path(config.data_dir, 'leads.json'), default=[])
+    global_npcs = file_io.read_json(file_io.join_path(config.data_dir, 'casting_npcs.json'), default=[])
+    global_dms = file_io.read_json(file_io.join_path(config.data_dir, 'dm_roles.json'), default=[])
+
+    for char in global_leads: decorate_and_add_character(engine, char, 'lead')
+    for char in global_npcs: decorate_and_add_character(engine, char, 'npc')
+    for char in global_dms: decorate_and_add_character(engine, char, 'dm')
+
+    # --- Run-Specific Characters (from a saved game or scene) ---
     initial_leads = file_io.read_json(file_io.join_path(run_path, 'leads.json'), default=[])
     initial_dms = file_io.read_json(file_io.join_path(run_path, 'dm_roles.json'), default=[])
     initial_npcs = file_io.read_json(file_io.join_path(run_path, 'temporary_npcs.json'), default=[])
@@ -183,8 +233,11 @@ def load_initial_roster(engine):
     for char in initial_npcs: decorate_and_add_character(engine, char, 'npc')
 
 
-def load_characters_from_scene(engine, scene_data):
-    """Loads characters specified in a scene object and from location inhabitants."""
+def load_characters_from_scene(engine, scene_data, hydrate_inhabitants: bool = True):
+    """
+    Loads characters specified in a scene object. Inhabitants from the location
+    can be deferred by setting hydrate_inhabitants to False.
+    """
     if not isinstance(scene_data, dict): return
 
     run_lead_casting_path = file_io.join_path(engine.run_path, 'casting_leads.json')
@@ -213,11 +266,16 @@ def load_characters_from_scene(engine, scene_data):
         if npc_profile := find_character_in_list(name, all_casting_npcs):
             decorate_and_add_character(engine, npc_profile, 'npc')
 
-    # 2. Load/Generate NPCs from the location's "inhabitants" list
+    # 2. Load/Generate characters from the location's "inhabitants" list
     if inhabitants := location_data.get('inhabitants'):
-        for npc_concept in inhabitants:
-            if full_npc_profile := get_or_create_npc_from_data(engine, npc_concept, location_context):
-                decorate_and_add_character(engine, full_npc_profile, 'npc')
+        if hydrate_inhabitants:
+            for char_concept in inhabitants:
+                full_char_profile, role_type = get_or_create_character_from_concept(engine, char_concept, location_context)
+                if full_char_profile and role_type:
+                    decorate_and_add_character(engine, full_char_profile, role_type)
+        else:
+            # If not hydrating, add them to the engine's dehydrated list for later.
+            engine.dehydrated_npcs.extend(inhabitants)
 
 
 # # NEW: Wrapper function to centralize the create->add flow
@@ -229,41 +287,51 @@ def create_and_add_lead(engine, dialogue_log):
     return None
 
 
-def inject_lead_summary_into_dms(engine):
-    """Adds a summary of the current lead characters to the instructions of all DMs."""
-    leads = [c for c in engine.characters if c.get('role_type') == 'lead']
-    if not leads: return
-    lead_summaries = [f"- **{lead['name']}**: {lead['description']}" for lead in leads]
-    full_summary = f"\n\n--- CURRENT PARTY ROSTER ---\nThe current adventuring party you are overseeing consists of the following individuals:\n" + "\n".join(
-        lead_summaries)
-    utils.log_message('debug', loc('system_lead_summary_header'))
-    utils.log_message('debug', full_summary)
-    for char in engine.characters:
-        if char.get('role_type') == 'dm':
-            char['instructions'] += full_summary
+def spawn_single_entity(engine, game_state, character_name: str, target_feature_name: str | None = None):
+    """Creates an Entity for a single character and places it, preferably in a specific feature."""
+    if not game_state or game_state.get_entity(character_name): return
+
+    character = find_character(engine, character_name)
+    if not character: return
+
+    # Simplified color logic for single spawn
+    colors = [(255, 255, 255), (255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255), (0, 255, 255), (128, 0, 128)]
+    color = colors[len(game_state.entities) % len(colors)]
+    char_visual = character['name'][0].upper()
+
+    x, y = -1, -1
+    # Attempt to place in the target feature
+    if target_feature_name and engine.generation_state:
+        target_tag = next((tag for tag, data in engine.generation_state.placed_features.items() if data.get('name') == target_feature_name), None)
+        if target_tag:
+            bounds = engine.generation_state.placed_features[target_tag].get('bounding_box')
+            if bounds:
+                x1, y1, w, h = [int(c) for c in bounds]
+                for _ in range(100): # 100 attempts to find a free spot
+                    px, py = random.randint(x1, x1 + w - 1), random.randint(y1, y1 + h - 1)
+                    if game_state.game_map.is_walkable(px, py) and not any(e.x == px and e.y == py for e in game_state.entities):
+                        x, y = px, py
+                        break
+
+    # Fallback to random placement if specific placement fails or is not requested
+    if x == -1 and y == -1:
+        for _ in range(200):
+            x = random.randint(1, game_state.game_map.width - 2)
+            y = random.randint(1, game_state.game_map.height - 2)
+            if game_state.game_map.is_walkable(x, y) and not any(e.x == x and e.y == y for e in game_state.entities):
+                break
+
+    entity = Entity(name=character['name'], x=x, y=y, char=char_visual, color=color)
+    game_state.add_entity(entity)
+    utils.log_message('debug', loc('system_roster_spawned_entity', entity_name=entity.name, x=entity.x, y=entity.y))
 
 
 def spawn_entities_from_roster(engine, game_state):
     """Creates Entity objects in the game_state for all positional characters."""
     if not game_state: return
-    colors = [(255, 255, 255), (255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255), (0, 255, 255),
-              (128, 0, 128)]
-    color_index = 0
     for character in engine.characters:
-        if not character.get('is_positional'): continue
-        if game_state.get_entity(character['name']): continue
-        x, y = 0, 0
-        for _ in range(100):
-            x = random.randint(1, game_state.game_map.width - 2)
-            y = random.randint(1, game_state.game_map.height - 2)
-            if game_state.game_map.is_walkable(x, y) and not any(e.x == x and e.y == y for e in game_state.entities):
-                break
-        char_visual = character['name'][0].upper()
-        char_color = colors[color_index % len(colors)]
-        color_index += 1
-        entity = Entity(name=character['name'], x=x, y=y, char=char_visual, color=char_color)
-        game_state.add_entity(entity)
-        utils.log_message('debug', loc('system_roster_spawned_entity', entity_name=entity.name, x=entity.x, y=entity.y))
+        if character.get('is_positional'):
+            spawn_single_entity(engine, game_state, character['name'])
 
 
 def place_entity_by_instruction(game_state: 'GameState', entity_name: str, instruction: dict, placed_features: dict):
@@ -355,6 +423,8 @@ def add_character(engine, character_data):
 def remove_character(engine, character_name):
     if character_to_remove := find_character(engine, character_name):
         engine.characters = [c for c in engine.characters if c['name'].lower() != character_name.lower()]
+        if character_to_remove.get('role_type') == 'lead':
+            engine.lead_roster_changed = True
         return character_to_remove
     return None
 
@@ -365,7 +435,7 @@ def promote_npc_to_lead(engine, npc_name):
             char_to_promote['role_type'] = 'lead'
             char_to_promote['is_essential'] = True
             char_to_promote['is_director_managed'] = True
-
+            engine.lead_roster_changed = True
             utils.log_message('debug', loc('system_director_lead_promote', npc_name=npc_name,
                                            character_name='(N/A)'))  # Context may vary
             return char_to_promote
@@ -377,3 +447,12 @@ def update_character_instructions(character, new_instructions):
         character['instructions'] = new_instructions
         return True
     return False
+
+
+def get_active_dm(engine):
+    """Finds the single active meta-DM if single DM mode is enabled."""
+    if not config.settings.get("enable_multiple_dms", False):
+        for char in engine.characters:
+            if char.get('role_type') == 'dm':
+                return char
+    return None

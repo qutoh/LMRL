@@ -1,6 +1,69 @@
-# /core/procgen_utils.py
+# /core/worldgen/procgen_utils.py
 
 import re
+from collections import deque
+from typing import List, Set, Tuple
+import numpy as np
+
+# /core/worldgen/procgen_utils.py
+
+import re
+from collections import deque
+from typing import List, Set, Tuple
+import numpy as np
+
+from ..common.localization import loc_raw
+
+_RELATIONSHIPS_DATA_CACHE = None
+
+def get_relationships_data():
+    """Loads and caches the relationships data from localization files."""
+    global _RELATIONSHIPS_DATA_CACHE
+    if _RELATIONSHIPS_DATA_CACHE is None:
+        _RELATIONSHIPS_DATA_CACHE = loc_raw("relationships_data", default={'hierarchical': [], 'lattice': {}})
+    return _RELATIONSHIPS_DATA_CACHE
+
+def find_contiguous_regions(grid: np.ndarray, traversable_indices: set) -> List[Set[Tuple[int, int]]]:
+    """
+    Finds all contiguous regions of specific tile types in a grid using a flood fill (BFS) algorithm.
+
+    Args:
+        grid: A 2D NumPy array of integer tile type indices.
+        traversable_indices: A set of integer indices that the flood fill is allowed to traverse.
+
+    Returns:
+        A list of sets, where each set contains the (x, y) coordinates of a single contiguous region.
+    """
+    if not traversable_indices:
+        return []
+
+    height, width = grid.shape
+    visited = np.zeros_like(grid, dtype=bool)
+    regions = []
+
+    for y in range(height):
+        for x in range(width):
+            if not visited[y, x] and grid[y, x] in traversable_indices:
+                # Start a new flood fill for a new region
+                new_region = set()
+                q = deque([(x, y)])
+                visited[y, x] = True
+                new_region.add((x, y))
+
+                while q:
+                    cx, cy = q.popleft()
+
+                    # Check neighbors
+                    for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                        nx, ny = cx + dx, cy + dy
+
+                        if 0 <= nx < width and 0 <= ny < height and not visited[ny, nx] and grid[ny, nx] in traversable_indices:
+                            visited[ny, nx] = True
+                            q.append((nx, ny))
+                            new_region.add((nx, ny))
+                regions.append(new_region)
+
+    return regions
 
 
 def get_perimeter_faces(bounding_box: tuple) -> dict:

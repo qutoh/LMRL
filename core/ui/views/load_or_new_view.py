@@ -1,9 +1,11 @@
 # /core/ui/views/load_or_new_view.py
 
 from typing import Callable
+
 import tcod
 
 from ..ui_framework import VBox, Button, Frame, View
+
 
 class LoadOrNewView(View):
     """A view that asks the player to load a game or start a new one."""

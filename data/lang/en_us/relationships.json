@@ -1,0 +1,23 @@
+{
+  "relationships_data": {
+    "hierarchical": [
+      "INSIDE",
+      "NEARBY",
+      "REGION"
+    ],
+    "lattice": {
+      "NORTH": "SOUTH",
+      "SOUTH": "NORTH",
+      "EAST": "WEST",
+      "WEST": "EAST",
+      "UP": "DOWN",
+      "DOWN": "UP",
+      "ABOVE": "BELOW",
+      "BELOW": "ABOVE",
+      "FORWARD": "BACK",
+      "BACK": "FORWARD",
+      "LEFT": "RIGHT",
+      "RIGHT": "LEFT"
+    }
+  }
+}

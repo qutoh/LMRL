@@ -1,12 +1,14 @@
 # /core/worldgen/v3_components/map_ops.py
 
 import random
-import numpy as np
 from typing import Callable, List, Dict, Tuple
 
-from .feature_node import FeatureNode
+import numpy as np
+
 from core.common import utils
 from core.common.config_loader import config
+from .feature_node import FeatureNode
+from .placement import Placement  # Import Placement to instantiate it
 
 # --- Jitter Constants ---
 MIN_FEATURE_SIZE = 3
@@ -23,6 +25,7 @@ class MapOps:
     def __init__(self, map_width: int, map_height: int):
         self.map_width = map_width
         self.map_height = map_height
+        self.placement_utils = Placement(map_width, map_height)
 
     def _propose_transform_for_branch(self, feature: FeatureNode, dx: int, dy: int, scale: float,
                                       parent_proposal: Tuple[int, int, int, int] | None) -> Dict[
@@ -72,24 +75,33 @@ class MapOps:
 
         return all_proposals
 
-    def _is_proposal_valid(self, proposal: dict, other_nodes: list) -> bool:
-        """Checks if an entire branch proposal is valid against bounds, other branches, and itself."""
-        temp_grid_others = np.zeros((self.map_height, self.map_width), dtype=int)
-        for other_node in other_nodes:
-            ox, oy, ow, oh = other_node.get_rect()
-            temp_grid_others[oy:oy + oh, ox:ox + ow] = 1
+    def _is_proposal_valid(self, proposal: dict, other_branches: List[FeatureNode]) -> bool:
+        """Checks if an entire branch proposal is valid against bounds and other branches."""
+        temp_grid_others = self.placement_utils._get_temp_grid(other_branches)
 
-        proposal_grid = np.zeros((self.map_height, self.map_width), dtype=int)
+        # Check each part of the proposal against the grid of other features
+        for node, rect in proposal.items():
+            feature_def = config.features.get(node.feature_type, {})
+            if not self.placement_utils._is_placement_valid(rect, temp_grid_others, feature_def):
+                return False
 
-        for node, (px, py, pw, ph) in proposal.items():
-            if not (px >= 1 and py >= 1 and (px + pw) <= (self.map_width - 1) and (py + ph) <= (
-                    self.map_height - 1)):
-                return False
-            if np.any(temp_grid_others[py:py + ph, px:px + pw] == 1):
-                return False
-            if np.any(proposal_grid[py:py + ph, px:px + pw] == 1):
-                return False
-            proposal_grid[py:py + ph, px:px + pw] = 1
+        # Self-collision check (more complex, requires drawing the proposal)
+        proposal_nodes = list(proposal.keys())
+        for i in range(len(proposal_nodes)):
+            node_a = proposal_nodes[i]
+            rect_a = proposal[node_a]
+            ax1, ay1, aw, ah = rect_a
+            ax2, ay2 = ax1 + aw, ay1 + ah
+
+            for j in range(i + 1, len(proposal_nodes)):
+                node_b = proposal_nodes[j]
+                rect_b = proposal[node_b]
+                bx1, by1, bw, bh = rect_b
+                bx2, by2 = bx1 + bw, by1 + bh
+
+                # Standard AABB collision check
+                if not (ax2 <= bx1 or ax1 >= bx2 or ay2 <= by1 or ay1 >= by2):
+                    return False  # Self-intersection found
 
         return True
 
@@ -108,10 +120,7 @@ class MapOps:
                 break
 
             branch_to_jitter = random.choice(initial_feature_branches)
-            other_nodes = []
-            for branch in initial_feature_branches:
-                if branch is not branch_to_jitter:
-                    other_nodes.extend(branch.get_all_nodes_in_branch())
+            other_branches = [b for b in initial_feature_branches if b is not branch_to_jitter]
 
             dx = random.randint(-JITTER_MAX_TRANSLATION, JITTER_MAX_TRANSLATION)
             dy = random.randint(-JITTER_MAX_TRANSLATION, JITTER_MAX_TRANSLATION)
@@ -125,7 +134,7 @@ class MapOps:
 
             if not proposal: continue
 
-            if self._is_proposal_valid(proposal, other_nodes):
+            if self._is_proposal_valid(proposal, other_branches):
                 for node, (px, py, pw, ph) in proposal.items():
                     node.current_x, node.current_y = px, py
                     node.current_abs_width, node.current_abs_height = pw, ph

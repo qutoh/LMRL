@@ -1,56 +1,88 @@
 # /core/engine/turn_manager.py
 
-import re
-from ..common import utils
 from ..common import command_parser
-from ..llm import llm_api
-from ..components import roster_manager
-from ..components import utility_tasks
+from ..common import utils
 from ..components import position_manager
+from ..components import roster_manager
+from ..llm import llm_api
+from ..ui.ui_messages import StreamStartMessage, StreamTokenMessage, StreamEndMessage, AddEventLogMessage
 
 
 class TurnManager:
     """
-    A stateful manager that handles the entire process of executing a single
-    character's turn, whether AI or human-controlled.
+    A library of stateful helper functions for executing character turns and
+    processing their outcomes. It is orchestrated by a Game Mode.
     """
 
-    def __init__(self, engine, game_state, player_interface):
+    def __init__(self, engine, player_interface):
         self.engine = engine
-        self.game_state = game_state
+        self.game_state = engine.game_state
         self.player_interface = player_interface
-        self.movement_classifiers = {
-            "DASH": r"\b(dash|dashes|dashed|rush|rushes|rushed|charge|charges|charged|sprint|sprints|sprinted|bolt|bolts|bolted)\b",
-            "SNEAK": r"\b(sneak|sneaks|snuck|creep|creeps|crept|stalk|stalks|stalked|sidle|sidles|sidled|tiptoe|tiptoes|tiptoed)\b",
-            "CRAWL": r"\b(crawl|crawls|crawled)\b",
-            "CLIMB": r"\b(climb|climbs|climbed|ascend|ascends|ascended|scrambles up)\b",
-            "SWIM": r"\b(swim|swims|swam|wade|wades|waded)\b",
-            "JUMP": r"\b(jump|jumps|jumped|leap|leaps|leapt)\b",
-            "FALLBACK": r"\b(retreat|retreats|retreated|withdraw|withdraws|withdrew|backs away|backed away|fall back|falls back|fell back)\b",
-            "RUN": r"\b(run|runs|ran)\b",
-            "WALK": r"\b(walk|walks|walked|go|goes|went|move|moves|moved|proceed|proceeds|proceeded|advance|advances|advanced|step|steps|stepped|sets off|set off|position|positions|positioned)\b",
+
+    def hydrate_proximate_npcs(self):
+        if not self.engine.dehydrated_npcs:
+            return
+        visible_tags = position_manager._get_nearby_feature_tags_for_leads(self.engine, self.game_state)
+        if not visible_tags:
+            return
+        visible_locations = {
+            data.get('name', tag) for tag, data in self.engine.generation_state.placed_features.items() if
+            tag in visible_tags
         }
+        visible_locations_list_str = "\n".join(f"- {name}" for name in sorted(list(visible_locations)))
+        hydrated_any = False
+        for concept in self.engine.dehydrated_npcs[:]:
+            concept_dict = {}
+            if isinstance(concept, str):
+                parts = concept.split(' - ', 1)
+                concept_dict['name'] = parts[0].strip()
+                concept_dict['description'] = parts[1].strip() if len(parts) > 1 else "An individual."
+            else:
+                concept_dict = concept
+            char_name = concept_dict.get('name', 'Unknown')
+            char_desc = concept_dict.get('description', concept_dict.get('source_sentence', 'An individual.'))
+            kwargs = {
+                "character_name": char_name,
+                "character_description": char_desc,
+                "visible_locations_list": visible_locations_list_str
+            }
+            raw_response = llm_api.execute_task(self.engine, self.engine.config.agents['DIRECTOR'],
+                                                'DIRECTOR_SHOULD_SPAWN_INHABITANT', [], task_prompt_kwargs=kwargs)
+            command = command_parser.parse_structured_command(self.engine, raw_response, 'DIRECTOR',
+                                                              fallback_task_key='CH_FIX_SPAWN_INHABITANT_JSON')
+            if command and command.get('spawn'):
+                location_name = command.get('location_name')
+                utils.log_message('debug', f"[TURN MANAGER] Hydrating NPC '{char_name}' in/near '{location_name}'.")
+                location_context = {"world_theme": self.engine.world_theme, "scene_prompt": self.engine.scene_prompt}
+                full_profile, role = roster_manager.get_or_create_character_from_concept(self.engine, concept,
+                                                                                         location_context)
+                if full_profile and role:
+                    roster_manager.decorate_and_add_character(self.engine, full_profile, role)
+                    roster_manager.spawn_single_entity(self.engine, self.game_state, full_profile['name'],
+                                                       location_name)
+                    self.engine.dehydrated_npcs.remove(concept)
+                    hydrated_any = True
+        if hydrated_any:
+            self.engine.character_manager.initialize_all_character_states(self.engine)
 
-    def _classify_movement_mode(self, text: str) -> str | None:
-        """Iterates through classifiers to find the dominant movement mode."""
-        for mode, pattern in self.movement_classifiers.items():
-            if re.search(pattern, text, re.IGNORECASE):
-                return mode
-        return None
-
-    def _execute_ai_turn(self, current_actor, unacted_roles):
+    def generate_ai_prose(self, current_actor, unacted_roles) -> tuple[str, list]:
         """
-        Executes a full turn for an AI-controlled character. This is now the
-        primary location where full prompt context is built.
+        Generates the prose for an AI-controlled character's turn using streaming.
+        Returns the final prose string and the message context used to generate it.
         """
         self.game_state.reset_entity_turn_stats(current_actor['name'])
 
-        # Build the full narrative context for the actor.
+        if current_actor.get('role_type') == 'lead':
+            position_manager.log_character_perspective(self.engine, self.game_state, current_actor['name'])
+
         memories = self.engine.memory_manager.retrieve_memories(self.engine.dialogue_log, self.engine.summaries)
         local_context_str = position_manager.get_local_context_for_character(self.engine, self.game_state,
                                                                              current_actor['name'])
+
         builder = utils.PromptBuilder(self.engine, current_actor) \
             .add_world_theme() \
+            .add_scene_prompt() \
+            .add_lead_character_summary() \
             .add_summary(self.engine.summaries) \
             .add_local_context(local_context_str) \
             .add_physical_context()
@@ -59,82 +91,63 @@ class TurnManager:
         builder.add_dialogue_log(self.engine.dialogue_log)
         messages = builder.build()
 
-        self.engine.render_queue.put(('ADD_EVENT_LOG', f"{current_actor['name']} is thinking...", (150, 150, 150)))
+        self.engine.render_queue.put(AddEventLogMessage(f"{current_actor['name']} is thinking...", (150, 150, 150)))
 
-        next_actor = None
+        # --- STREAMING IMPLEMENTATION ---
+        self.engine.render_queue.put(StreamStartMessage(current_actor['name']))
 
-        # A character's main turn is a generic task; the prompt is already built.
-        raw_llm_response = llm_api.execute_task(
-            self.engine,
-            current_actor,
-            'GENERIC_TURN',
-            messages
+        def on_token_stream(delta: str, is_retry_clear: bool = False):
+            self.engine.render_queue.put(StreamTokenMessage(delta, is_retry_clear))
+
+        def should_stop(current_buffer: str):
+            # This can be expanded later to allow for early termination logic.
+            return False
+
+        task_key = 'DM_TURN' if current_actor.get('role_type') == 'dm' else 'CHARACTER_TURN'
+
+        raw_llm_response = llm_api.execute_task_streaming(
+            engine=self.engine,
+            agent_or_character=current_actor,
+            task_key=task_key,
+            messages=messages,
+            on_token_stream=on_token_stream,
+            should_stop=should_stop
         )
+
+        self.engine.render_queue.put(StreamEndMessage())
+        # --- END STREAMING IMPLEMENTATION ---
+
         prose = command_parser.post_process_llm_response(self.engine, current_actor, raw_llm_response,
                                                          is_dm_role=current_actor.get('role_type') == 'dm')
+        return prose, messages
 
+    def process_turn_results(self, current_actor, prose: str, messages: list, unacted_roles: list) -> tuple[
+        dict | None, str]:
+        dialogue_entry = {"speaker": current_actor['name'], "content": prose,
+                          "timestamp": self.engine.current_game_time.isoformat()}
+        next_actor_name, events = self.engine.prometheus_manager.analyze_and_dispatch(
+            prose, dialogue_entry, unacted_roles, messages)
+        if events.get('refusal'):
+            reprompt_result = self.engine.prometheus_manager._call_handle_refusal(dialogue_entry, messages,
+                                                                                  unacted_roles=unacted_roles)
+            prose = reprompt_result.get('new_prose', '')
+            next_actor_name = reprompt_result.get('next_actor_name')
+            events = reprompt_result.get('events', {})
+        elif events.get('role_break'):
+            reprompt_result = self.engine.prometheus_manager._call_handle_role_break(dialogue_entry,
+                                                                                     unacted_roles=unacted_roles)
+            prose = reprompt_result.get('new_prose', '')
+            next_actor_name = reprompt_result.get('next_actor_name')
+            events = reprompt_result.get('events', {})
         if prose:
-            # Add timestamp immediately so all downstream consumers have it.
-            dialogue_entry = {
-                "speaker": current_actor['name'],
-                "content": prose,
-                "timestamp": self.engine.current_game_time.isoformat()
-            }
-
-            # Pass original messages for potential re-prompting
-            prometheus_result = self.engine.prometheus_manager.analyze_and_dispatch(prose, dialogue_entry,
-                                                                                    unacted_roles, messages)
-
-            if isinstance(prometheus_result, dict) and prometheus_result.get('status') == 'REPROMPTED':
-                # The turn was handled by the refusal system. Overwrite prose and next_actor.
-                prose = prometheus_result.get('new_prose', '')
-                next_actor_name = prometheus_result.get('next_actor_name')
-            else:
-                next_actor_name = prometheus_result
-
-            if next_actor_name and isinstance(next_actor_name, str):
-                next_actor = roster_manager.find_character(self.engine, next_actor_name)
-
-            # Ensure we only process valid, final prose
-            if prose:
-                dialogue_entry["content"] = prose  # Update with new prose if reprompted
-                utils.log_message('story', prose)
-                self.engine.dialogue_log.append(dialogue_entry)
-
-                duration_seconds = utility_tasks.get_duration_for_action(self.engine, prose)
-                self.engine.advance_time(duration_seconds)
-
-                if current_actor.get('is_positional'):
-                    if movement_mode := self._classify_movement_mode(prose):
-                        position_manager.process_movement_intent(self.engine, self.game_state, current_actor['name'],
-                                                                 prose,
-                                                                 movement_mode)
-
-        return next_actor
-
-    def execute_turn_for(self, current_actor, unacted_roles):
-        """Public method to execute a turn for any actor."""
-        next_actor = None
-
-        if current_actor.get("controlled_by") == "human":
-            prose = self.player_interface.execute_turn(current_actor)
-        else:
-            return self._execute_ai_turn(current_actor, unacted_roles)
-
-        # All post-prose logic for human turns is shared here.
-        if prose:
-            dialogue_entry = {"speaker": current_actor['name'], "content": prose,
-                              "timestamp": self.engine.current_game_time.isoformat()}
+            utils.log_message('story', f"({current_actor['name']}) {prose}")
+            dialogue_entry["content"] = prose
             self.engine.dialogue_log.append(dialogue_entry)
-
-            # For human turns, we don't need to pass original_messages as we can't re-prompt them.
-            next_actor_name = self.engine.prometheus_manager.analyze_and_dispatch(prose, dialogue_entry, unacted_roles,
-                                                                                  [])
-
-            duration_seconds = utility_tasks.get_duration_for_action(self.engine, prose)
-            self.engine.advance_time(duration_seconds)
-
+            self.engine.advance_time(events.get('time_passed_seconds', 0))
+            if current_actor.get('is_positional'):
+                position_manager.handle_turn_movement(self.engine, self.game_state, current_actor['name'], prose)
+            self.engine.character_manager.update_character_state(self.engine, current_actor, dialogue_entry, events)
             if next_actor_name and isinstance(next_actor_name, str):
                 next_actor = roster_manager.find_character(self.engine, next_actor_name)
-
-        return next_actor
+                return next_actor, prose
+        return None, prose

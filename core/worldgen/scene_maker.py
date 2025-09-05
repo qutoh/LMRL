@@ -1,6 +1,7 @@
 # /core/worldgen/scene_maker.py
 
 import random
+
 from core.common import file_io, utils
 from core.common.config_loader import config
 from core.llm.llm_api import execute_task
@@ -42,7 +43,6 @@ class SceneMakerManager:
         if not location: return {"scene_prompt": "A story begins."}
         utils.log_message('debug', f"[SCENE MAKER] Generating a new scene for location: '{location.get('Name')}'.")
 
-        # Ensure world_theme is correctly retrieved from the engine instance
         world_theme = getattr(self.engine, 'world_theme', 'A generic fantasy world.')
 
         prompt_kwargs = {

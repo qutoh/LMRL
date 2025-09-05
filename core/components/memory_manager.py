@@ -1,6 +1,7 @@
-# /core/memory_manager.py
+# /core/components/memory_manager.py
 
 import uuid
+
 from core.common.config_loader import config
 from core.common.localization import loc
 from core.common.utils import log_message

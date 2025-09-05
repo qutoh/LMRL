@@ -1,0 +1,14 @@
+{
+  "materials": [
+    "ROCK",
+    "DIRT",
+    "SAND",
+    "GRAVEL",
+    "WOOD",
+    "METAL",
+    "VEGETATION",
+    "WATER_SAFE",
+    "WATER_UNSAFE",
+    "NONE"
+  ]
+}

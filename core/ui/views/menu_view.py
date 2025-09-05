@@ -1,6 +1,7 @@
 # /core/ui/views/menu_view.py
 
 from typing import Callable, Optional
+
 import tcod
 
 from ..ui_framework import VBox, Button, Frame, View
@@ -15,6 +16,7 @@ class MenuView(View):
         self.on_choice = on_choice
         self.selected_index = 0
         self.menu_options = options
+        self.help_context_key = "IN_GAME_MENU"
 
         self.container = VBox()
         for item_text in self.menu_options:

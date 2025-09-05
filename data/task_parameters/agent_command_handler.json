@@ -1,6 +1,21 @@
 {
+  "CH_FIX_EQUIPMENT_DESC_JSON": {
+    "task_prompt_key": "task_prompt_command_handler_fix_json",
+    "source_agent": "COMMAND_HANDLER",
+    "is_failure_handler": true
+  },
   "CH_FIX_INITIAL_EQUIPMENT_JSON": {
     "task_prompt_key": "task_prompt_ch_fix_initial_equipment_json",
+    "source_agent": "COMMAND_HANDLER",
+    "is_failure_handler": true
+  },
+  "CH_FIX_INDIVIDUAL_ACTIONS_JSON": {
+    "task_prompt_key": "task_prompt_ch_fix_individual_actions_json",
+    "source_agent": "COMMAND_HANDLER",
+    "is_failure_handler": true
+  },
+  "CH_FIX_GROUP_PLACEMENT_JSON": {
+    "task_prompt_key": "task_prompt_ch_fix_group_placement_json",
     "source_agent": "COMMAND_HANDLER",
     "is_failure_handler": true
   },
@@ -64,6 +79,16 @@
     "source_agent": "COMMAND_HANDLER",
     "model_override": "",
     "default_adjustment": -0.2,
+    "is_failure_handler": true
+  },
+  "CH_FIX_TILE_JSON": {
+    "task_prompt_key": "task_prompt_ch_fix_tile_json",
+    "source_agent": "COMMAND_HANDLER",
+    "is_failure_handler": true
+  },
+    "CH_FIX_CONNECTOR_CHILD_JSON": {
+    "task_prompt_key": "task_prompt_ch_fix_connector_child_json",
+    "source_agent": "COMMAND_HANDLER",
     "is_failure_handler": true
   },
   "CH_FIX_PROCGEN": {

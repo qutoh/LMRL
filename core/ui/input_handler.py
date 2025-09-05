@@ -1,10 +1,12 @@
-# /core/input_handler.py
+# /core/ui/input_handler.py
 
-import tcod
-from typing import Optional, Tuple
-import pyperclip
-from ..common.utils import count_tokens
 import textwrap
+from typing import Optional, Tuple
+
+import pyperclip
+import tcod
+
+from ..common.utils import count_tokens
 
 
 class MenuInputHandler:

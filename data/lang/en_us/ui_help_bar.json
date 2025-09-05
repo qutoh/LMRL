@@ -1,0 +1,23 @@
+{
+    "help_bar_default": "[UP/DOWN] Navigate | [ENTER] Select | [ESC] Back/Exit",
+    "help_bar_world_select": "[UP/DOWN] Navigate Worlds | [ENTER] Select | [ESC] Exit Application",
+    "help_bar_load_or_new": "[UP/DOWN] Navigate | [ENTER] Select | [ESC] Back to World Selection",
+    "help_bar_load_game": "[UP/DOWN] Navigate Saves | [ENTER] Load | [ESC] Back",
+    "help_bar_scene_select": "[UP/DOWN] Navigate Scenes | [ENTER] Start | [ESC] Back",
+    "help_bar_text_input": "[ENTER] Submit | [ESC] Cancel | [CTRL+V] Paste",
+    "help_bar_player_takeover": "[ENTER] Submit Response | [ESC] Cancel/Let AI Handle It | [CTRL+V] Paste",
+    "help_bar_prometheus": "[UP/DOWN] Select Tool | [LEFT/RIGHT] Toggle | [ENTER] Submit | [ESC] Cancel",
+    "help_bar_role_creator": "[UP/DOWN] Navigate Groups/Buttons | [TAB] Switch Group Focus | [ENTER] Add Role/Edit Description/Delete Group | [ESC] Cancel Role Creation",
+    "help_bar_game_running": "[F7] Cast Manager | [F8] Flag Response | [F9] Player Takeover | [F10/ESC] Save & Exit",
+    "help_bar_ingame_input": "[ENTER] Submit Action | [ESC] Skip Action | [CTRL+V] Paste",
+    "help_bar_ingame_menu": "[UP/DOWN] Navigate | [ENTER] Select | [ESC] Cancel",
+    "help_bar_calibrating": "[ESC] Stop Calibration",
+    "help_bar_peg_test": "[ENTER] Next Step | [SPACE] Fast-Forward | [LEFT/RIGHT] Change Scenario | [ESC] Back",
+    "help_bar_char_gen_test": "[ESC] Stop Test & Return to Menu",
+    "help_bar_shutting_down": "Shutting down, please wait...",
+    "help_bar_settings_nav": "[W/S] Nav | [A/D] Change | [ENTER] Edit | [DEL] Default | [BKSP] Revert | [ESC] Exit | [LEFT/RIGHT] Tab",
+    "help_bar_settings_edit": "[ENTER] Confirm | [ESC] Cancel Edit",
+    "help_bar_settings_confirm_exit": "[S] Save & Exit | [D] Discard & Exit | [ESC] Cancel",
+    "help_bar_settings_profiles": "[W/S] Navigate | [ENTER] Select | [ESC] Back | [LEFT/RIGHT] Tab",
+  	"help_bar_noise_test": "[ARROWS] Change Param/Value | [ESC] Back"
+}

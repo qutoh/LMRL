@@ -27,12 +27,16 @@ class Converter:
             if tag in gen_state.placed_features:
                 tag = f"{tag}_{i}"
 
-            gen_state.placed_features[tag] = {
+            feature_dict = {
                 "name": node.name,
                 "type": node.feature_type,
                 "bounding_box": node.get_rect(),
                 "narrative_tag": node.name
             }
+            if node.path_coords:
+                feature_dict["path_tiles"] = node.path_coords
+
+            gen_state.placed_features[tag] = feature_dict
 
         all_interior_features = [f for n in all_nodes for f in n.placed_interior_features]
         for i, feature_data in enumerate(all_interior_features):
@@ -60,7 +64,11 @@ class Converter:
             if tag in graph.nodes:
                 tag = f"{tag}_{i}"
             node_to_tag_map[node] = tag
-            graph.nodes[tag] = {"name": node.name, "type": node.feature_type, "bounding_box": node.get_rect()}
+
+            node_data = {"name": node.name, "type": node.feature_type, "bounding_box": node.get_rect()}
+            if node.path_coords:
+                node_data["path_tiles"] = node.path_coords
+            graph.nodes[tag] = node_data
 
         for node in all_nodes:
             for i, feature_data in enumerate(node.placed_interior_features):
@@ -84,7 +92,6 @@ class Converter:
 
     @staticmethod
     def convert_to_vertex_representation(layout_graph: LayoutGraph, connections: List[Dict]) -> Dict:
-        """Converts the final layout into a physics-engine-friendly vertex format."""
         bodies = []
         for tag, feature in layout_graph.nodes.items():
             x, y, w, h = feature.get('bounding_box', (0, 0, 0, 0))

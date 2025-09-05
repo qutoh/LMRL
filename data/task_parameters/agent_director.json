@@ -6,19 +6,19 @@
   },
   "DIRECTOR_CAST_REPLACEMENT": {
     "task_prompt_key": "task_prompt_director_cast_replacement",
+	"model_override": "",
     "source_agent": "DIRECTOR",
     "player_takeover_enabled": false,
     "player_takeover_notification": "The Director needs you to cast a replacement character."
-  },
-  "DIRECTOR_CHECK_NPC_SURVIVAL": {
-    "task_prompt_key": "task_prompt_director_npc_survival",
-    "source_agent": "DIRECTOR",
-    "default_adjustment": -0.1
   },
   "DIRECTOR_CHOOSE_CHARACTER_TO_REMOVE": {
     "task_prompt_key": "task_prompt_director_choose_character_to_remove",
     "source_agent": "DIRECTOR",
     "default_adjustment": -0.15
+  },
+  "DIRECTOR_CHOOSE_DM_TO_UNFUSE": {
+    "task_prompt_key": "task_prompt_director_choose_dm_to_unfuse",
+    "source_agent": "DIRECTOR"
   },
   "DIRECTOR_CHOOSE_DMS_FOR_SCENE": {
     "task_prompt_key": "task_prompt_director_choose_dms_for_scene",
@@ -27,11 +27,13 @@
   },
   "DIRECTOR_CHOOSE_NEXT_ACTOR": {
     "task_prompt_key": "task_prompt_director_choose_next_actor",
+	"model_override": "",
     "source_agent": "DIRECTOR",
     "default_adjustment": -0.1
   },
   "DIRECTOR_CONFIRM_NPC_SAVE": {
     "task_prompt_key": "task_prompt_director_npc_save_confirmation",
+	"model_override": "",
     "source_agent": "DIRECTOR",
     "default_adjustment": -0.1
   },
@@ -39,10 +41,6 @@
     "task_prompt_key": "task_prompt_director_removal_confirmation",
     "source_agent": "DIRECTOR",
     "default_adjustment": -0.2
-  },
-  "DIRECTOR_CREATE_BASE_PHYS_DESC_FROM_PROFILE": {
-    "task_prompt_key": "task_prompt_director_create_base_phys_desc_from_profile",
-    "source_agent": "DIRECTOR"
   },
   "DIRECTOR_CREATE_FULL_LEAD_PROFILE_FROM_ROLE": {
     "task_prompt_key": "task_prompt_director_create_full_lead_profile_from_role",
@@ -57,13 +55,20 @@
     "source_agent": "DIRECTOR",
     "default_adjustment": 0.0
   },
+  "DIRECTOR_CREATE_PERSONA_DESC": {
+    "task_prompt_key": "task_prompt_director_create_persona_desc",
+    "source_agent": "DIRECTOR",
+    "default_adjustment": 0.05
+  },
   "DIRECTOR_CREATE_LEAD_DESC_FROM_ROLE": {
     "task_prompt_key": "task_prompt_director_create_lead_desc_from_role",
+	"model_override": "",
     "source_agent": "DIRECTOR",
     "default_adjustment": 0.1
   },
   "DIRECTOR_CREATE_LEAD_DESC_FROM_SCENE": {
     "task_prompt_key": "task_prompt_director_create_lead_desc_from_scene",
+	"model_override": "",
     "source_agent": "DIRECTOR",
     "default_adjustment": 0.1
   },
@@ -79,16 +84,19 @@
   },
   "DIRECTOR_CREATE_LEAD_NAME_FROM_ROLE": {
     "task_prompt_key": "task_prompt_director_create_lead_name_from_role",
+	"model_override": "",
     "source_agent": "DIRECTOR",
     "default_adjustment": 0.1
   },
   "DIRECTOR_CREATE_LEAD_NAME_FROM_SCENE": {
     "task_prompt_key": "task_prompt_director_create_lead_name_from_scene",
+	"model_override": "",
     "source_agent": "DIRECTOR",
     "default_adjustment": 0.1
   },
   "DIRECTOR_CREATE_LEAD_PHYS_DESC_FROM_ROLE": {
     "task_prompt_key": "task_prompt_director_create_lead_phys_desc_from_role",
+	"model_override": "",
     "source_agent": "DIRECTOR"
   },
   "DIRECTOR_CREATE_NPC_JSON_FROM_PROCGEN": {
@@ -97,11 +105,15 @@
   },
   "DIRECTOR_DEFINE_LEAD_ROLES_FOR_SCENE": {
     "task_prompt_key": "task_prompt_director_define_lead_roles_for_scene",
+    "model_override": "",
     "source_agent": "DIRECTOR",
-    "default_adjustment": 0.1
+    "default_adjustment": 0.1,
+    "player_takeover_enabled": true,
+    "player_takeover_notification": "The Director needs your help defining the main characters for the scene."
   },
   "DIRECTOR_DEFINE_LEAD_ROLES_FOR_SCENE_FALLBACK": {
     "task_prompt_key": "task_prompt_director_define_lead_roles_for_scene_fallback",
+	"model_override": "",
     "source_agent": "DIRECTOR",
     "is_failure_handler": true
   },
@@ -110,8 +122,19 @@
     "source_agent": "DIRECTOR",
     "default_adjustment": 0.0
   },
+  "DIRECTOR_GET_GROUP_PLACEMENT": {
+    "task_prompt_key": "task_prompt_director_get_group_placement",
+    "source_agent": "DIRECTOR",
+    "affects_global_context_limit": false
+  },
+  "DIRECTOR_GET_INDIVIDUAL_ACTIONS": {
+    "task_prompt_key": "task_prompt_director_get_individual_actions",
+    "source_agent": "DIRECTOR",
+    "affects_global_context_limit": false
+  },
   "DIRECTOR_GET_DM_ANNOTATION": {
     "task_prompt_key": "task_prompt_director_get_dm_annotation",
+	"model_override": "",
     "source_agent": "DIRECTOR",
     "default_adjustment": -0.05
   },
@@ -122,6 +145,11 @@
     "player_takeover_enabled": false,
     "player_takeover_notification": "Help the Director identify a new character."
   },
+  "DIRECTOR_SHOULD_SPAWN_INHABITANT": {
+    "task_prompt_key": "task_prompt_director_should_spawn_inhabitant",
+    "source_agent": "DIRECTOR",
+    "default_adjustment": -0.1
+  },
   "DIRECTOR_TUNE_DM_INSTRUCTIONS": {
     "task_prompt_key": "task_prompt_director_tune_dm_instructions",
     "source_agent": "DIRECTOR",
@@ -129,17 +157,19 @@
   },
   "DIRECTOR_UPDATE_PHYSICAL_DESCRIPTION": {
     "task_prompt_key": "task_prompt_director_update_physical_description",
+	"model_override": "",
     "source_agent": "DIRECTOR"
   },
   "GET_CHARACTER_PLACEMENT": {
     "task_prompt_key": "task_prompt_peg_character_placement",
+	"model_override": "",
     "source_agent": "DIRECTOR",
-    "model_override": "",
     "default_adjustment": 0.0,
     "affects_global_context_limit": false
   },
   "LEAD_CREATE_DESC": {
     "task_prompt_key": "task_prompt_lead_create_desc",
+	"model_override": "",
     "source_agent": "DIRECTOR",
     "default_adjustment": 0.1
   },
@@ -150,6 +180,7 @@
   },
   "LEAD_CREATE_NAME": {
     "task_prompt_key": "task_prompt_lead_create_name",
+	"model_override": "",
     "source_agent": "DIRECTOR",
     "default_adjustment": 0.1
   },
@@ -165,6 +196,7 @@
   },
   "NPC_CREATE_NAME_FROM_PROCGEN": {
     "task_prompt_key": "task_prompt_npc_create_name_from_context",
+	"model_override": "",
     "source_agent": "DIRECTOR",
     "default_adjustment": 0.2
   }

@@ -1,0 +1,21 @@
+{
+  "DARK_GREY": [50, 50, 50],
+  "MEDIUM_GREY": [100, 100, 100],
+  "LIGHT_GREY": [150, 150, 150],
+  "WHITE": [255, 255, 255],
+  "DARK_BROWN": [77, 66, 40],
+  "MEDIUM_BROWN": [139, 69, 19],
+  "LIGHT_BROWN": [166, 145, 55],
+  "DARK_BLUE": [42, 42, 112],
+  "MEDIUM_BLUE": [50, 50, 180],
+  "LIGHT_BLUE": [135, 206, 250],
+  "FOREST_GREEN": [34, 139, 34],
+  "GRASS_GREEN": [64, 115, 75],
+  "LIME_GREEN": [50, 205, 50],
+  "DARK_RED": [139, 0, 0],
+  "BRIGHT_RED": [255, 0, 0],
+  "ORANGE": [255, 165, 0],
+  "YELLOW": [255, 255, 0],
+  "PURPLE": [128, 0, 128],
+  "MAGENTA": [255, 0, 255]
+}

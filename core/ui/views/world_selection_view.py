@@ -1,9 +1,12 @@
 # /core/ui/views/world_selection_view.py
 
 from typing import Callable
+
 import tcod
 
+from ..app_states import AppState
 from ..ui_framework import VBox, Button, Frame, View, DynamicTextBox
+
 
 class WorldSelectionView(View):
     """The main menu view for selecting a world or other options."""
@@ -13,13 +16,15 @@ class WorldSelectionView(View):
         self.worlds = worlds
         self.on_choice = on_choice
         self.selected_index = 0
+        self.help_context_key = AppState.WORLD_SELECTION
 
         menu_items = [world['name'] for world in worlds] + [
             "Build new...",
             "Settings",
             "Calibrate Task Temperatures",
             "PEG V3 Iterative Test",
-            "Character Generation Test"
+            "Character Generation Test",
+            "Noise Visualizer Test"
         ]
         self.menu_options = menu_items
 
@@ -31,6 +36,7 @@ class WorldSelectionView(View):
             elif item == "Calibrate Task Temperatures": button.fg = (150, 200, 255)
             elif item == "PEG V3 Iterative Test": button.fg = (200, 255, 150)
             elif item == "Character Generation Test": button.fg = (255, 150, 200)
+            elif item == "Noise Visualizer Test": button.fg = (150, 150, 255)
             self.container.add_child(button)
 
         self.menu_frame = Frame(self.container, title="Select a World")

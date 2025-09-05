@@ -1,19 +1,205 @@
 # /core/components/position_manager.py
 
+import math
 import random
 import re
-import tcod
+
 import numpy as np
-import math
-from ..llm import llm_api
+import tcod
+
+from . import game_functions
+from . import roster_manager
+from ..common import command_parser
+from ..common import utils
 from ..common.config_loader import config
 from ..common.game_state import GameState
-from ..common import utils
-from ..common import command_parser
-from . import roster_manager
-from . import game_functions
+from ..llm import llm_api
+from ..worldgen.semantic_search import SemanticSearch
 
 FIRST_PERSON_PRONOUNS = {"i", "me", "myself", "my"}
+
+movement_classifiers = {
+    "DASH": r"\b(dash|dashes|dashed|rush|rushes|rushed|charge|charges|charged|sprint|sprints|sprinted|bolt|bolts|bolted)\b",
+    "SNEAK": r"\b(sneak|sneaks|snuck|creep|creeps|crept|stalk|stalks|stalked|sidle|sidles|sidled|tiptoe|tiptoes|tiptoed)\b",
+    "CRAWL": r"\b(crawl|crawls|crawled)\b",
+    "CLIMB": r"\b(climb|climbs|climbed|ascend|ascends|ascended|scrambles up)\b",
+    "SWIM": r"\b(swim|swims|swam|wade|wades|waded)\b",
+    "JUMP": r"\b(jump|jumps|jumped|leap|leaps|leapt)\b",
+    "FALLBACK": r"\b(retreat|retreats|retreated|withdraw|withdraws|withdrew|backs away|backed away|fall back|falls back|fell back)\b",
+    "RUN": r"\b(run|runs|ran)\b",
+    "WALK": r"\b(walk|walks|walked|go|goes|went|move|moves|moved|proceed|proceeds|proceeded|advance|advances|advanced|step|steps|stepped|sets off|set off|position|positions|positioned)\b",
+}
+
+
+def _get_adjacent_feature_tags(current_tag: str, layout_graph) -> set:
+    """Helper to get a set of a feature tag and all its adjacent tags from the layout graph."""
+    if not current_tag or not layout_graph:
+        return {current_tag} if current_tag else set()
+
+    adjacent_tags = {current_tag}
+    for p, c, _ in layout_graph.edges:
+        if p == current_tag:
+            adjacent_tags.add(c)
+        elif c == current_tag:
+            adjacent_tags.add(p)
+    return adjacent_tags
+
+
+def _get_closest_feature_tags(
+        pos: tuple[int, int],
+        placed_features: dict,
+        count: int = 4
+) -> set[str]:
+    """Finds the N closest features to a given position by distance to their center."""
+    if not placed_features:
+        return set()
+
+    features_with_dist = []
+    px, py = pos
+    for tag, details in placed_features.items():
+        if bounds := details.get('bounding_box'):
+            x1, y1, w, h = [int(c) for c in bounds]
+            center_x, center_y = x1 + w / 2, y1 + h / 2
+            distance = math.dist((px, py), (center_x, center_y))
+            features_with_dist.append((distance, tag))
+
+    features_with_dist.sort()
+
+    closest_tags = set()
+    for _, tag in features_with_dist[:count]:
+        closest_tags.add(tag)
+
+    return closest_tags
+
+
+def classify_movement_mode(text: str) -> str | None:
+    """Iterates through classifiers to find the dominant movement mode."""
+    for mode, pattern in movement_classifiers.items():
+        if re.search(pattern, text, re.IGNORECASE):
+            return mode
+    return None
+
+
+def handle_turn_movement(engine, game_state: GameState, character_name: str, prose: str):
+    """
+    Classifies movement type from prose and calls the intent processor.
+    This is the main entry point for handling movement during a character's turn.
+    """
+    if movement_mode := classify_movement_mode(prose):
+        process_movement_intent(engine, game_state, character_name, prose, movement_mode)
+
+
+def _get_nearby_feature_tags_for_leads(engine, game_state: GameState) -> set:
+    """Helper to get the set of all feature tags currently visible to any lead character."""
+    leads = [c for c in engine.characters if c.get('role_type') == 'lead' and c.get('is_positional')]
+    visible_tags = set()
+    if not engine.generation_state: return visible_tags
+
+    for lead in leads:
+        entity = game_state.get_entity(lead['name'])
+        if not entity: continue
+
+        current_tag = get_narrative_location_for_position(entity.x, entity.y, engine.generation_state)
+        if current_tag:
+            visible_tags.update(_get_adjacent_feature_tags(current_tag, engine.layout_graph))
+
+    return visible_tags
+
+
+def get_npcs_to_cull(engine, game_state: GameState) -> list[str]:
+    """
+    Returns a list of NPC names that are not in proximity to any lead characters
+    and should be removed from the current turn order.
+    """
+    npcs = [c for c in engine.characters if c.get('role_type') == 'npc' and c.get('is_positional')]
+    if not npcs: return []
+
+    visible_tags = _get_nearby_feature_tags_for_leads(engine, game_state)
+    if not visible_tags:  # If no leads are in a defined feature, we can't determine proximity.
+        return []
+
+    cull_list = []
+    for npc in npcs:
+        entity = game_state.get_entity(npc['name'])
+        if not entity: continue
+
+        npc_tag = get_narrative_location_for_position(entity.x, entity.y, engine.generation_state)
+        if npc_tag not in visible_tags:
+            cull_list.append(npc['name'])
+
+    return cull_list
+
+
+def log_character_perspective(engine, game_state: GameState, character_name: str):
+    """
+    Builds a narrative description of a lead character's surroundings and echoes it to the game log.
+    """
+    character = roster_manager.find_character(engine, character_name)
+    if not character:
+        return
+
+    # --- Log character name and description ---
+    utils.log_message('game', f"\n--- {character['name']} ---")
+    if phys_desc := character.get('physical_description'):
+        utils.log_message('game', phys_desc)
+
+    entity = game_state.get_entity(character_name)
+    if not entity or not engine.generation_state:
+        return
+
+    # --- Determine visible features ---
+
+    current_feature_tag = get_narrative_location_for_position(entity.x, entity.y,
+                                                              engine.generation_state)
+
+    if current_feature_tag:
+        features_to_scan = _get_adjacent_feature_tags(current_feature_tag, engine.layout_graph)
+    else:
+        # Character is in an open area, find closest features
+        features_to_scan = _get_closest_feature_tags(
+            (entity.x, entity.y), engine.generation_state.placed_features
+        )
+
+    # --- Format and log location description ---
+    if features_to_scan:
+        location_descriptions = []
+        for tag in sorted(list(features_to_scan)):
+            feature_data = engine.generation_state.placed_features.get(tag)
+            if feature_data and feature_data.get('description'):
+                location_descriptions.append(feature_data['description'].strip())
+
+        if location_descriptions:
+            full_description = " ".join(location_descriptions)
+            formatted_location_desc = utils.format_text_with_paragraph_breaks(full_description)
+            utils.log_message('game', formatted_location_desc)
+
+    # --- Find, group, and log nearby characters ---
+    other_entities = [e for e in game_state.entities if e.name != character_name]
+    characters_by_location = {}
+
+    for other_entity in other_entities:
+        occupant_loc_tag = get_narrative_location_for_position(other_entity.x,
+                                                               other_entity.y,
+                                                               engine.generation_state)
+        if occupant_loc_tag and occupant_loc_tag in features_to_scan:
+            loc_data = engine.generation_state.placed_features.get(occupant_loc_tag, {})
+            loc_name = loc_data.get('name', occupant_loc_tag)
+            if loc_name not in characters_by_location:
+                characters_by_location[loc_name] = []
+            characters_by_location[loc_name].append(other_entity.name)
+
+    if characters_by_location:
+        utils.log_message('game', "")  # Newline for spacing
+        for loc_name, char_names in characters_by_location.items():
+            if len(char_names) == 1:
+                char_list_str = char_names[0]
+            elif len(char_names) == 2:
+                char_list_str = f"{char_names[0]} and {char_names[1]}"
+            else:
+                char_list_str = ", ".join(char_names[:-1]) + f" and {char_names[-1]}"
+
+            utils.log_message('game', f"{loc_name}:")
+            utils.log_message('game', f"You see {char_list_str} here.")
 
 
 def get_narrative_location_for_position(x: int, y: int, generation_state) -> str | None:
@@ -42,7 +228,6 @@ def get_local_context_for_character(engine, game_state: GameState, character_nam
 
     # --- 1. Determine Character's Location and Nearby Features ---
     current_feature_tag = get_narrative_location_for_position(entity.x, entity.y, engine.generation_state)
-    nearby_tags = set()
     context_lines = []
 
     if current_feature_tag:
@@ -50,29 +235,14 @@ def get_local_context_for_character(engine, game_state: GameState, character_nam
         current_feature_data = engine.generation_state.placed_features.get(current_feature_tag, {})
         feature_name = current_feature_data.get('name', current_feature_tag)
         context_lines.append(f"You are in **{feature_name}**.")
-
-        for parent, child, _ in engine.layout_graph.edges:
-            if parent == current_feature_tag:
-                nearby_tags.add(child)
-            elif child == current_feature_tag:
-                nearby_tags.add(parent)
+        nearby_tags = _get_adjacent_feature_tags(current_feature_tag, engine.layout_graph)
+        nearby_tags.discard(current_feature_tag)  # Remove self for description part
     else:
         # Character is in an open area. Find the closest features.
         context_lines.append("You are standing in an open area.")
-        all_features = engine.generation_state.placed_features
-        if all_features:
-            features_with_dist = []
-            for tag, details in all_features.items():
-                if bounds := details.get('bounding_box'):
-                    x1, y1, w, h = [int(c) for c in bounds]
-                    center_x, center_y = x1 + w / 2, y1 + h / 2
-                    distance = math.dist((entity.x, entity.y), (center_x, center_y))
-                    features_with_dist.append((distance, tag))
-
-            # Get the 4 closest features
-            features_with_dist.sort()
-            for _, tag in features_with_dist[:4]:
-                nearby_tags.add(tag)
+        nearby_tags = _get_closest_feature_tags(
+            (entity.x, entity.y), engine.generation_state.placed_features
+        )
 
     # --- 2. Build Combined Description of Nearby Features ---
     descriptive_sentences = []
@@ -96,7 +266,7 @@ def get_local_context_for_character(engine, game_state: GameState, character_nam
 
     for other_entity in other_entities:
         occupant_loc_tag = get_narrative_location_for_position(other_entity.x, other_entity.y,
-                                                              engine.generation_state)
+                                                               engine.generation_state)
         if occupant_loc_tag and occupant_loc_tag in features_to_scan:
             loc_data = engine.generation_state.placed_features.get(occupant_loc_tag, {})
             loc_name = loc_data.get('name', occupant_loc_tag)
@@ -108,23 +278,31 @@ def get_local_context_for_character(engine, game_state: GameState, character_nam
     return "\n".join(context_lines)
 
 
-def _find_walkable_tile_in_area(game_state: GameState, x1, y1, x2, y2) -> tuple[int, int] | None:
-    """Helper to find a random walkable tile within a bounding box."""
+def _find_walkable_tiles_in_area(game_state: GameState, x1, y1, x2, y2, limit: int = -1) -> list[tuple[int, int]]:
+    """Helper to find all walkable tiles within a bounding box, up to an optional limit."""
     potential_tiles = []
     for x in range(x1, x2):
         for y in range(y1, y2):
             if game_state.game_map.is_walkable(x, y):
                 if not any(e.x == x and e.y == y for e in game_state.entities):
                     potential_tiles.append((x, y))
-    if potential_tiles:
-        return random.choice(potential_tiles)
-    return None
+                    if limit != -1 and len(potential_tiles) >= limit:
+                        return potential_tiles
+    return potential_tiles
 
 
-def place_character_contextually(engine, game_state: GameState, character: dict, generation_state):
+def _find_walkable_tile_in_area(game_state: GameState, x1, y1, x2, y2) -> tuple[int, int] | None:
+    """Helper to find a random walkable tile within a bounding box."""
+    tiles = _find_walkable_tiles_in_area(game_state, x1, y1, x2, y2)
+    return random.choice(tiles) if tiles else None
+
+
+def place_character_contextually(engine, game_state: GameState, character: dict, generation_state,
+                                 placed_characters: list):
     """
     Uses an LLM to find a contextually appropriate location for a character
-    from the generated features and places them there. Includes a robust fallback.
+    from the generated features and places them there. It now also sets the
+    initial character_state from the LLM's action description.
     """
     entity = game_state.get_entity(character['name'])
     if not entity or not generation_state or not generation_state.placed_features:
@@ -140,19 +318,55 @@ def place_character_contextually(engine, game_state: GameState, character: dict,
 
     placer_agent = engine.config.agents.get('DIRECTOR')
     chosen_narrative_tag = None
+    action_description = "observing the scene."  # Default state
 
     if valid_location_tags and placer_agent:
+        placed_chars_str = "\n".join(
+            [
+                f"- {c['name']} is in '{get_narrative_location_for_position(game_state.get_entity(c['name']).x, game_state.get_entity(c['name']).y, generation_state)}' and is currently '{c.get('character_state', 'waiting')}'"
+                for c in placed_characters]
+        ) or "None."
+
         prompt_kwargs = {
+            "scene_prompt": engine.scene_prompt,
             "character_name": character['name'],
             "character_description": character.get('description', 'An adventurer.'),
-            "location_tags": ", ".join(f"'{tag}'" for tag in valid_location_tags)
+            "location_tags": ", ".join(f"'{tag}'" for tag in valid_location_tags),
+            "placed_characters_list": placed_chars_str
         }
 
         raw_response = llm_api.execute_task(
             engine, placer_agent, 'GET_CHARACTER_PLACEMENT', [], task_prompt_kwargs=prompt_kwargs
         )
         command = command_parser.parse_structured_command(engine, raw_response, 'DIRECTOR')
-        chosen_narrative_tag = command.get("location_tag")
+
+        # --- Set Initial Character State from LLM Response ---
+        # This happens regardless of whether the placement is successful.
+        if command and command.get("action_description"):
+            action_description = command.get("action_description").strip()
+
+        character['character_state'] = action_description
+        utils.log_message('full', f"[INITIAL STATE] {character['name']}: '{action_description}'")
+
+        llm_chosen_tag = command.get("location_tag")
+        if llm_chosen_tag in valid_location_tags:
+            chosen_narrative_tag = llm_chosen_tag
+        else:
+            utils.log_message('debug',
+                              f"[PEG Placement WARNING] LLM chose invalid location '{llm_chosen_tag}'. Using semantic fallback.")
+            semantic_search = SemanticSearch(engine.embedding_model)
+            query = f"{character['name']} is {action_description}"
+
+            # Build list of descriptions for valid locations only
+            choices_map = {
+                details.get('narrative_tag', tag): f"{details.get('name', tag)}: {details.get('description', '')}"
+                for tag, details in generation_state.placed_features.items() if
+                details.get('narrative_tag', tag) in valid_location_tags
+            }
+
+            best_match_desc = semantic_search.find_best_match(query, list(choices_map.values()))
+            if best_match_desc:
+                chosen_narrative_tag = next((tag for tag, desc in choices_map.items() if desc == best_match_desc), None)
 
     # --- Placement Logic ---
     placed_successfully = False
@@ -183,6 +397,98 @@ def place_character_contextually(engine, game_state: GameState, character: dict,
                 break
 
 
+def place_character_group_contextually(engine, game_state: GameState, character_group: dict, generation_state):
+    """Places a group of characters together in a contextually appropriate location."""
+    group_desc = character_group.get('group_description', 'A group of adventurers.')
+    characters = character_group.get('characters', [])
+    group_size = len(characters)
+
+    if not characters:
+        return
+
+    # 1. Find locations with enough space for the whole group
+    valid_locations = {}  # {tag: [list of walkable tiles]}
+    for tag, details in generation_state.placed_features.items():
+        if bounds := details.get('bounding_box'):
+            x1, y1, w, h = [int(c) for c in bounds]
+            walkable_tiles = _find_walkable_tiles_in_area(game_state, x1, y1, x1 + w, y1 + h, limit=group_size)
+            if len(walkable_tiles) >= group_size:
+                valid_locations[details.get('narrative_tag', tag)] = walkable_tiles
+
+    # 2. Have the Director choose a location
+    chosen_tag = None
+    placer_agent = config.agents.get('DIRECTOR')
+    if valid_locations and placer_agent:
+        char_list_str = "\n".join(f"- {c['name']}: {c['description']}" for c in characters)
+        valid_tags_str = ", ".join(f"'{tag}'" for tag in valid_locations.keys())
+
+        prompt_kwargs = {
+            "prompt_substring_world_scene_context": f"Scene: {engine.scene_prompt}",
+            "group_description": group_desc,
+            "character_list": char_list_str,
+            "valid_location_tags": valid_tags_str
+        }
+        raw_response = llm_api.execute_task(engine, placer_agent, 'DIRECTOR_GET_GROUP_PLACEMENT', [],
+                                            task_prompt_kwargs=prompt_kwargs)
+        command = command_parser.parse_structured_command(engine, raw_response, 'DIRECTOR',
+                                                          'CH_FIX_GROUP_PLACEMENT_JSON',
+                                                          {'valid_location_tags': valid_tags_str})
+
+        llm_chosen_tag = command.get("location_tag")
+        if llm_chosen_tag in valid_locations:
+            chosen_tag = llm_chosen_tag
+        else:  # Semantic fallback
+            semantic_search = SemanticSearch(engine.embedding_model)
+            query = f"{group_desc}"
+            choices_map = {tag: f"{tag}: {generation_state.placed_features[tag].get('description', '')}" for tag in
+                           valid_locations.keys()}
+            best_match_desc = semantic_search.find_best_match(query, list(choices_map.values()))
+            if best_match_desc:
+                chosen_tag = next((tag for tag, desc in choices_map.items() if desc == best_match_desc), None)
+
+    # 3. Get individual actions and place characters
+    if chosen_tag:
+        location_name = generation_state.placed_features.get(chosen_tag, {}).get('name', chosen_tag)
+        char_list_str = "\n".join(f"- {c['name']}" for c in characters)
+        actions_kwargs = {
+            "prompt_substring_world_scene_context": f"Scene: {engine.scene_prompt}",
+            "location_name": location_name,
+            "group_description": group_desc,
+            "character_list": char_list_str
+        }
+        actions_response = llm_api.execute_task(engine, placer_agent, 'DIRECTOR_GET_INDIVIDUAL_ACTIONS', [],
+                                                task_prompt_kwargs=actions_kwargs)
+        actions_command = command_parser.parse_structured_command(engine, actions_response, 'DIRECTOR',
+                                                                  'CH_FIX_INDIVIDUAL_ACTIONS_JSON',
+                                                                  {'character_list': char_list_str})
+
+        available_tiles = list(valid_locations[chosen_tag])
+        random.shuffle(available_tiles)
+
+        for char in characters:
+            individual_action = actions_command.get(char['name'], "observing the scene.")
+            char['character_state'] = f"As part of '{group_desc}', you are currently {individual_action}"
+            utils.log_message('full', f"[INITIAL STATE] {char['name']}: '{char['character_state']}'")
+
+            if available_tiles:
+                pos = available_tiles.pop(0)
+                entity = game_state.get_entity(char['name'])
+                if entity:
+                    entity.x, entity.y = pos
+                    utils.log_message('game', f"[POSITION] Placed '{entity.name}' in group at '{location_name}' {pos}.")
+            else:
+                # This should not happen if logic is correct, but is a safe fallback
+                utils.log_message('debug',
+                                  f"[POSITION WARNING] Ran out of tiles for group placement in '{location_name}'. Placing randomly.")
+                # (Could add random placement logic here if needed)
+
+    else:  # Fallback if no valid location could be determined
+        utils.log_message('debug',
+                          f"[POSITION WARNING] Could not find a valid location for group '{group_desc}'. Placing members randomly.")
+        for char in characters:
+            place_character_contextually(engine, game_state, char, generation_state, [])
+
+
 def process_movement_intent(engine, game_state: GameState, character_name: str, movement_action_text: str,
                             movement_mode: str):
     """
@@ -202,10 +508,8 @@ def process_movement_intent(engine, game_state: GameState, character_name: str, 
                                                               engine.generation_state)
     adjacent_feature_names = []
     if current_feature_tag and engine.layout_graph:
-        adjacent_tags = set()
-        for p, c, _ in engine.layout_graph.edges:
-            if p == current_feature_tag: adjacent_tags.add(c)
-            if c == current_feature_tag: adjacent_tags.add(p)
+        adjacent_tags = _get_adjacent_feature_tags(current_feature_tag, engine.layout_graph)
+        adjacent_tags.discard(current_feature_tag)
         for tag in adjacent_tags:
             if name := engine.generation_state.placed_features.get(tag, {}).get('name'):
                 adjacent_feature_names.append(name)
@@ -237,6 +541,11 @@ def process_movement_intent(engine, game_state: GameState, character_name: str, 
     if not command or command.get("action", "").upper() != "MOVE":
         utils.log_message('debug', f"[POSITION] No valid MOVE command could be determined.")
         return
+
+    if not command.get("mover"):
+        command["mover"] = character_name
+        utils.log_message('debug',
+                          f"[POSITION] LLM omitted 'mover' from command. Defaulting to current actor: {character_name}")
 
     # --- 3. Process the command based on target type ---
     target_name = command.get("target")

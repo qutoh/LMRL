@@ -1,6 +1,7 @@
 # /core/ui/views/character_generation_test_view.py
 
 from typing import List
+
 import tcod
 
 from ..ui_framework import View, DynamicTextBox

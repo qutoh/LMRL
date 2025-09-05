@@ -1,0 +1,7 @@
+{
+    "ESTIMATE_ACTION_DURATION": {
+        "task_prompt_key": "task_prompt_timekeeper",
+        "source_agent": "TIMEKEEPER",
+        "default_adjustment": -0.2
+    }
+}

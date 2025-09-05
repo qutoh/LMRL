@@ -1,10 +1,10 @@
-# /core/file_io.py
+# /core/common/file_io.py
 
-import os
 import json
-import shutil
-import re
+import os
 import random
+import re
+import shutil
 from datetime import datetime
 
 # --- SINGLE SOURCE OF TRUTH FOR PATHS ---
@@ -12,6 +12,7 @@ _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 _CORE_DIR = os.path.dirname(_CURRENT_DIR)
 PROJECT_ROOT = os.path.dirname(_CORE_DIR)
 SAVE_DATA_ROOT = os.path.join(PROJECT_ROOT, "save_data")
+SETTINGS_PROFILES_ROOT = os.path.join(PROJECT_ROOT, "data", "settings_profiles")
 IDEATION_LOG_PATH = os.path.join(PROJECT_ROOT, "ideation_log.txt")
 PEG_RECONCILIATION_LOG_PATH = os.path.join(PROJECT_ROOT, "peg_reconciliation_log.txt")
 LOCALIZATION_ERROR_LOG_PATH = os.path.join(PROJECT_ROOT, "localization_errors.log")
@@ -20,8 +21,46 @@ WORLD_PREFIX_PATH = os.path.join(PROJECT_ROOT, "res", "world_name_prefix.txt")
 WORLD_SUFFIX_PATH = os.path.join(PROJECT_ROOT, "res", "world_name_suffix.txt")
 
 
-# ---
+# --- Settings Profile I/O ---
 
+def list_settings_profiles() -> list[str]:
+    """Lists all .json files in the settings profiles directory."""
+    create_directory(SETTINGS_PROFILES_ROOT)
+    try:
+        profiles = [
+            os.path.splitext(f)[0] for f in os.listdir(SETTINGS_PROFILES_ROOT)
+            if f.endswith('.json')
+        ]
+        return sorted(profiles)
+    except OSError:
+        return []
+
+def read_settings_profile(name: str) -> dict | None:
+    """Reads a specific settings profile JSON file."""
+    clean_name = sanitize_filename(name)
+    path = os.path.join(SETTINGS_PROFILES_ROOT, f"{clean_name}.json")
+    return read_json(path, default=None)
+
+def write_settings_profile(name: str, data: dict) -> bool:
+    """Writes data to a settings profile JSON file."""
+    clean_name = sanitize_filename(name)
+    path = os.path.join(SETTINGS_PROFILES_ROOT, f"{clean_name}.json")
+    return write_json(path, data)
+
+def delete_settings_profile(name: str) -> bool:
+    """Deletes a settings profile file."""
+    clean_name = sanitize_filename(name)
+    path = os.path.join(SETTINGS_PROFILES_ROOT, f"{clean_name}.json")
+    if path_exists(path):
+        try:
+            os.remove(path)
+            return True
+        except OSError:
+            return False
+    return False
+
+
+# --- World / Save I/O ---
 def get_random_world_name() -> str:
     """Reads from prefix and suffix files to generate a random world name."""
     try:
@@ -251,21 +290,6 @@ def finalize_run_directory(current_run_path, final_name):
         return current_run_path, error
 
 
-def save_character_to_casting_file(run_path, character, list_filename):
-    """Saves a character to a specific casting file inside the run directory."""
-    file_path = join_path(run_path, list_filename)
-    casting_list = read_json(file_path, default=[])
-
-    char_copy = {k: v for k, v in character.items() if not k.startswith('is_')}
-    if 'role_type' in char_copy:
-        del char_copy['role_type']
-
-    updated_list = [c for c in casting_list if c.get('name', '').lower() != char_copy.get('name', '').lower()]
-    updated_list.append(char_copy)
-
-    return write_json(file_path, updated_list)
-
-
 def save_character_to_world_casting(world_name: str, character: dict, role_type: str):
     """Saves a character's full profile to the persistent casting file for the world."""
     if not world_name or not role_type: return False
@@ -305,6 +329,13 @@ def save_active_character_files(engine):
     clean_characters = []
     for char in engine.characters:
         char_copy = {k: v for k, v in char.items() if not k.startswith('is_')}
+
+        # Convert tuple keys in fused_personas to strings for JSON serialization.
+        if 'fused_personas' in char_copy and isinstance(char_copy['fused_personas'], dict):
+            # Using str() is safe and sufficient for this purpose.
+            string_keyed_personas = {str(key): value for key, value in char_copy['fused_personas'].items()}
+            char_copy['fused_personas'] = string_keyed_personas
+
         if 'role_type' in char_copy:
             clean_characters.append(char_copy)
 
