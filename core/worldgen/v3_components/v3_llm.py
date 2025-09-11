@@ -119,9 +119,9 @@ class V3_LLM:
         example_response = self._generate_dynamic_example(allowed_strategies, 1, 'single', tiers_to_use)
 
         size_tier_examples = {
-            'large': "large (e.g., 'a vast cavern', '80ft wide', '25m across')",
-            'medium': "medium (e.g., 'a medium-sized room', '40ft by 40ft', '12 meters long')",
-            'small': "small (e.g., 'a small alcove', '15 feet', '5m')"
+            'large': "large (e.g., 'large', '80ft by 60ft', '25m across')",
+            'medium': "medium (e.g., 'medium x small', '40ft by 40ft', '12 meters long')",
+            'small': "small (e.g., 'small', '15 feet', '5mx8m')"
         }
         size_tier_list_str = "\n- ".join([desc for tier, desc in size_tier_examples.items() if tier in tiers_to_use])
         if size_tier_list_str:

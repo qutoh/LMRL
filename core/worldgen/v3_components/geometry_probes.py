@@ -99,7 +99,7 @@ def probe_parent_for_any_placement(parent_node: FeatureNode, all_branches: List[
                 for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
                     if (ex + dx, ey + dy) in start_set:
                         return True
-    return True # If there are no other branches, it's not blocked from spawning a new one
+    return True  # If there are no other branches, it's not blocked from spawning a new one
 
 
 def probe_general_placement_for_size_tier(size_tier: str, all_branches: List[FeatureNode],
@@ -111,8 +111,9 @@ def probe_general_placement_for_size_tier(size_tier: str, all_branches: List[Fea
     size_map = {'large': (8, 8), 'medium': (5, 5), 'small': (MIN_FEATURE_SIZE, MIN_FEATURE_SIZE)}
     probe_w, probe_h = size_map.get(size_tier, (MIN_FEATURE_SIZE, MIN_FEATURE_SIZE))
 
-    # Create a generic probe node. Its type doesn't matter, only its shape.
     probe_node = FeatureNode("size_probe", "PROBE", probe_w, probe_h)
+    probe_connection_points = find_potential_connection_points(probe_node.footprint)
+    if not probe_connection_points: return False  # Should not happen for a simple rectangle
 
     for parent_node in all_branches:
         if parent_node.is_blocked:
@@ -125,14 +126,17 @@ def probe_general_placement_for_size_tier(size_tier: str, all_branches: List[Fea
         base_collision_mask = get_temp_grid_func(all_branches, exclude_node=parent_node) != -1
 
         for px, py in parent_connection_points.keys():
-            # Check attachment in 4 directions
-            for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                # Simplified placement logic for speed
-                origin_x = parent_node.current_x + px + dx
-                origin_y = parent_node.current_y + py + dy
-                footprint_abs = {(x + origin_x, y + origin_y) for x, y in probe_node.footprint}
-                if is_placement_valid_func(footprint_abs, base_collision_mask):
-                    return True # Found at least one possible spot
+            for cx, cy in probe_connection_points.keys():
+                for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                    abs_px, abs_py = parent_node.current_x + px, parent_node.current_y + py
+                    origin_x = abs_px + dx - cx
+                    origin_y = abs_py + dy - cy
+
+                    footprint_abs = {(x + origin_x, y + origin_y) for x, y in probe_node.footprint}
+
+                    if is_placement_valid_func(footprint_abs, base_collision_mask):
+                        if footprint_abs.isdisjoint(parent_node.get_absolute_footprint()):
+                            return True
     return False
 
 
@@ -140,7 +144,7 @@ def get_valid_connection_points_for_probe(node: FeatureNode, clearance: int, all
                                           get_temp_grid_func: Callable) -> List[Tuple[int, int]]:
     """Helper for probing, basically a slimmed down version of Pathing's function."""
     temp_grid = get_temp_grid_func(all_branches, exclude_node=node)
-    collision_mask = temp_grid != -1 # Assuming -1 is void space index
+    collision_mask = temp_grid != -1  # Assuming -1 is void space index
 
     perimeter = set()
     footprint = node.get_absolute_footprint()
@@ -150,7 +154,7 @@ def get_valid_connection_points_for_probe(node: FeatureNode, clearance: int, all
             p = (nx, ny)
             if p not in footprint:
                 if 0 <= p[1] < temp_grid.shape[0] and 0 <= p[0] < temp_grid.shape[1]:
-                     perimeter.add(p)
+                    perimeter.add(p)
 
     valid_points = [p for p in perimeter if not collision_mask[p[1], p[0]]]
     return valid_points
