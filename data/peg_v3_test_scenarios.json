@@ -6,13 +6,13 @@
         "features": [
           {
             "name": "Courtyard",
-            "type": "GENERIC_SPACE",
+            "type": "BUILT_ROUND_SPACE",
             "size_tier": "large",
             "description_sentence": "A muddy central courtyard, open to the sky and surrounded by high walls."
           },
           {
             "name": "Mess Hall",
-            "type": "GENERIC_ROOM",
+            "type": "BUILT_ROOM",
             "size_tier": "large",
             "description_sentence": "A long hall with rows of wooden tables, smelling of stale ale and old stew."
           }
@@ -22,18 +22,11 @@
         "Courtyard": "The Courtyard is a vast and open space, defining the center of the complex.",
         "Mess Hall": "The Mess Hall echoes with the ghosts of a hundred boisterous meals."
       },
-      "PROCGEN_GENERATE_NARRATIVE_BEAT": "A simple Archway 1 connects the hall to the main yard.",
+      "PROCGEN_GENERATE_NARRATIVE_BEAT": "A wide Dirt Trail 1 connects the hall to the main yard.",
+      "PEG_V3_CHOOSE_PARENT": "Courtyard",
+      "PEG_V3_CHOOSE_PATH_TARGET": "Mess Hall",
       "PEG_V3_DECIDE_CONNECTOR_STRATEGY": "Courtyard",
-      "PEG_V2_GET_AREA_NAMES": "Barracks; Armory; Captain's Quarters; Mess Hall; Courtyard; Stables",
-      "PEG_V2_RANK_AREAS": "Courtyard; Mess Hall; Barracks; Stables; Armory; Captain's Quarters",
-      "PEG_V2_DEFINE_AREA_DATA": {
-        "Courtyard": { "description": "A muddy central courtyard, open to the sky.", "type": "GENERIC_SPACE", "size_tier": "large" },
-        "Mess Hall": { "description": "A large hall with long wooden tables for dining.", "type": "GENERIC_ROOM", "size_tier": "large" },
-        "Barracks": { "description": "Rows of bunks for the fortress garrison.", "type": "GENERIC_ROOM", "size_tier": "medium" },
-        "Stables": { "description": "Stalls for horses, smelling of hay and manure.", "type": "GENERIC_ROOM", "size_tier": "medium" },
-        "Armory": { "description": "Racks of weapons and stands of armor line the walls.", "type": "GENERIC_ROOM", "size_tier": "small" },
-        "Captain's Quarters": { "description": "A private, spartan room for the fort's commander.", "type": "GENERIC_ROOM", "size_tier": "small" }
-      }
+      "PEG_V3_CREATE_NEARBY_FEATURE_SENTENCE": "Nearby, a dilapidated Watchtower 1 stands silent guard."
     }
   },
   {
@@ -43,13 +36,13 @@
         "features": [
           {
             "name": "Captain's Quarters",
-            "type": "GENERIC_ROOM",
+            "type": "BUILT_ROOM",
             "size_tier": "small",
             "description_sentence": "The captain's tidy but spartan quarters are well-kept."
           },
           {
             "name": "Barracks",
-            "type": "GENERIC_ROOM",
+            "type": "BUILT_ROOM",
             "size_tier": "large",
             "description_sentence": "The main barracks smells of sweat and leather."
           }
@@ -59,13 +52,68 @@
         "Captain's Quarters": "The captain's quarters are austere, containing only a simple bed and a map table.",
         "Barracks": "The barracks are filled with rows of bunks, indicating a well-staffed fortress."
       },
-      "PROCGEN_GENERATE_NARRATIVE_BEAT": "A grand archway leads out from the Captain's Quarters, opening into a new space.",
+      "PROCGEN_GENERATE_NARRATIVE_BEAT": "A grand Archway 1 leads out from the Captain's Quarters, opening into a new space.",
+      "PEG_V3_CHOOSE_PARENT": "Captain's Quarters",
       "PEG_V3_DECIDE_CONNECTOR_STRATEGY": "CREATE_NEW",
       "PEG_V3_CREATE_CONNECTOR_CHILD": {
-        "name": "Secret Tunnel Entrance",
-        "type": "GENERIC_PORTAL",
-        "description_sentence": "The archway opens to reveal a hidden grate leading down into a dark tunnel."
-      }
+        "name": "Secret War Room",
+        "type": "CIRCULAR_ROOM",
+        "size_tier": "small",
+        "description_sentence": "The archway opens into a hidden, circular war room with a large map table in the center."
+      },
+      "PEG_V3_CREATE_NEARBY_FEATURE_SENTENCE": "NONE"
+    }
+  },
+  {
+    "name": "River Crossing",
+    "mock_llm_calls": {
+      "PEG_V3_GET_INITIAL_FEATURES_JSON": {
+        "features": [
+          {
+            "name": "The Old Watchtower",
+            "type": "CIRCULAR_ROOM",
+            "size_tier": "medium",
+            "description_sentence": "A crumbling, round watchtower stands on a low hill."
+          },
+          {
+            "name": "The Riverside Shack",
+            "type": "BUILT_ROOM",
+            "size_tier": "small",
+            "description_sentence": "A small, weathered shack sits near the water's edge."
+          },
+          {
+            "name": "The Swiftcurrent River",
+            "type": "GENERIC_RIVER",
+            "size_tier": "medium",
+            "description_sentence": "The Swiftcurrent River flows rapidly from north to south across the land.",
+            "source": "NORTH_BORDER",
+            "destination": "SOUTH_BORDER"
+          },
+          {
+            "name": "The Quiet Creek",
+            "type": "GENERIC_RIVER",
+            "size_tier": "small",
+            "description_sentence": "A quiet creek meanders from east to west.",
+            "source": "EAST_BORDER",
+            "destination": "WEST_BORDER"
+          },
+          {
+            "name": "The Fisherman's Path",
+            "type": "GENERIC_TRAIL",
+            "size_tier": "small",
+            "description_sentence": "A well-worn fisherman's path connects the shack to the old watchtower.",
+            "source": "The Riverside Shack",
+            "destination": "The Old Watchtower"
+          }
+        ]
+      },
+      "PEG_V3_GET_NARRATIVE_SEED": {
+        "The Old Watchtower": "The ancient stones of the watchtower seem to hold secrets of a bygone era.",
+        "The Riverside Shack": "The shack looks flimsy, but smoke curls from its chimney, suggesting it is occupied."
+      },
+      "PROCGEN_GENERATE_NARRATIVE_BEAT": "A rickety Wooden Pier 1 extends from the shack out over the river.",
+      "PEG_V3_CHOOSE_PARENT": "The Riverside Shack",
+      "PEG_V3_CREATE_NEARBY_FEATURE_SENTENCE": "NONE"
     }
   }
 ]

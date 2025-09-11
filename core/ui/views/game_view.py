@@ -98,12 +98,12 @@ class GameView(View):
                         if tile_indices[0].size > 0:
                             if len(type_def["characters"]) > 1:
                                 random_char = ord(random.choice(type_def["characters"]))
-                                console.rgb["ch"][tile_indices[1], tile_indices[0]] = random_char
+                                console.rgb["ch"][tile_indices[0], tile_indices[1]] = random_char
                             if len(type_def["colors"]) > 1:
                                 num_tiles = len(tile_indices[0])
                                 color_indices = np.random.randint(len(type_def["colors"]), size=num_tiles)
                                 random_colors = np.array(type_def["colors"])[color_indices]
-                                console.rgb["fg"][tile_indices[1], tile_indices[0]] = random_colors
+                                console.rgb["fg"][tile_indices[0], tile_indices[1]] = random_colors
 
             # 3. Draw entities on top of everything
             for entity in self.game_state.entities:

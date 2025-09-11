@@ -13,7 +13,7 @@ def main():
     parser.add_argument('--load', type=str, help='Path to a saved run directory to load.')
     args = parser.parse_args()
 
-    font_path = "res/bedstead-20-df.png"
+    font_path = "res/Cheepicus_12x12.png"
     tileset = tcod.tileset.load_tilesheet(font_path, 16, 16, tcod.tileset.CHARMAP_CP437)
 
     if config.settings.get("ADAPTIVE_RESOLUTION_MODE", False):

@@ -20,11 +20,6 @@ MIN_FEATURE_SIZE = 3
 
 
 class MapArchitectV2:
-    """
-    Implements a map generation strategy based on space partitioning.
-    This version is refactored to use shared components from the V3 architect.
-    """
-
     def __init__(self, engine, game_map, world_theme, scene_prompt):
         self.engine = engine
         self.game_map = game_map
@@ -33,11 +28,9 @@ class MapArchitectV2:
 
         # --- Shared V3 Components ---
         self.llm = V3_LLM(engine)
-        # An instance of PlacementV3 is used to access its complex _apply_shrink_transform_to_branch helper method,
-        # avoiding code duplication.
         self.placement_utils = PlacementV3(self.map_width, self.map_height)
-        self.map_ops = MapOps(self.map_width, self.map_height)
         self.pathing = Pathing(self.game_map)
+        self.map_ops = MapOps(self.map_width, self.map_height, self.pathing) # THIS IS THE FIX
         self.converter = Converter()
 
         self.initial_feature_branches: List[FeatureNode] = []
@@ -74,7 +67,7 @@ class MapArchitectV2:
         w, h = self.map_width - 2, self.map_height - 2
         x, y = 1, 1
         spec = initial_specs[0]
-        root_node = FeatureNode(spec['name'], spec['type'], 1.0, 1.0, w, h, x, y)
+        root_node = FeatureNode(spec['name'], spec['type'], w, h, x, y)
         self.initial_feature_branches.append(root_node)
 
         scaling_cycle = ['NORTH', 'NORTHEAST', 'EAST', 'SOUTHEAST', 'SOUTH', 'SOUTHWEST', 'WEST', 'NORTHWEST']
@@ -116,7 +109,7 @@ class MapArchitectV2:
                 if not placement_found: return False
 
             px, py = placement
-            new_node = FeatureNode(spec['name'], spec['type'], 0, 0, new_w, new_h, px, py)
+            new_node = FeatureNode(spec['name'], spec['type'], new_w, new_h, px, py)
             self.initial_feature_branches.append(new_node)
         return True
 

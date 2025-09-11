@@ -15,11 +15,6 @@ from ..common.game_state import GenerationState, MapArtist
 
 
 class MapArchitect:
-    """
-    Handles map generation using a conversational, narrative-first approach (V1),
-    but refactored to use the robust V3 components for placement, jittering, and pathing.
-    """
-
     def __init__(self, engine, game_map, world_theme, scene_prompt):
         self.engine = engine
         self.game_map = game_map
@@ -30,9 +25,9 @@ class MapArchitect:
         # Shared V3 Components
         self.llm = V3_LLM(engine)
         self.placement = Placement(self.map_width, self.map_height)
-        self.map_ops = MapOps(self.map_width, self.map_height)
-        self.interior = Interior(self.placement, self.map_width, self.map_height)
         self.pathing = Pathing(self.game_map)
+        self.map_ops = MapOps(self.map_width, self.map_height, self.pathing) # THIS IS THE FIX
+        self.interior = Interior(self.placement, self.map_width, self.map_height)
         self.converter = Converter()
 
         self.initial_feature_branches = []

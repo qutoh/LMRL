@@ -38,7 +38,6 @@ class _Logger:
         setting_val = LOG_HIERARCHY.get(log_level_setting, 2)
         if level == 'game' and self.render_queue:
             try:
-                # --- THIS IS THE FIX ---
                 self.render_queue.put_nowait(AddEventLogMessage(message))
             except Exception:
                 pass
@@ -245,20 +244,11 @@ def print_ascii_local_view(title: str, grid: np.ndarray, center_x: int, center_y
     """
     if other_markers is None:
         other_markers = {}
-
-    char_map = {
-        0: '.',  # Empty space
-        1: '#',  # Generic obstacle
-        2: 'P',  # Parent feature
-        3: 'T'  # Target feature
-    }
-
+    char_map = {0: '.', 1: '#', 2: 'P', 3: 'T'}
     header = f"--- {title} at ({center_x}, {center_y}) ---"
     lines = [header]
-
     start_y, end_y = center_y - radius, center_y + radius
     start_x, end_x = center_x - radius, center_x + radius
-
     for y in range(start_y, end_y + 1):
         line = ""
         for x in range(start_x, end_x + 1):
@@ -268,16 +258,15 @@ def print_ascii_local_view(title: str, grid: np.ndarray, center_x: int, center_y
             if (x, y) in other_markers:
                 line += other_markers[(x, y)]
                 continue
-
             if 0 <= y < grid.shape[0] and 0 <= x < grid.shape[1]:
                 value = grid[y, x]
                 line += char_map.get(value, '?')
             else:
-                line += ' '  # Out of bounds
+                line += ' '
         lines.append(line)
-
     lines.append("-" * len(header))
     return "\n".join(lines)
+
 
 def print_ascii_cost_grid(title: str, cost_grid_yx: np.ndarray, start_xy: tuple, end_xy: tuple) -> str:
     """
@@ -299,7 +288,6 @@ def print_ascii_cost_grid(title: str, cost_grid_yx: np.ndarray, start_xy: tuple,
     height, width = cost_grid_yx.shape
     start_x, start_y = start_xy
     end_x, end_y = end_xy
-
     for y in range(height):
         line = ""
         for x in range(width):
@@ -308,11 +296,9 @@ def print_ascii_cost_grid(title: str, cost_grid_yx: np.ndarray, start_xy: tuple,
             elif x == end_x and y == end_y:
                 line += "E"
             else:
-                # Corrected Indexing: Use [y, x] for the (height, width) array
                 cost = cost_grid_yx[y, x]
                 line += "#" if np.isinf(cost) else "."
         lines.append(line)
-
     lines.append("-" * len(header))
     return "\n".join(lines)
 
@@ -327,15 +313,8 @@ def get_chosen_name_from_response(response_text):
 
 
 def is_valid_filename(filename):
-    """Checks if a filename is valid for profile saving."""
-    if not filename:
-        return False
-    # Disallow file system characters
-    if re.search(r'[<>:"/\\|?*]', filename):
-        return False
-    # Enforce a reasonable length and word count
-    if not (1 <= len(filename) <= 50):
-        return False
-    if not (1 <= len(filename.split()) <= 5):
-        return False
+    if not filename: return False
+    if re.search(r'[<>:"/\\|?*]', filename): return False
+    if not (1 <= len(filename) <= 50): return False
+    if not (1 <= len(filename.split()) <= 5): return False
     return True

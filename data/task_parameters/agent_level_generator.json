@@ -46,6 +46,12 @@
     "enable_reasoning": false,
     "description": "Asks the LLM to choose a destination for a new path from a list of options."
   },
+  "PEG_V3_CHOOSE_PATH_SOURCE": {
+    "task_prompt_key": "task_prompt_peg_v3_choose_path_source",
+    "source_agent": "LEVEL_GENERATOR",
+    "enable_reasoning": false,
+    "description": "Asks the LLM to choose a starting point for a new, independent path feature from a list of options."
+  },
   "PEG_V3_CREATE_NEARBY_FEATURE_SENTENCE": {
     "task_prompt_key": "task_prompt_peg_v3_create_nearby_feature_sentence",
     "source_agent": "LEVEL_GENERATOR",

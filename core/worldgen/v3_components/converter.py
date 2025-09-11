@@ -15,10 +15,6 @@ class Converter:
 
     @staticmethod
     def populate_generation_state(gen_state: GenerationState, all_branches: List[FeatureNode]):
-        """
-        Converts the internal FeatureNode list into the final placed_features dict
-        for UI rendering purposes.
-        """
         gen_state.placed_features.clear()
         all_nodes = [node for branch in all_branches for node in branch.get_all_nodes_in_branch()]
 
@@ -31,27 +27,17 @@ class Converter:
                 "name": node.name,
                 "type": node.feature_type,
                 "bounding_box": node.get_rect(),
+                "footprint": [list(p) for p in node.get_absolute_footprint()],
+                "interior_footprint": [list(p) for p in node.get_absolute_interior_footprint()],
                 "narrative_tag": node.name
             }
             if node.path_coords:
                 feature_dict["path_tiles"] = node.path_coords
+            if node.tile_overrides:
+                feature_dict["tile_overrides"] = {f"{x},{y}": v for (x, y), v in node.tile_overrides.items()}
 
             gen_state.placed_features[tag] = feature_dict
-
-        all_interior_features = [f for n in all_nodes for f in n.placed_interior_features]
-        for i, feature_data in enumerate(all_interior_features):
-            tag = file_io.sanitize_filename(feature_data['name'])
-            if tag in gen_state.placed_features:
-                tag = f"{tag}_interior_{i}"
-
-            processed_data = feature_data.copy()
-            if 'bounding_box' in processed_data:
-                bb = processed_data['bounding_box']
-                if len(bb) == 4:
-                    x1, y1, x2, y2 = bb
-                    processed_data['bounding_box'] = (x1, y1, x2 - x1, y2 - y1)
-            gen_state.placed_features[tag] = processed_data
-
+    # ... (rest of converter.py is unchanged)
     @staticmethod
     def serialize_feature_tree_to_graph(all_branches: List[FeatureNode]) -> LayoutGraph:
         """Converts the internal FeatureNode tree into a serializable LayoutGraph."""
@@ -87,7 +73,7 @@ class Converter:
             if node.parent:
                 parent_tag = node_to_tag_map.get(node.parent)
                 if parent_tag:
-                    graph.edges.append((parent_tag, tag, node.anchor_to_parent_face or 'any'))
+                    graph.edges.append((parent_tag, tag, 'any'))
         return graph
 
     @staticmethod

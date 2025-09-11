@@ -1,4 +1,7 @@
 {
+  "mutually_exclusive_natures": [
+    ["NATURAL", "ARTIFICIAL"]
+  ],
   "relationships_data": {
     "hierarchical": [
       "INSIDE",
