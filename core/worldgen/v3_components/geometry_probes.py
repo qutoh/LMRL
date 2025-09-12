@@ -30,21 +30,7 @@ def find_potential_connection_points(footprint: Set[Tuple[int, int]]) -> Dict[Tu
               any((x + dx, y + dy) not in footprint for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)])}
 
     for x, y in border:
-        # --- Kernel 1: Perfect Flat Edge ---
-        # Horizontal check: Is there a border tile to the left and right?
-        if (x - 1, y) in border and (x + 1, y) in border:
-            # Is the space 'in front' (north or south) empty?
-            if (x, y - 1) not in footprint or (x, y + 1) not in footprint:
-                connection_points[(x, y)] = {'type': 'PERFECT', 'reconciliation': None}
-                continue  # A perfect point can't also be a reconcilable one
-        # Vertical check: Is there a border tile above and below?
-        if (x, y - 1) in border and (x, y + 1) in border:
-            # Is the space 'in front' (east or west) empty?
-            if (x - 1, y) not in footprint or (x + 1, y) not in footprint:
-                connection_points[(x, y)] = {'type': 'PERFECT', 'reconciliation': None}
-                continue
-
-        # --- Kernel 2: Recessed Point / Bracket Reconciliation ---
+        # --- Kernel 1: Recessed Point / Bracket Reconciliation (CHECKED FIRST) ---
         # Check for a 'U' shape pointing north
         if (x - 1, y) in border and (x + 1, y) in border and (x - 1, y - 1) in footprint and (x + 1,
                                                                                               y - 1) in footprint and (
@@ -69,6 +55,20 @@ def find_potential_connection_points(footprint: Set[Tuple[int, int]]) -> Dict[Tu
                 x + 1, y) not in footprint:
             connection_points[(x, y)] = {'type': 'RECESSED', 'reconciliation': {'extrude': (x + 1, y)}}
             continue
+
+        # --- Kernel 2: Perfect Flat Edge ---
+        # Horizontal check: Is there a border tile to the left and right?
+        if (x - 1, y) in border and (x + 1, y) in border:
+            # Is the space 'in front' (north or south) empty?
+            if (x, y - 1) not in footprint or (x, y + 1) not in footprint:
+                connection_points[(x, y)] = {'type': 'PERFECT', 'reconciliation': None}
+                continue  # A perfect point can't also be a reconcilable one
+        # Vertical check: Is there a border tile above and below?
+        if (x, y - 1) in border and (x, y + 1) in border:
+            # Is the space 'in front' (east or west) empty?
+            if (x - 1, y) not in footprint or (x + 1, y) not in footprint:
+                connection_points[(x, y)] = {'type': 'PERFECT', 'reconciliation': None}
+                continue
 
     return connection_points
 
@@ -111,6 +111,7 @@ def probe_general_placement_for_size_tier(size_tier: str, all_branches: List[Fea
     size_map = {'large': (8, 8), 'medium': (5, 5), 'small': (MIN_FEATURE_SIZE, MIN_FEATURE_SIZE)}
     probe_w, probe_h = size_map.get(size_tier, (MIN_FEATURE_SIZE, MIN_FEATURE_SIZE))
 
+    # Create a generic probe node. Its type doesn't matter, only its shape.
     probe_node = FeatureNode("size_probe", "PROBE", probe_w, probe_h)
     probe_connection_points = find_potential_connection_points(probe_node.footprint)
     if not probe_connection_points: return False  # Should not happen for a simple rectangle
@@ -123,7 +124,8 @@ def probe_general_placement_for_size_tier(size_tier: str, all_branches: List[Fea
         if not parent_connection_points:
             continue
 
-        base_collision_mask = get_temp_grid_func(all_branches, exclude_node=parent_node) != -1
+        exclude_nodes = set(parent_node.get_all_nodes_in_branch())
+        base_collision_mask = get_temp_grid_func(all_branches, exclude_nodes=exclude_nodes) != -1
 
         for px, py in parent_connection_points.keys():
             for cx, cy in probe_connection_points.keys():
@@ -143,7 +145,8 @@ def probe_general_placement_for_size_tier(size_tier: str, all_branches: List[Fea
 def get_valid_connection_points_for_probe(node: FeatureNode, clearance: int, all_branches: List[FeatureNode],
                                           get_temp_grid_func: Callable) -> List[Tuple[int, int]]:
     """Helper for probing, basically a slimmed down version of Pathing's function."""
-    temp_grid = get_temp_grid_func(all_branches, exclude_node=node)
+    exclude_nodes = set(node.get_all_nodes_in_branch())
+    temp_grid = get_temp_grid_func(all_branches, exclude_nodes=exclude_nodes)
     collision_mask = temp_grid != -1  # Assuming -1 is void space index
 
     perimeter = set()

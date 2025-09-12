@@ -8,10 +8,10 @@ from typing import Callable, Tuple, Generator, Optional, List, Set, Dict
 from .v3_components.converter import Converter
 from .v3_components.feature_node import FeatureNode
 from .v3_components.interior import Interior
-from .v3_components.map_ops import MapOps, JITTER_SCALING_FACTOR, EROSION_SCALING_FACTOR, ORGANIC_OP_SCALING_FACTOR
+from .v3_components.map_ops import MapOps
 from .v3_components.pathing import Pathing
 from .v3_components.placement import Placement
-from .procgen_utils import UnionFind
+from .procgen_utils import UnionFind, resolve_parent_node
 from .semantic_search import SemanticSearch
 from .v3_components.v3_llm import V3_LLM
 from .v3_components import tile_utils, geometry_probes
@@ -26,162 +26,46 @@ MAX_GROWTH_ITERATIONS = 200
 
 
 class MapArchitectV3:
-    def __init__(self, engine, game_map, world_theme, scene_prompt):
-        self.engine = engine
+    def __init__(self, manager, game_map, world_theme, scene_prompt):
+        self.manager = manager
+        self.engine = manager.engine
         self.game_map = game_map
         self.map_width = game_map.width
         self.map_height = game_map.height
         self.scene_prompt = scene_prompt
-        self.llm = V3_LLM(engine)
-        self.pathing = Pathing(self.game_map, self._get_temp_grid, self._get_door_placement_mask_for_pathing)
-        self.semantic_search = SemanticSearch(engine.embedding_model)
-        self.placement = Placement(self.map_width, self.map_height, self._get_temp_grid, self.pathing, self.llm,
-                                   self.semantic_search)
-        self.map_ops = MapOps(self.map_width, self.map_height, self.pathing, self.placement)
-        self.interior = Interior(self.placement, self.map_width, self.map_height)
-        self.converter = Converter()
+
+        # --- Components are now passed from the manager ---
+        self.llm = manager.llm
+        self.pathing = manager.pathing
+        self.semantic_search = manager.semantic_search
+        self.placement = manager.placement
+        self.map_ops = manager.map_ops
+        self.interior = manager.interior
+        self.converter = manager.converter
 
         self.initial_feature_branches: List[FeatureNode] = []
 
-    def _assign_op_budgets(self, node: FeatureNode):
-        """
-        Assigns the initial operation budgets to a new feature node based on its
-        footprint size and global scaling factors.
-        """
-        footprint_size = len(node.footprint)
-        node.jitter_budget = int(footprint_size * JITTER_SCALING_FACTOR)
-        node.erosion_budget = int(footprint_size * EROSION_SCALING_FACTOR)
-        node.organic_op_budget = int(footprint_size * ORGANIC_OP_SCALING_FACTOR)
-
-    def _get_temp_grid(self, all_branches: List[FeatureNode], exclude_node: Optional[FeatureNode] = None) -> np.ndarray:
-        void_space_index = config.tile_type_map.get("VOID_SPACE", -1)
-        grid = np.full((self.map_height, self.map_width), void_space_index, dtype=np.int8)
-
-        nodes_to_draw = []
-        if exclude_node:
-            nodes_to_draw = [node for branch in all_branches for node in branch.get_all_nodes_in_branch() if
-                             node is not exclude_node]
-        else:
-            nodes_to_draw = [node for branch in all_branches for node in branch.get_all_nodes_in_branch()]
-
-        for node in nodes_to_draw:
-            footprint = node.get_absolute_footprint()
-            interior_footprint = node.get_absolute_interior_footprint()
-            if not footprint: continue
-            feature_def = config.features.get(node.feature_type, {})
-            if border_tile_type := feature_def.get('border_tile_type'):
-                if config.tile_type_map.get(border_tile_type):
-                    border_coords = np.array(list(footprint - interior_footprint))
-                    if border_coords.size > 0:
-                        valid_mask = (border_coords[:, 0] >= 0) & (border_coords[:, 0] < self.map_width) & (
-                                border_coords[:, 1] >= 0) & (border_coords[:, 1] < self.map_height)
-                        valid_coords = border_coords[valid_mask]
-                        if valid_coords.size > 0: grid[valid_coords[:, 1], valid_coords[:, 0]] = config.tile_type_map[
-                            border_tile_type]
-            if tile_type := feature_def.get('tile_type'):
-                if config.tile_type_map.get(tile_type):
-                    floor_coords = np.array(list(interior_footprint))
-                    if floor_coords.size > 0:
-                        valid_mask = (floor_coords[:, 0] >= 0) & (floor_coords[:, 0] < self.map_width) & (
-                                floor_coords[:, 1] >= 0) & (floor_coords[:, 1] < self.map_height)
-                        valid_coords = floor_coords[valid_mask]
-                        if valid_coords.size > 0: grid[valid_coords[:, 1], valid_coords[:, 0]] = config.tile_type_map[
-                            tile_type]
-        return grid
-
-    def _get_door_placement_mask_for_pathing(self, footprint: Set[Tuple[int, int]], collision_mask: np.ndarray) -> Set[
-        Tuple[int, int]]:
-        points = geometry_probes.find_potential_connection_points(footprint)
-        return {coord for coord, data in points.items() if data['type'] == 'PERFECT'}
-
-    def _grow_subfeature_coroutine(self, node: FeatureNode, draw_callback: Callable):
-        final_footprint = node.footprint.copy()
-        if not final_footprint or len(final_footprint) <= 1: return
-        center_rx = node.current_abs_width // 2
-        center_ry = node.current_abs_height // 2
-        current_footprint = {(center_rx, center_ry)}
-        node.footprint = current_footprint
-        draw_callback()
-        yield "SUBFEATURE_GROWTH_STEP", None
-        q = deque(list(current_footprint))
-        while current_footprint != final_footprint:
-            made_change = False
-            q_len = len(q)
-            if q_len == 0: break
-            for _ in range(q_len):
-                cx, cy = q.popleft()
-                for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]:
-                    neighbor = (cx + dx, cy + dy)
-                    if neighbor in final_footprint and neighbor not in current_footprint:
-                        current_footprint.add(neighbor)
-                        q.append(neighbor)
-                        made_change = True
-            if made_change:
-                node.footprint = current_footprint
-                draw_callback()
-                yield "SUBFEATURE_GROWTH_STEP", None
-            else:
-                break
-        node.footprint = final_footprint
-        draw_callback()
-        yield "SUBFEATURE_GROWTH_STEP", None
-
-    def _draw_path_coroutine(self, node: FeatureNode, draw_callback: Callable):
-        if not node.path_coords: return
-        full_path = list(node.path_coords)
-        node.path_coords.clear()
-        chunk_size = max(1, len(full_path) // 10)
-        for i in range(0, len(full_path), chunk_size):
-            node.path_coords.extend(full_path[i:i + chunk_size])
-            draw_callback()
-            yield "PATH_DRAW_STEP", None
-        node.path_coords = full_path
-        draw_callback()
-        yield "PATH_DRAW_STEP", None
-
     def _handle_pathing_placement(self, feature_data: dict, parent_branch: FeatureNode, narrative_log: str,
                                   narrative_beat: str) -> Optional[FeatureNode]:
+        """Orchestrates the LLM choice and subsequent placement of a path feature."""
         utils.log_message('debug', f"[PEGv3 Pathing] Placing '{feature_data['name']}' from '{parent_branch.name}'...")
-        feature_def = config.features.get(feature_data['type'], {})
-        is_barrier_path = feature_def.get('feature_type') == 'BARRIER'
+
+        # Build a list of valid targets for the LLM
         valid_targets = []
         for b in self.initial_feature_branches:
-            if b is not parent_branch:
-                is_target_barrier = any(
-                    config.features.get(n.feature_type, {}).get('feature_type') == 'BARRIER' for n in
-                    b.get_all_nodes_in_branch())
-                if is_barrier_path or not is_target_barrier:
-                    valid_targets.append(b)
+            if b.get_root() is not parent_branch.get_root():
+                valid_targets.append(b)
+
         target_options = [b.name for b in valid_targets] + ["NORTH_BORDER", "SOUTH_BORDER", "EAST_BORDER",
                                                             "WEST_BORDER"]
+
+        # Ask the LLM to choose a target
         chosen_target_name = self.llm.choose_path_target_feature(narrative_log, narrative_beat,
                                                                  "\n".join(f"- {n}" for n in target_options))
-        if not chosen_target_name or 'none' in chosen_target_name.lower(): return None
-        newly_placed_node = None
-        if "_BORDER" in chosen_target_name.upper():
-            direction = chosen_target_name.upper().replace("_BORDER", "")
-            border_coords = self.pathing.get_border_coordinates_for_direction(direction)
-            if border_coords:
-                newly_placed_node = self.placement.place_subfeature_path_to_border(feature_data, parent_branch,
-                                                                                   border_coords,
-                                                                                   self.initial_feature_branches)
-        else:
-            target_branch = self._resolve_parent_node(chosen_target_name, valid_targets)
-            if target_branch:
-                newly_placed_node = self.placement.place_subfeature_path_between_branches(feature_data, parent_branch,
-                                                                                          target_branch,
-                                                                                          self.initial_feature_branches)
-            else:
-                utils.log_message('debug', f"  Could not resolve target branch '{chosen_target_name}'.")
-        return newly_placed_node
 
-    def _resolve_parent_node(self, chosen_parent_name: str, valid_parent_nodes: List[FeatureNode]) -> Optional[
-        FeatureNode]:
-        if not chosen_parent_name or 'none' in chosen_parent_name.lower(): return None
-        resolved = next((n for n in valid_parent_nodes if n.name.lower() == chosen_parent_name.lower().strip()), None)
-        if resolved: return resolved
-        best_match = self.semantic_search.find_best_match(chosen_parent_name, [n.name for n in valid_parent_nodes])
-        return next((n for n in valid_parent_nodes if n.name == best_match), None) if best_match else None
+        # Delegate the actual placement to the generic utility function in the manager
+        return self.manager.place_path_feature(feature_data, parent_branch,
+                                               chosen_target_name, self.initial_feature_branches)
 
     def _place_initial_non_path_seeds(self, specs_to_place: List[Dict],
                                       existing_branches: List[FeatureNode]) -> Tuple[List[FeatureNode], bool]:
@@ -196,11 +80,11 @@ class MapArchitectV3:
                 x = random.randint(1, self.map_width - w - 2)
                 y = random.randint(1, self.map_height - h - 2)
                 all_current_branches = existing_branches + placed_nodes
-                temp_grid = self._get_temp_grid(all_current_branches)
+                temp_grid = self.manager._get_temp_grid(all_current_branches)
                 collision_mask = temp_grid != self.placement.void_space_index
                 temp_node = FeatureNode(spec['name'], spec['type'], w, h, x, y)
                 if self.placement._is_placement_valid(temp_node.get_absolute_footprint(), collision_mask):
-                    self._assign_op_budgets(temp_node)
+                    self.manager._assign_op_budgets(temp_node)
                     placed_nodes.append(temp_node)
                     node_placed = True
                     break
@@ -264,8 +148,8 @@ class MapArchitectV3:
                                                                                           self.initial_feature_branches)
 
                 if newly_placed_path:
-                    self._assign_op_budgets(newly_placed_path)
-                    yield from self._draw_path_coroutine(newly_placed_path, update_and_draw)
+                    self.manager._assign_op_budgets(newly_placed_path)
+                    yield from self.manager._draw_path_coroutine(newly_placed_path, update_and_draw)
                 else:
                     utils.log_message('debug',
                                       f"Failed to place path '{path_spec['name']}' between '{source_name}' and '{dest_name}'.")
@@ -325,23 +209,44 @@ class MapArchitectV3:
     def _place_subfeatures_conversationally(self, gen_state: GenerationState, update_and_draw: Callable) -> Generator[
         Tuple[str, None], None, None]:
         """Generator for the main conversational sub-feature placement loop."""
-        available_size_tiers = ['large', 'medium', 'small']
-        tier_order = {'large': 2, 'medium': 1, 'small': 0}
+        active_parenting_branches = list(self.initial_feature_branches)
+        branch_exhaustion_counters = defaultdict(int)
 
         for i in range(MAX_SUBFEATURES_TO_PLACE):
-            if not available_size_tiers:
-                utils.log_message('debug', "[PEGv3] All size tiers exhausted. Moving to interior detailing.")
-                break
+            if not active_parenting_branches:
+                utils.log_message('debug', "[PEGv3] All branches exhausted. Trying to start a new branch.")
+                all_areas_narrative = "\n".join(
+                    f"- {b.name}: {b.narrative_log}" for b in self.initial_feature_branches if b.narrative_log)
+                new_nearby_sentence = self.llm.get_nearby_feature_sentence(all_areas_narrative)
+                if not new_nearby_sentence or 'none' in new_nearby_sentence.lower():
+                    utils.log_message('debug', "[PEGv3] LLM has no ideas for new branches. Finalizing map.")
+                    break
 
-            all_placeable_nodes = [n for b in self.initial_feature_branches for n in b.get_all_nodes_in_branch() if
-                                   not n.is_blocked]
+                new_feature_data = self.llm.define_feature_from_sentence(new_nearby_sentence)
+                if not new_feature_data or new_feature_data.get('type') == 'CHARACTER':
+                    utils.log_message('debug', "[PEGv3] LLM failed to define a new branch. Finalizing map.")
+                    break
 
-            if not all_placeable_nodes:
-                utils.log_message('debug', "[PEGv3] No more placeable nodes available. Moving to interior detailing.")
-                break
+                newly_placed_node = self.placement.place_new_root_branch(new_feature_data,
+                                                                         self.initial_feature_branches)
+                if newly_placed_node:
+                    self.manager._assign_op_budgets(newly_placed_node)
+                    active_parenting_branches.append(newly_placed_node)
+                    update_and_draw()
+                    yield "NEW_BRANCH_PLACEMENT", None
+                    continue
+                else:
+                    utils.log_message('debug', "[PEGv3] Failed to place new root branch. Finalizing map.")
+                    break
 
-            parent_node = random.choice(all_placeable_nodes)
-            parent_branch = parent_node.get_root()
+            parent_branch = random.choice(active_parenting_branches)
+            all_placeable_nodes_in_branch = [n for n in parent_branch.get_all_nodes_in_branch() if not n.is_blocked]
+
+            if not all_placeable_nodes_in_branch:
+                active_parenting_branches.remove(parent_branch)
+                continue
+
+            parent_node = random.choice(all_placeable_nodes_in_branch)
 
             if not parent_branch.narrative_log:
                 parent_branch.narrative_log = self.llm.get_narrative_seed(parent_branch.name) or ""
@@ -349,16 +254,20 @@ class MapArchitectV3:
             other_features_context = "\n".join(
                 [f'({b.name} - "{b.narrative_log}")' for b in self.initial_feature_branches if b is not parent_branch])
             narrative_beat = self.llm.get_next_narrative_beat(parent_branch.narrative_log, other_features_context)
-            feature_data = self.llm.define_feature_from_sentence(narrative_beat,
-                                                                 available_size_tiers) if narrative_beat and 'none' not in narrative_beat.lower() else None
+            feature_data = self.llm.define_feature_from_sentence(
+                narrative_beat) if narrative_beat and 'none' not in narrative_beat.lower() else None
 
-            if not feature_data or feature_data.get('type') in ['CHARACTER']:
-                if feature_data: gen_state.character_creation_queue.append(feature_data)
+            if not feature_data or feature_data.get('type') in ['CHARACTER', 'GENERIC_INTERACTABLE']:
+                branch_exhaustion_counters[parent_branch.name] += 1
+                if branch_exhaustion_counters[parent_branch.name] >= 3:
+                    active_parenting_branches.remove(parent_branch)
+                if feature_data and feature_data.get('type') == 'CHARACTER':
+                    gen_state.character_creation_queue.append(feature_data)
                 continue
 
             if feature_data.get('placement_strategy') == 'INTERIOR':
                 parent_node.interior_features_to_place.append(feature_data)
-                parent_node.sentence_count += 1
+                parent_branch.sentence_count += 1
                 continue
 
             newly_placed_nodes = []
@@ -373,15 +282,17 @@ class MapArchitectV3:
                                                                   self.initial_feature_branches)
                 if nodes: newly_placed_nodes.extend(nodes)
             elif placement_strategy == 'BRANCHING':
-                possible_parents = [n for n in all_placeable_nodes if
-                                    self.placement.can_place_subfeature(feature_data, n,
+                all_nodes = [n for b in self.initial_feature_branches for n in b.get_all_nodes_in_branch()]
+                possible_parents = [node for node in all_nodes if
+                                    self.placement.can_place_subfeature(feature_data, node,
                                                                         self.initial_feature_branches)]
                 if possible_parents:
                     parent_options_str = "\n".join(
                         f"- {n.name}" for n in sorted(list(set(possible_parents)), key=lambda x: x.name))
                     chosen_parent_name = self.llm.choose_parent_feature(parent_branch.narrative_log, narrative_beat,
                                                                         parent_options_str)
-                    chosen_parent = self._resolve_parent_node(chosen_parent_name, possible_parents)
+                    chosen_parent = resolve_parent_node(chosen_parent_name, possible_parents,
+                                                                      self.semantic_search)
                     if chosen_parent:
                         node = self.placement.find_and_place_subfeature(feature_data, chosen_parent,
                                                                         self.initial_feature_branches)
@@ -390,65 +301,42 @@ class MapArchitectV3:
             if newly_placed_nodes:
                 parent_branch.narrative_log += " " + narrative_beat
                 parent_branch.sentence_count += 1
-                yield from self._process_newly_placed_nodes(newly_placed_nodes, update_and_draw)
+                branch_exhaustion_counters[parent_branch.name] = 0  # Reset counter on success
+                yield from self.manager._process_newly_placed_nodes(newly_placed_nodes, self.initial_feature_branches,
+                                                                    update_and_draw)
             else:
                 utils.log_message('debug',
-                                  f"Placement failed for '{feature_data.get('name')}'. Probing for constraints...")
-                failed_size_tier = feature_data.get('size_tier', 'small')
-                if not geometry_probes.probe_general_placement_for_size_tier(failed_size_tier,
-                                                                             self.initial_feature_branches,
-                                                                             self.placement._is_placement_valid,
-                                                                             self._get_temp_grid):
-                    utils.log_message('debug', f"  [CONSTRAINT] No space for size '{failed_size_tier}' or larger.")
-                    failed_tier_level = tier_order.get(failed_size_tier, 0)
-                    available_size_tiers = [t for t in available_size_tiers if
-                                            tier_order.get(t, 0) < failed_tier_level]
-
-                if failed_size_tier == 'small' and parent_node:
-                    if not geometry_probes.probe_parent_for_any_placement(parent_node, self.initial_feature_branches,
-                                                                          self.placement._is_placement_valid,
-                                                                          self._get_temp_grid):
-                        parent_node.is_blocked = True
-                        utils.log_message('debug', f"  [CONSTRAINT] Parent '{parent_node.name}' is now blocked.")
+                                  f"Placement failed for '{feature_data.get('name')}'.")
+                branch_exhaustion_counters[parent_branch.name] += 1
+                if branch_exhaustion_counters[parent_branch.name] >= 3:
+                    if parent_branch in active_parenting_branches:
+                        active_parenting_branches.remove(parent_branch)
 
         # Final Interior Detailing Phase
         utils.log_message('debug', "Entering final interior detailing phase...")
         for branch in self.initial_feature_branches:
             for node in branch.get_all_nodes_in_branch():
                 if not node.is_blocked and node.sentence_count < 3:
-                    # TODO: Add specific LLM call for interior-only features
-                    pass
+                    utils.log_message('debug', f"Adding interior details to '{node.name}'...")
+                    other_features_context = "\n".join(
+                        [f'({b.name} - "{b.narrative_log}")' for b in self.initial_feature_branches if
+                         b.get_root() is not branch.get_root()])
 
-    def _process_newly_placed_nodes(self, newly_placed_nodes: List[FeatureNode], update_and_draw: Callable) -> \
-            Generator[Tuple[str, None], None, None]:
-        """Helper to handle common tasks for newly placed nodes."""
-        for node in newly_placed_nodes:
-            self._assign_op_budgets(node)
-            update_and_draw()
-            if node.path_coords:
-                yield from self._draw_path_coroutine(node, update_and_draw)
-            else:
-                yield from self._grow_subfeature_coroutine(node, update_and_draw)
+                    # Generate a few interior features to fill out the narrative
+                    for _ in range(3 - node.sentence_count):
+                        narrative_beat = self.llm.get_next_narrative_beat(node.narrative_log, other_features_context)
+                        if not narrative_beat or 'none' in narrative_beat.lower():
+                            break
 
-        op_choice = random.choice(['jitter', 'erosion', 'organic'])
-        all_nodes = [n for b in self.initial_feature_branches for n in b.get_all_nodes_in_branch()]
-        if all_nodes:
-            if op_choice == 'jitter':
-                node_to_jitter = random.choice([n for n in all_nodes if n.jitter_budget > 0] or all_nodes)
-                if self.map_ops.apply_jitter(node_to_jitter, self.initial_feature_branches):
-                    update_and_draw()
-            elif op_choice == 'erosion':
-                erodible_nodes = [n for n in all_nodes if n.erosion_budget > 0]
-                if erodible_nodes:
-                    node_to_erode = random.choice(erodible_nodes)
-                    if self.map_ops.apply_erosion(node_to_erode, self.initial_feature_branches):
-                        update_and_draw()
-            else:  # organic
-                organic_nodes = [n for n in all_nodes if n.organic_op_budget > 0]
-                if organic_nodes:
-                    node_to_reshape = random.choice(organic_nodes)
-                    if self.map_ops.apply_organic_reshaping(node_to_reshape, self.initial_feature_branches):
-                        update_and_draw()
+                        feature_data = self.llm.define_feature_from_sentence(narrative_beat)
+                        if feature_data and feature_data.get('placement_strategy') == 'INTERIOR':
+                            node.narrative_log += " " + narrative_beat
+                            node.interior_features_to_place.append(feature_data)
+                            node.sentence_count += 1
+                        elif feature_data and feature_data.get('type') == 'CHARACTER':
+                            gen_state.character_creation_queue.append(feature_data)
+                        else:
+                            break  # Stop if we get a non-interior feature
 
     def _ensure_all_branches_are_connected(self, all_internal_connections: List[Dict], update_and_draw: Callable) -> \
     Generator[Tuple[str, None], None, None]:
@@ -567,8 +455,8 @@ class MapArchitectV3:
                                   f"Successfully created exterior path between '{source_branch.name}' and '{dest_branch.name}'.")
 
                 # Assign budgets and draw the new path
-                self._assign_op_budgets(newly_placed_path)
-                yield from self._draw_path_coroutine(newly_placed_path, update_and_draw)
+                self.manager._assign_op_budgets(newly_placed_path)
+                yield from self.manager._draw_path_coroutine(newly_placed_path, update_and_draw)
 
                 # Add the new path to UnionFind and unite the islands
                 # The newly_placed_path is a new root-level branch.
@@ -624,7 +512,7 @@ class MapArchitectV3:
             yield "REFINEMENT_STEP", gen_state
 
         yield "TILE_RECONCILIATION", gen_state
-        tile_utils.calculate_and_apply_tile_overrides(self.initial_feature_branches, self._get_temp_grid)
+        tile_utils.calculate_and_apply_tile_overrides(self.initial_feature_branches, self.manager._get_temp_grid)
         update_and_draw()
 
         yield "PRE_CONNECT", gen_state

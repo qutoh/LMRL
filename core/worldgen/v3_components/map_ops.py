@@ -63,7 +63,7 @@ class MapOps:
         if not proposal_footprint:
             return False
 
-        temp_grid_others = self.pathing._get_temp_grid(all_branches, exclude_node=node)
+        temp_grid_others = self.pathing._get_temp_grid(all_branches, exclude_nodes={node})
         absolute_proposal_footprint = {(rx + proposal_x, ry + proposal_y) for rx, ry in proposal_footprint}
 
         for px, py in absolute_proposal_footprint:
@@ -99,13 +99,12 @@ class MapOps:
         it attempts a small secondary jitter to reconcile the position.
         This is an all-or-nothing operation managed by the proposed_moves dictionary.
         """
-        # Base case: if we have already calculated a move for this node in this transaction, it's valid.
         if node in proposed_moves:
             return True
 
-        # Create a collision mask that excludes the entire branch being moved.
-        other_branches = [b for b in all_branches if b not in branch_nodes]
-        collision_mask = self.pathing._get_temp_grid(other_branches) != self.pathing.void_space_index
+        # Create a collision mask of the static world (everything except the branch being moved).
+        collision_mask = self.pathing._get_temp_grid(all_branches,
+                                                     exclude_nodes=branch_nodes) != self.pathing.void_space_index
 
         # --- Attempt 1: Direct Translation ---
         proposed_x, proposed_y = node.current_x + dx, node.current_y + dy
@@ -114,11 +113,9 @@ class MapOps:
         is_valid_move = self.placement._is_placement_valid(proposed_footprint, collision_mask)
 
         if is_valid_move:
-            # Check connection to parent if it has one and is part of the move
             if node.parent and node.parent in branch_nodes:
                 parent_new_x, parent_new_y = proposed_moves[node.parent]
 
-                # Create temporary nodes to represent the proposed new state for reconciliation check
                 temp_parent = FeatureNode("temp", node.parent.feature_type, 0, 0, x=parent_new_x, y=parent_new_y)
                 temp_parent.footprint = node.parent.footprint
                 temp_child = FeatureNode("temp", node.feature_type, 0, 0, x=proposed_x, y=proposed_y)
@@ -136,7 +133,7 @@ class MapOps:
                    for child in node.subfeatures):
                 return True
             else:
-                del proposed_moves[node]  # Backtrack on failure
+                del proposed_moves[node]
 
         # --- Attempt 2: Reconciliation via Secondary Jitter ---
         for _ in range(5):

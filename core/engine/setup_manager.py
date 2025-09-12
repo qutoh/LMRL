@@ -217,7 +217,7 @@ class SetupManager:
 
         narrative_intro = generation_state.narrative_log if generation_state and generation_state.narrative_log else ""
         enhanced_prompt = f"{narrative_intro}\n\n{scene_prompt}".strip()
-        self.engine.dialogue_log.append({"speaker": "Scene Setter", "content": enhanced_prompt})
+        self.engine.dialogue_log.append({"speaker": "", "content": enhanced_prompt})
         file_io.save_active_character_files(self.engine)
         self.engine.render_queue.put(AddEventLogMessage('Setup complete. The story begins...'))
         return True

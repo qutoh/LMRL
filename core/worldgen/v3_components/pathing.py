@@ -234,7 +234,8 @@ class Pathing:
 
     def get_valid_connection_points(self, node: FeatureNode, clearance: int, all_branches: List[FeatureNode]) -> List[
         Tuple[int, int]]:
-        temp_grid = self._get_temp_grid(all_branches, exclude_node=node)
+        exclude_nodes = set(node.get_all_nodes_in_branch())
+        temp_grid = self._get_temp_grid(all_branches, exclude_nodes=exclude_nodes)
         collision_mask = temp_grid != self.void_space_index
         node_perimeter = self._get_node_exterior_perimeter(node)
 

@@ -88,6 +88,29 @@
       "≠"
     ]
   },
+  "FENCE_GATE": {
+    "description": "A wooden gate for a fence.",
+    "movement_cost": 1.0,
+    "is_transparent": true,
+    "materials": [
+      "WOOD"
+    ],
+    "pass_methods": [
+      "PASS_WALL",
+	  "GROUND",
+      "PHASING"
+    ],
+    "colors": [
+      [
+        43,
+        38,
+        25
+      ]
+    ],
+    "characters": [
+      "="
+    ]
+  },
   "DEFAULT_BRIGHT_FLOOR": {
     "description": "A walkable floor surface.",
     "movement_cost": 1.0,

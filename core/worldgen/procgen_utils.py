@@ -2,11 +2,15 @@
 
 import re
 from collections import deque
-from typing import List, Set, Tuple, Any
+from typing import List, Set, Tuple, Any, Optional, Callable, Generator
 
 import numpy as np
 
+from ..common import utils
 from ..common.localization import loc_raw
+from .v3_components.feature_node import FeatureNode
+from .v3_components.geometry_probes import find_potential_connection_points
+from .semantic_search import SemanticSearch
 
 _RELATIONSHIPS_DATA_CACHE = None
 
@@ -132,3 +136,18 @@ class UnionFind:
 
     def connected(self, i, j):
         return self.find(i) == self.find(j)
+
+
+def get_door_placement_mask_for_pathing(footprint: Set[Tuple[int, int]], collision_mask: np.ndarray) -> Set[
+    Tuple[int, int]]:
+    points = find_potential_connection_points(footprint)
+    return {coord for coord, data in points.items() if data['type'] == 'PERFECT'}
+
+
+def resolve_parent_node(chosen_parent_name: str, valid_parent_nodes: List[FeatureNode],
+                        semantic_search: SemanticSearch) -> Optional[FeatureNode]:
+    if not chosen_parent_name or 'none' in chosen_parent_name.lower(): return None
+    resolved = next((n for n in valid_parent_nodes if n.name.lower() == chosen_parent_name.lower().strip()), None)
+    if resolved: return resolved
+    best_match = semantic_search.find_best_match(chosen_parent_name, [n.name for n in valid_parent_nodes])
+    return next((n for n in valid_parent_nodes if n.name == best_match), None) if best_match else None

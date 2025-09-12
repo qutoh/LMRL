@@ -32,8 +32,9 @@ class Placement:
         self.llm = llm
         self.semantic_search = semantic_search
 
-    def _get_temp_grid(self, all_branches: List[FeatureNode], exclude_node: Optional[FeatureNode] = None) -> np.ndarray:
-        return self._get_temp_grid_external(all_branches, exclude_node)
+    def _get_temp_grid(self, all_branches: List[FeatureNode],
+                       exclude_nodes: Optional[Set[FeatureNode]] = None) -> np.ndarray:
+        return self._get_temp_grid_external(all_branches, exclude_nodes)
 
     def _is_placement_valid(self, footprint: Set[Tuple[int, int]], collision_mask: np.ndarray) -> bool:
         for x, y in footprint:
@@ -106,73 +107,8 @@ class Placement:
 
         return footprint_pairs
 
-    def can_place_subfeature(self, feature_data: Dict, parent_node: FeatureNode,
-                             all_branches: List[FeatureNode]) -> bool:
-        """
-        A non-destructive 'dry run' to check if a subfeature can be placed on a parent.
-        It performs all checks without modifying any feature states, using an early-exit
-        search for performance.
-        """
-        feature_def = config.features.get(feature_data['type'], {})
-        size_tier_map = {'large': 0.75, 'medium': 0.5, 'small': 0.25}
-        size_ratio = size_tier_map.get(feature_data.get('size_tier', 'medium'), 0.5)
-        parent_area = len(parent_node.footprint)
-        target_sub_area = parent_area * size_ratio if parent_area > 0 else 25
-        shape = feature_def.get('shape', 'rectangle')
-        rw, rh = (1, 1) if shape == 'ellipse' else (random.randint(1, 16), random.randint(1, 16))
-        sub_w = max(MIN_FEATURE_SIZE, round(math.sqrt(target_sub_area * rw / rh)))
-        sub_h = max(MIN_FEATURE_SIZE, round(math.sqrt(target_sub_area * rh / rw)))
-
-        temp_child_node = FeatureNode("temp_probe", feature_data['type'], sub_w, sub_h)
-        rotated_footprint_pairs = self._get_rotated_footprints(temp_child_node, feature_def)
-        if not rotated_footprint_pairs: return False
-
-        parent_connection_points = geometry_probes.find_potential_connection_points(parent_node.footprint)
-        if not parent_connection_points: return False
-
-        base_collision_mask = self._get_temp_grid(all_branches, exclude_node=parent_node) != self.void_space_index
-        parent_footprint_abs = parent_node.get_absolute_footprint()
-
-        for total_fp, _ in rotated_footprint_pairs:
-            child_connection_points = geometry_probes.find_potential_connection_points(total_fp)
-            if not child_connection_points: continue
-
-            for (px, py), p_data in parent_connection_points.items():
-                for (cx, cy), _ in child_connection_points.items():
-                    for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                        abs_px, abs_py = px + parent_node.current_x, py + parent_node.current_y
-                        origin_x = abs_px + dx - cx
-                        origin_y = abs_py + dy - cy
-
-                        footprint_abs = {(x + origin_x, y + origin_y) for x, y in total_fp}
-
-                        if not self._is_placement_valid(footprint_abs, base_collision_mask):
-                            continue
-
-                        p_recon = p_data.get('reconciliation')
-                        if p_recon and 'extrude' in p_recon:
-                            rel_extrude = p_recon['extrude']
-                            abs_extrude = (
-                            rel_extrude[0] + parent_node.current_x, rel_extrude[1] + parent_node.current_y)
-
-                            if abs_extrude in footprint_abs or base_collision_mask[abs_extrude[1]][abs_extrude[0]]:
-                                continue
-                            if not footprint_abs.isdisjoint(parent_footprint_abs):
-                                continue
-                        else:
-                            if not footprint_abs.isdisjoint(parent_footprint_abs):
-                                continue
-
-                        return True
-        return False
-
-    def find_and_place_subfeature(self, feature_data: Dict, parent_node: FeatureNode,
-                                  all_branches: List[FeatureNode]) -> Optional[FeatureNode]:
-        """
-        Finds a valid placement for a subfeature and attaches it to the parent.
-        This uses a randomized, early-exit search to find a valid placement quickly
-        instead of exhaustively checking all possibilities.
-        """
+    def _find_placement_logic(self, feature_data: Dict, parent_node: FeatureNode,
+                              all_branches: List[FeatureNode], dry_run: bool) -> Optional[FeatureNode | bool]:
         feature_def = config.features.get(feature_data['type'], {})
         size_tier_map = {'large': 0.75, 'medium': 0.5, 'small': 0.25}
         size_ratio = size_tier_map.get(feature_data.get('size_tier', 'medium'), 0.5)
@@ -194,7 +130,7 @@ class Placement:
         shuffled_parent_points = list(parent_connection_points.items())
         random.shuffle(shuffled_parent_points)
 
-        base_collision_mask = self._get_temp_grid(all_branches, exclude_node=parent_node) != self.void_space_index
+        base_collision_mask = self._get_temp_grid(all_branches) != self.void_space_index
         parent_footprint_abs_base = parent_node.get_absolute_footprint()
 
         for total_fp, interior_fp in rotated_footprint_pairs:
@@ -210,8 +146,10 @@ class Placement:
                     random.shuffle(adjacency_dirs)
                     for dx, dy in adjacency_dirs:
                         abs_px, abs_py = px + parent_node.current_x, py + parent_node.current_y
-                        origin_x = abs_px + dx - cx
-                        origin_y = abs_py + dy - cy
+
+                        adj_x, adj_y = abs_px + dx, abs_py + dy
+                        origin_x = adj_x - cx
+                        origin_y = adj_y - cy
 
                         footprint_abs = {(x + origin_x, y + origin_y) for x, y in total_fp}
 
@@ -220,24 +158,25 @@ class Placement:
 
                         p_recon = p_data.get('reconciliation')
                         parent_footprint_for_check = parent_footprint_abs_base
-                        parent_needs_update = False
 
                         if p_recon and 'extrude' in p_recon:
                             rel_extrude = p_recon['extrude']
                             abs_extrude = (
-                            rel_extrude[0] + parent_node.current_x, rel_extrude[1] + parent_node.current_y)
+                                rel_extrude[0] + parent_node.current_x, rel_extrude[1] + parent_node.current_y)
 
                             if abs_extrude in footprint_abs or base_collision_mask[abs_extrude[1]][abs_extrude[0]]:
                                 continue
 
                             parent_footprint_for_check = parent_footprint_abs_base.union({abs_extrude})
-                            parent_needs_update = True
 
                         if not footprint_abs.isdisjoint(parent_footprint_for_check):
                             continue
 
+                        if dry_run:
+                            return True
+
                         # --- SUCCESS: A valid placement was found ---
-                        if parent_needs_update:
+                        if p_recon and 'extrude' in p_recon:
                             parent_node.footprint.add(p_recon['extrude'])
                             parent_node.update_bounding_box_from_footprint()
 
@@ -248,7 +187,22 @@ class Placement:
                         new_subfeature.update_bounding_box_from_footprint()
                         parent_node.subfeatures.append(new_subfeature)
                         return new_subfeature
-        return None
+
+        return None if not dry_run else False
+
+    def can_place_subfeature(self, feature_data: Dict, parent_node: FeatureNode,
+                             all_branches: List[FeatureNode]) -> bool:
+        """
+        A non-destructive 'dry run' to check if a subfeature can be placed on a parent.
+        """
+        return self._find_placement_logic(feature_data, parent_node, all_branches, dry_run=True)
+
+    def find_and_place_subfeature(self, feature_data: Dict, parent_node: FeatureNode,
+                                  all_branches: List[FeatureNode]) -> Optional[FeatureNode]:
+        """
+        Finds a valid placement for a subfeature and attaches it to the parent.
+        """
+        return self._find_placement_logic(feature_data, parent_node, all_branches, dry_run=False)
 
     def place_new_root_branch(self, feature_data: Dict, all_branches: List[FeatureNode]) -> Optional[FeatureNode]:
         feature_def = config.features.get(feature_data['type'], {})
@@ -375,7 +329,8 @@ class Placement:
         prop_h = max(node.current_abs_height + 1, int(ratio_h * next_k))
         if prop_w == node.current_abs_width and prop_h == node.current_abs_height:
             return False
-        temp_grid = self._get_temp_grid(all_branches, exclude_node=node)
+        exclude_nodes = set(node.get_all_nodes_in_branch())
+        temp_grid = self._get_temp_grid(all_branches, exclude_nodes=exclude_nodes)
         collision_mask = temp_grid != self.void_space_index
         temp_growth_node = FeatureNode(node.name, node.feature_type, prop_w, prop_h)
         PROBE_COUNT = 100
