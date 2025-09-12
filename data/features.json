@@ -245,6 +245,7 @@
     ],
     "intersects_ok": [
       { "type": "PATH_FLOOR", "cost_mod": 1.5 },
+	  { "type": "FENCE", "cost_mod":  10.0, "replaces_with_border": "FENCE_GATE"},
       { "type": "DEFAULT_BRIGHT_FLOOR", "cost_mod": 1.5, "replaces_with_floor": "PATH_FLOOR", "replaces_with_border": "DEFAULT_BRIGHT_FLOOR" },
       { "type": "PATH_DIRT", "cost_mod": 2.0, "replaces_with_floor": "PATH_FLOOR", "replaces_with_border": "PATH_DIRT" },
       { "type": "GRASS", "cost_mod": 2.0, "replaces_with_floor": "PATH_FLOOR", "replaces_with_border": "GRASS" },
@@ -328,6 +329,7 @@
     ],
     "intersects_ok": [
       { "type": "PATH_DIRT", "cost_mod": 1.1, "replaces_with_floor": "PATH_DIRT", "replaces_with_border": "GRASS" },
+	  { "type": "FENCE", "cost_mod":  10.0, "replaces_with_border": "FENCE_GATE"},
       { "type": "GRASS", "cost_mod": 1.1, "replaces_with_floor": "PATH_DIRT", "replaces_with_border": "GRASS" },
       { "type": "WATER", "cost_mod": 2.0, "replaces_with_floor": "STEPPING_STONES", "replaces_with_border": "WATER" },
       { "type": "WATER_SHALLOW", "cost_mod": 2.0, "replaces_with_floor": "STEPPING_STONES", "replaces_with_border": "WATER_SHALLOW" },
