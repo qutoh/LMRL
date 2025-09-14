@@ -81,7 +81,7 @@
     }
   },
   "WOODEN": {
-    "description": "Transforms a feature to be made primarily of wood.",
+    "description": "Transforms a feature to be made primarily of cut wood.",
     "conflict_resolution_policy": "BALANCED",
     "operations": {},
     "tile_modifiers": {
@@ -105,7 +105,11 @@
   },
   "RIVER_NATURE": {
     "description": "Transforms a feature into moving, impassable water.",
-    "operations": {},
+    "operations": {
+	  "organic_reshaping": {
+        "budget_scaling_factor": 0.6
+      }
+	},
     "tile_modifiers": {
       "direct_overrides": {
         "DEFAULT_LIQUID_FILLER": "RIVER_WATER"
@@ -135,7 +139,11 @@
   },
   "NATURAL_POOL_NATURE": {
     "description": "Transforms a feature into a pool of still, natural water.",
-    "operations": {},
+    "operations": {
+	  "organic_reshaping": {
+        "budget_scaling_factor": 0.6
+      }
+	},
     "tile_modifiers": {
       "direct_overrides": {
         "DEFAULT_LIQUID_FILLER": "NATURAL_WATER"

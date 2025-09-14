@@ -14,7 +14,7 @@
     "description_on_block": "The {name} is impassable."
   },
   "GENERIC_ELLIPSE_CONTAINER": {
-    "display_name": "A generic elliptical enclosed area. Can be modified by natures (e.g., STONE for a round room, FOLIAGE for a grove).",
+    "display_name": "A generic rounded enclosed area. Can be modified by natures (e.g., STONE for a round room, FOLIAGE for a grove).",
     "feature_type": "CONTAINER",
     "placement_strategy": "BRANCHING",
     "door_tile_type": "DEFAULT_DOOR",
@@ -54,7 +54,7 @@
     "description_on_block": "You cannot pass the {name}."
   },
   "GENERIC_ELLIPSE_BARRIER": {
-    "display_name": "A generic elliptical impassable barrier. Can be modified by natures (e.g., NATURAL for a boulder, FOLIAGE for a dense tree).",
+    "display_name": "A generic rounded impassable barrier. Can be modified by natures (e.g., NATURAL for a boulder, FOLIAGE for a dense tree).",
     "feature_type": "BARRIER",
     "placement_strategy": "BRANCHING",
     "is_shrinkable": false,
