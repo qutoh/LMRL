@@ -13,9 +13,6 @@ from .feature_node import FeatureNode
 from .pathing import Pathing
 from .placement import Placement
 
-JITTER_SCALING_FACTOR = 0.75
-EROSION_SCALING_FACTOR = 0.3
-ORGANIC_OP_SCALING_FACTOR = 0.4
 JITTER_MAX_TRANSLATION = 1
 MIN_FEATURE_SIZE = 3
 
@@ -199,12 +196,8 @@ class MapOps:
         return False
 
     def apply_erosion(self, node_to_erode: FeatureNode, all_branches: List[FeatureNode]) -> bool:
-        """Attempts to erode a single 'NATURAL' node, decrementing its budget on success."""
-        if node_to_erode.erosion_budget <= 0:
-            return False
-
-        feature_def = config.features.get(node_to_erode.feature_type, {})
-        if "NATURAL" not in feature_def.get("natures", []) or len(node_to_erode.footprint) <= MIN_FEATURE_SIZE ** 2:
+        """Attempts to erode a single node, decrementing its budget on success."""
+        if node_to_erode.erosion_budget <= 0 or len(node_to_erode.footprint) <= MIN_FEATURE_SIZE ** 2:
             return False
 
         border = {(x, y) for x, y in node_to_erode.footprint if any(
@@ -241,31 +234,32 @@ class MapOps:
         if node.organic_op_budget <= 0:
             return False
 
-        feature_def = config.features.get(node.feature_type, {})
-        if "ORGANIC" not in feature_def.get("natures", []):
-            return False
+        cost_grid = self.pathing._build_organic_modifiers(all_branches, node)
 
-        cost_grid = self.pathing._build_organic_modifiers(all_branches, feature_def)
+        # Create a collision mask of all other features
+        collision_mask = self.pathing._get_temp_grid(all_branches,
+                                                     exclude_nodes={node}) != self.pathing.void_space_index
 
-        # Work with relative coordinates to avoid conversion errors.
         origin_x, origin_y = node.current_x, node.current_y
         relative_footprint = node.footprint
 
-        # 1. Find potential tiles to ADD (swell) in relative coordinates
-        swell_candidates = {}  # key: relative coord, value: weight
+        # 1. Find potential tiles to ADD (swell)
+        swell_candidates = {}
         for rx, ry in relative_footprint:
             for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                 neighbor_rel = (rx + dx, ry + dy)
                 if neighbor_rel not in relative_footprint:
                     neighbor_abs_x, neighbor_abs_y = neighbor_rel[0] + origin_x, neighbor_rel[1] + origin_y
                     if 0 <= neighbor_abs_y < self.map_height and 0 <= neighbor_abs_x < self.map_width:
-                        swell_candidates[neighbor_rel] = 1 / max(0.1, cost_grid[neighbor_abs_y, neighbor_abs_x])
+                        # LOCALIZED VALIDATION: Check only this single tile for collision
+                        if not collision_mask[neighbor_abs_y, neighbor_abs_x]:
+                            swell_candidates[neighbor_rel] = 1.0 / max(0.1, cost_grid[neighbor_abs_y, neighbor_abs_x])
 
-        # 2. Find potential tiles to REMOVE (shrink) in relative coordinates
+        # 2. Find potential tiles to REMOVE (shrink)
         relative_border = {(rx, ry) for rx, ry in relative_footprint if
                            any((rx + dx, ry + dy) not in relative_footprint for dx, dy in
                                [(-1, 0), (1, 0), (0, -1), (0, 1)])}
-        shrink_candidates = {}  # key: relative coord, value: weight
+        shrink_candidates = {}
         for rx, ry in relative_border:
             abs_x, abs_y = rx + origin_x, ry + origin_y
             if 0 <= abs_y < self.map_height and 0 <= abs_x < self.map_width:
@@ -282,28 +276,31 @@ class MapOps:
 
         # 4. Apply the operation
         new_footprint = relative_footprint.copy()
-        if chosen_relative_coord in shrink_candidates:  # This is a shrink operation
-            if len(new_footprint) <= MIN_FEATURE_SIZE ** 2: return False
-            new_footprint.remove(chosen_relative_coord)
-        else:  # This is a swell operation
+        operation_successful = False
+        if chosen_relative_coord in shrink_candidates:
+            if len(new_footprint) > MIN_FEATURE_SIZE ** 2:
+                new_footprint.remove(chosen_relative_coord)
+                operation_successful = True
+        else:  # Swell operation
             new_footprint.add(chosen_relative_coord)
+            operation_successful = True
 
-        # 5. Validate and commit
+        if not operation_successful:
+            return False
+
+        # 5. Commit the change
         final_footprint = self._find_main_component(new_footprint)
-        if self._is_proposal_valid(node, node.current_x, node.current_y, final_footprint, all_branches):
-            node.footprint = final_footprint
-            node.interior_footprint = {
-                (x, y) for x, y in node.footprint
-                if (x + 1, y) in node.footprint and
-                   (x - 1, y) in node.footprint and
-                   (x, y + 1,) in node.footprint and
-                   (x, y - 1) in node.footprint
-            }
-            node.update_bounding_box_from_footprint()
-            node.organic_op_budget -= 1
-            return True
-
-        return False
+        node.footprint = final_footprint
+        node.interior_footprint = {
+            (x, y) for x, y in node.footprint
+            if (x + 1, y) in node.footprint and
+               (x - 1, y) in node.footprint and
+               (x, y + 1,) in node.footprint and
+               (x, y - 1) in node.footprint
+        }
+        node.update_bounding_box_from_footprint()
+        node.organic_op_budget -= 1
+        return True
 
     def run_refinement_phase(self, all_branches: List[FeatureNode], on_iteration_end: Callable) -> Generator:
         """Runs the final jitter and erosion passes, spending all remaining budgets."""

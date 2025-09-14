@@ -1,0 +1,154 @@
+{
+  "NATURAL": {
+    "description": "Represents features that have irregular borders or erode, like caves or forests.",
+    "operations": {
+      "erosion": {
+        "budget_scaling_factor": 0.5
+      },
+      "jitter": {
+        "budget_scaling_factor": 0.25
+      }
+    },
+    "tile_modifiers": {
+       "direct_overrides": {
+        "PATH_FLOOR": "PATH_DIRT"
+      }
+    },
+    "pathfinding_modifiers": [
+      { "type": "RIVER_NATURE", "influence": 0.7, "decay": 0.1 },
+      { "type": "BUILT", "influence": 1.3, "decay": 0.1 },
+      { "type": "NATURAL", "influence": 0.7, "decay": 0.1 },
+      { "type": "FOLIAGE", "influence": 0.7, "decay": 0.1 }
+    ],
+    "intersects_ok": [
+      { "type": "PATH_DIRT", "cost_mod": 1.1, "replaces_with_floor": "PATH_DIRT", "replaces_with_border": "GRASS" },
+	  { "type": "FENCE", "cost_mod":  10.0, "replaces_with_border": "FENCE_GATE"},
+      { "type": "GRASS", "cost_mod": 1.1, "replaces_with_floor": "PATH_DIRT", "replaces_with_border": "GRASS" },
+      { "type": "WATER", "cost_mod": 2.0, "replaces_with_floor": "STEPPING_STONES", "replaces_with_border": "WATER" },
+      { "type": "WATER_SHALLOW", "cost_mod": 2.0, "replaces_with_floor": "STEPPING_STONES", "replaces_with_border": "WATER_SHALLOW" },
+      { "type": "WATER_RAPIDS", "cost_mod": 4.0, "replaces_with_floor": "WOOD", "replaces_with_border": "DEFAULT_WALL" }
+    ]
+  },
+  "ORGANIC": {
+    "description": "Represents features that naturally follow and get shaped by terrain, like rivers, trails, natural barriers, or caves.",
+    "operations": {
+      "organic_reshaping": {
+        "budget_scaling_factor": 0.6
+      }
+    },
+    "tile_modifiers": {}
+  },
+  "ARTIFICIAL": {
+    "description": "Represents features that are constructed with refined or advanced techniques.",
+    "operations": {
+      "jitter": {
+        "budget_scaling_factor": 0.1
+      }
+    },
+	
+    "tile_modifiers": {
+	  "direct_overrides": {
+            "PATH_DIRT": "PATH_FLOOR"
+        }
+	},
+    "pathfinding_modifiers": [
+       { "type": "RIVER_NATURE", "influence": 1.8, "decay": 0.1 },
+       { "type": "NATURAL", "influence": 1.3, "decay": 0.1 },
+       { "type": "ARTIFICIAL", "influence": 0.7, "decay": 0.1 }
+    ],
+    "intersects_ok": [
+      { "type": "PATH_FLOOR", "cost_mod": 1.5 },
+	  { "type": "FENCE", "cost_mod":  10.0, "replaces_with_border": "FENCE_GATE"},
+      { "type": "DEFAULT_BRIGHT_FLOOR", "cost_mod": 1.5, "replaces_with_floor": "PATH_FLOOR", "replaces_with_border": "DEFAULT_BRIGHT_FLOOR" },
+      { "type": "PATH_DIRT", "cost_mod": 2.0, "replaces_with_floor": "PATH_FLOOR", "replaces_with_border": "PATH_DIRT" },
+      { "type": "GRASS", "cost_mod": 2.0, "replaces_with_floor": "PATH_FLOOR", "replaces_with_border": "GRASS" },
+      { "type": "WATER", "cost_mod": 2.0, "replaces_with_floor": "WOOD", "replaces_with_border": "DEFAULT_WALL" },
+      { "type": "WATER_SHALLOW", "cost_mod": 2.0, "replaces_with_floor": "WOOD", "replaces_with_border": "DEFAULT_WALL" },
+      { "type": "WATER_RAPIDS", "cost_mod": 4.0, "replaces_with_floor": "WOOD", "replaces_with_border": "DEFAULT_WALL" }
+    ]
+  },
+  "STONE": {
+    "description": "Transforms a feature to be made primarily of stone.",
+    "conflict_resolution_policy": "BALANCED",
+    "operations": {},
+    "tile_modifiers": {
+      "direct_overrides": {
+        "DEFAULT_FLOOR": "STONE_FLOOR",
+        "DEFAULT_BRIGHT_FLOOR": "STONE_FLOOR",
+        "DEFAULT_WALL": "STONE_WALL"
+      },
+      "material_overrides": []
+    }
+  },
+  "WOODEN": {
+    "description": "Transforms a feature to be made primarily of wood.",
+    "conflict_resolution_policy": "BALANCED",
+    "operations": {},
+    "tile_modifiers": {
+      "direct_overrides": {
+        "DEFAULT_FLOOR": "WOOD_FLOOR",
+        "DEFAULT_BRIGHT_FLOOR": "WOOD_FLOOR",
+        "DEFAULT_WALL": "WOOD_WALL"
+      },
+      "material_overrides": []
+    }
+  },
+  "FOLIAGE": {
+    "description": "Transforms a feature to be made of dense plant life.",
+    "operations": {},
+    "tile_modifiers": {
+      "direct_overrides": {
+        "DEFAULT_WALL": "LEAVES",
+        "DEFAULT_FLOOR": "GRASS_UNDERGROWTH"
+      }
+    }
+  },
+  "RIVER_NATURE": {
+    "description": "Transforms a feature into moving, impassable water.",
+    "operations": {},
+    "tile_modifiers": {
+      "direct_overrides": {
+        "DEFAULT_LIQUID_FILLER": "RIVER_WATER"
+      }
+    },
+    "pathfinding_modifiers": [
+      { "type": "RIVER_NATURE", "influence": 0.2, "decay": 0.1 },
+      { "type": "BUILT", "influence": 1.3, "decay": 0.1 },
+      { "type": "NATURAL", "influence": 1.3, "decay": 0.1 },
+      { "type": "FOLIAGE", "influence": 0.7, "decay": 0.1 }
+    ],
+    "intersects_ok": [
+      { "type": "GRASS", "cost_mod": 1.2, "replaces_with_floor": "WATER", "replaces_with_border": "GRASS" },
+      { "type": "WATER", "cost_mod": 0.5 },
+      { "type": "WATER_SHALLOW", "cost_mod": 0.5 },
+      { "type": "WATER_RAPIDS", "cost_mod": 0.5 }
+    ]
+  },
+  "TREATED_POOL_NATURE": {
+    "description": "Transforms a feature into a pool of still, treated (e.g., chlorinated, magical) water.",
+    "operations": {},
+    "tile_modifiers": {
+      "direct_overrides": {
+        "DEFAULT_LIQUID_FILLER": "TREATED_WATER"
+      }
+    }
+  },
+  "NATURAL_POOL_NATURE": {
+    "description": "Transforms a feature into a pool of still, natural water.",
+    "operations": {},
+    "tile_modifiers": {
+      "direct_overrides": {
+        "DEFAULT_LIQUID_FILLER": "NATURAL_WATER"
+      }
+    }
+  },
+  "FORD_NATURE": {
+    "description": "Transforms a feature into a shallow, walkable body of water.",
+    "operations": {},
+    "tile_modifiers": {
+      "direct_overrides": {
+        "DEFAULT_LIQUID_FILLER": "SHALLOW_WATER"
+      }
+    }
+  }
+}

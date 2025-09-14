@@ -120,6 +120,7 @@ class Placement:
         sub_h = max(MIN_FEATURE_SIZE, round(math.sqrt(target_sub_area * rh / rw)))
 
         temp_child_node_for_size = FeatureNode("temp", feature_data['type'], sub_w, sub_h)
+        temp_child_node_for_size.natures = feature_data.get('natures', [])
         rotated_footprint_pairs = self._get_rotated_footprints(temp_child_node_for_size, feature_def)
         if not rotated_footprint_pairs: return None
         random.shuffle(rotated_footprint_pairs)
@@ -131,7 +132,6 @@ class Placement:
         random.shuffle(shuffled_parent_points)
 
         base_collision_mask = self._get_temp_grid(all_branches) != self.void_space_index
-        parent_footprint_abs_base = parent_node.get_absolute_footprint()
 
         for total_fp, interior_fp in rotated_footprint_pairs:
             child_connection_points = geometry_probes.find_potential_connection_points(total_fp)
@@ -156,32 +156,18 @@ class Placement:
                         if not self._is_placement_valid(footprint_abs, base_collision_mask):
                             continue
 
-                        p_recon = p_data.get('reconciliation')
-                        parent_footprint_for_check = parent_footprint_abs_base
-
-                        if p_recon and 'extrude' in p_recon:
-                            rel_extrude = p_recon['extrude']
-                            abs_extrude = (
-                                rel_extrude[0] + parent_node.current_x, rel_extrude[1] + parent_node.current_y)
-
-                            if abs_extrude in footprint_abs or base_collision_mask[abs_extrude[1]][abs_extrude[0]]:
-                                continue
-
-                            parent_footprint_for_check = parent_footprint_abs_base.union({abs_extrude})
-
-                        if not footprint_abs.isdisjoint(parent_footprint_for_check):
-                            continue
-
                         if dry_run:
                             return True
 
                         # --- SUCCESS: A valid placement was found ---
+                        p_recon = p_data.get('reconciliation')
                         if p_recon and 'extrude' in p_recon:
                             parent_node.footprint.add(p_recon['extrude'])
                             parent_node.update_bounding_box_from_footprint()
 
                         new_subfeature = FeatureNode(feature_data['name'], feature_data['type'], sub_w, sub_h, origin_x,
                                                      origin_y, parent=parent_node)
+                        new_subfeature.natures = feature_data.get('natures', [])
                         new_subfeature.footprint = total_fp
                         new_subfeature.interior_footprint = interior_fp
                         new_subfeature.update_bounding_box_from_footprint()
@@ -211,6 +197,7 @@ class Placement:
         prop_w = max(MIN_FEATURE_SIZE, int((self.map_width) * rel_dim * 0.5))
         prop_h = max(MIN_FEATURE_SIZE, int((self.map_height) * rel_dim * 0.5))
         temp_node = FeatureNode("temp_root", feature_data['type'], prop_w, prop_h)
+        temp_node.natures = feature_data.get('natures', [])
         map_grid = self._get_temp_grid(all_branches)
         allowed_indices = {self.void_space_index}
         collision_mask = ~np.isin(map_grid, list(allowed_indices))
@@ -224,6 +211,7 @@ class Placement:
             return None
         x, y = random.choice(possible_origins)
         new_root_node = FeatureNode(feature_data['name'], feature_data['type'], prop_w, prop_h, x, y, parent=None)
+        new_root_node.natures = feature_data.get('natures', [])
         all_branches.append(new_root_node)
         return new_root_node
 
@@ -291,6 +279,7 @@ class Placement:
         path_footprint = {(x + dx, y + dy) for x, y in centerline for dx, dy in brush}
         new_path_node = FeatureNode(name=feature_data['name'], feature_type=feature_data['type'], abs_w=0, abs_h=0,
                                     x=0, y=0)
+        new_path_node.natures = feature_data.get('natures', [])
         new_path_node.path_coords = list(path_footprint)
         new_path_node.footprint = path_footprint
         new_path_node.interior_footprint = path_footprint
@@ -309,12 +298,20 @@ class Placement:
         end_points = [p for n in target_branch.get_all_nodes_in_branch() for p in
                       self.pathing.get_valid_connection_points(n, clearance, all_branches)]
         if not start_points or not end_points: return None
-        start_pos, end_pos = self.pathing.find_first_valid_connection(start_points, end_points, clearance,
-                                                                      all_branches, path_feature_def=feature_def)
+
+        temp_path_node = FeatureNode(feature_data['name'], feature_data['type'], 0, 0)
+        temp_path_node.natures = feature_data.get('natures', [])
+
+        connection = self.pathing.find_first_valid_connection(start_points, end_points, clearance,
+                                                              all_branches, path_feature_def=feature_def)
+        if not connection or connection == (None, None):
+            return None
+
+        start_pos, end_pos = connection
         if start_pos and end_pos:
             if dry_run: return FeatureNode("probe", "PROBE", 1, 1)
             centerline = self.pathing.find_path_with_clearance(start_pos, end_pos, clearance, all_branches,
-                                                               feature_def)
+                                                               temp_path_node)
             if centerline:
                 new_path_node = self._create_path_node_from_centerline(centerline, feature_data, clearance)
                 new_path_node.parent = parent_branch
@@ -363,11 +360,19 @@ class Placement:
         start_points = self.pathing.get_valid_connection_points(source_node, clearance, all_branches)
         end_points = self.pathing.get_valid_connection_points(dest_node, clearance, all_branches)
         if not start_points or not end_points: return None
-        start_pos, end_pos = self.pathing.find_first_valid_connection(start_points, end_points, clearance,
-                                                                      all_branches, path_feature_def=feature_def)
+
+        temp_path_node = FeatureNode(feature_data['name'], feature_data['type'], 0, 0)
+        temp_path_node.natures = feature_data.get('natures', [])
+
+        connection = self.pathing.find_first_valid_connection(start_points, end_points, clearance,
+                                                              all_branches, path_feature_def=feature_def)
+        if not connection or connection == (None, None):
+            return None
+
+        start_pos, end_pos = connection
         if start_pos and end_pos:
             centerline = self.pathing.find_path_with_clearance(start_pos, end_pos, clearance, all_branches,
-                                                               feature_def)
+                                                               temp_path_node)
             if centerline:
                 new_path_node = self._create_path_node_from_centerline(centerline, feature_data, clearance)
                 all_branches.append(new_path_node)
@@ -384,11 +389,19 @@ class Placement:
         start_points = self.pathing.get_valid_connection_points(source_node, clearance, all_branches)
         end_points = border_coords
         if not start_points or not end_points: return None
-        start_pos, end_pos = self.pathing.find_first_valid_connection(start_points, end_points, clearance,
-                                                                      all_branches, path_feature_def=feature_def)
+
+        temp_path_node = FeatureNode(feature_data['name'], feature_data['type'], 0, 0)
+        temp_path_node.natures = feature_data.get('natures', [])
+
+        connection = self.pathing.find_first_valid_connection(start_points, end_points, clearance,
+                                                              all_branches, path_feature_def=feature_def)
+        if not connection or connection == (None, None):
+            return None
+
+        start_pos, end_pos = connection
         if start_pos and end_pos:
             centerline = self.pathing.find_path_with_clearance(start_pos, end_pos, clearance, all_branches,
-                                                               feature_def)
+                                                               temp_path_node)
             if centerline:
                 new_path_node = self._create_path_node_from_centerline(centerline, feature_data, clearance)
                 all_branches.append(new_path_node)
@@ -406,11 +419,19 @@ class Placement:
                         self.pathing.get_valid_connection_points(n, clearance, all_branches)]
         end_points = border_coords
         if not start_points or not end_points: return None
-        start_pos, end_pos = self.pathing.find_first_valid_connection(start_points, end_points, clearance,
-                                                                      all_branches, path_feature_def=feature_def)
+
+        temp_path_node = FeatureNode(feature_data['name'], feature_data['type'], 0, 0)
+        temp_path_node.natures = feature_data.get('natures', [])
+
+        connection = self.pathing.find_first_valid_connection(start_points, end_points, clearance,
+                                                              all_branches, path_feature_def=feature_def)
+        if not connection or connection == (None, None):
+            return None
+
+        start_pos, end_pos = connection
         if start_pos and end_pos:
             centerline = self.pathing.find_path_with_clearance(start_pos, end_pos, clearance, all_branches,
-                                                               feature_def)
+                                                               temp_path_node)
             if centerline:
                 new_path_node = self._create_path_node_from_centerline(centerline, feature_data, clearance)
                 new_path_node.parent = parent_branch
@@ -428,11 +449,19 @@ class Placement:
         start_points = source_border_coords
         end_points = dest_border_coords
         if not start_points or not end_points: return None
-        start_pos, end_pos = self.pathing.find_first_valid_connection(start_points, end_points, clearance,
-                                                                      all_branches, path_feature_def=feature_def)
+
+        temp_path_node = FeatureNode(feature_data['name'], feature_data['type'], 0, 0)
+        temp_path_node.natures = feature_data.get('natures', [])
+
+        connection = self.pathing.find_first_valid_connection(start_points, end_points, clearance,
+                                                              all_branches, path_feature_def=feature_def)
+        if not connection or connection == (None, None):
+            return None
+
+        start_pos, end_pos = connection
         if start_pos and end_pos:
             centerline = self.pathing.find_path_with_clearance(start_pos, end_pos, clearance, all_branches,
-                                                               feature_def)
+                                                               temp_path_node)
             if centerline:
                 new_path_node = self._create_path_node_from_centerline(centerline, feature_data, clearance)
                 all_branches.append(new_path_node)

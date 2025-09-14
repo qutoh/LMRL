@@ -24,6 +24,7 @@ from ..common.game_state import GameState, GenerationState
 from ..components import game_functions, character_factory
 from ..llm.calibration_manager import CalibrationManager
 from ..llm.llm_api import execute_task
+from ..worldgen.procgen_manager import ProcGenManager
 from ..worldgen.map_architect_v3 import MapArchitectV3
 from ..worldgen.v3_components.feature_node import FeatureNode
 
@@ -218,6 +219,17 @@ class SpecialModeManager:
                     "dimensions": "medium"
                 }
 
+        elif task_key == 'PEG_V3_DECIDE_CONNECTOR_STRATEGY':
+            targets_str = kwargs['task_prompt_kwargs']['nearby_targets_list']
+            targets = [line.strip().lstrip('- ') for line in targets_str.split('\n') if line.strip()]
+            if targets and random.random() > 0.5:
+                response_data = random.choice(targets)
+            else:
+                response_data = "CREATE_NEW"
+
+        elif task_key == 'PEG_V3_CREATE_CONNECTOR_CHILD':
+            response_data = "At the end of the passage is a small guard post."
+
         elif task_key in ['PEG_V3_CHOOSE_PARENT', 'PEG_V3_CHOOSE_PATH_TARGET']:
             option_list_str = kwargs['task_prompt_kwargs'].get('parent_options_list') or kwargs[
                 'task_prompt_kwargs'].get('target_options_list', '')
@@ -276,7 +288,12 @@ class SpecialModeManager:
         self.call_counters = defaultdict(int)
 
         game_state = GameState()
-        architect = MapArchitectV3(ui.app.atlas_engine, game_state.game_map, "PEG V3 Test", scenario['name'])
+
+        # Correctly instantiate the manager first, then the architect
+        procgen_manager = ProcGenManager(ui.app.atlas_engine)
+        procgen_manager._initialize_components(game_state.game_map)
+
+        architect = MapArchitectV3(procgen_manager, game_state.game_map, "PEG V3 Test", scenario['name'])
 
         ui.active_view = ui.game_view
         ui.active_view.update_state(game_state)
@@ -323,7 +340,10 @@ class SpecialModeManager:
         ui = self.ui_manager
 
         game_state = GameState()
-        architect = MapArchitectV3(ui.app.atlas_engine, game_state.game_map, "Noise Test", "Noise Test")
+        procgen_manager = ProcGenManager(ui.app.atlas_engine)
+        procgen_manager._initialize_components(game_state.game_map)
+
+        architect = MapArchitectV3(procgen_manager, game_state.game_map, "Noise Test", "Noise Test")
 
         possible_features = [
             key for key, data in config.features.items()
@@ -338,13 +358,12 @@ class SpecialModeManager:
             for i in range(5)
         ]
 
-        growth_generator = architect.placement.place_and_grow_initial_features(initial_specs)
-        for branches in growth_generator:
-            architect.initial_feature_branches = branches
+        # Note: This part might need adjustment as place_and_grow_initial_features is not on architect
+        # For now, we assume a simplified initial placement for visualization
+        for spec in initial_specs:
+            procgen_manager.placement.place_new_root_branch(spec, architect.initial_feature_branches)
 
-        architect.map_ops.JITTER_ITERATIONS = 150
-        architect.map_ops.apply_jitter(architect.initial_feature_branches, on_iteration_end=lambda: None)
-        architect.map_ops.JITTER_ITERATIONS = 50
+        architect.map_ops.run_refinement_phase(architect.initial_feature_branches, on_iteration_end=lambda: None)
 
         root_nodes = architect.initial_feature_branches
         for i in range(len(root_nodes)):
@@ -353,9 +372,10 @@ class SpecialModeManager:
                 start_points = architect.pathing.get_valid_connection_points(node_a, 0, root_nodes)
                 end_points = architect.pathing.get_valid_connection_points(node_b, 0, root_nodes)
                 if start_points and end_points:
-                    start_pos, end_pos = architect.pathing.find_first_valid_connection(start_points, end_points, 0,
-                                                                                       root_nodes)
-                    if start_pos and end_pos:
+                    connection = architect.pathing.find_first_valid_connection(start_points, end_points, 0,
+                                                                               root_nodes)
+                    if connection and connection != (None, None):
+                        start_pos, end_pos = connection
                         path = architect.pathing.find_path_with_clearance(start_pos, end_pos, 0, root_nodes, {})
                         if path:
                             path_node = FeatureNode(f"Path {i}-{j}", "GENERIC_PATH", 0, 0, 0, 0)
@@ -370,7 +390,7 @@ class SpecialModeManager:
         artist.draw_map(game_state.game_map, gen_state, config.features)
 
         clearance_mask = architect.pathing._create_clearance_mask(1,
-                                                                  architect.initial_feature_branches)  # Use clearance 1 for vis
+                                                                  architect.initial_feature_branches)
 
         def on_exit():
             self.noise_visualizer_active = False

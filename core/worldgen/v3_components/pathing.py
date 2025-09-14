@@ -14,6 +14,7 @@ from core.common.game_state import GameMap
 from . import geometry_probes
 from .feature_node import FeatureNode
 from ...common.config_loader import config
+from ..procgen_utils import get_combined_feature_rules
 
 
 class Pathing:
@@ -152,38 +153,51 @@ class Pathing:
                 valid_points.append((x, y))
         return valid_points
 
-    def _build_organic_modifiers(self, all_branches: List[FeatureNode], path_feature_def: dict) -> np.ndarray:
+    def _build_organic_modifiers(self, all_branches: List[FeatureNode], path_node: FeatureNode) -> np.ndarray:
         modifier_grid = np.ones((self.map_height, self.map_width), dtype=np.float32)
-        if modifiers := path_feature_def.get('pathfinding_modifiers'):
-            feature_type_coords = {}
+        combined_rules = get_combined_feature_rules(path_node)
+
+        if modifiers := combined_rules.get('pathfinding_modifiers'):
+            feature_coords = {}  # Stores coords by feature_type and nature
             all_nodes = [node for branch in all_branches for node in branch.get_all_nodes_in_branch()]
+
             for node in all_nodes:
-                if node.feature_type not in feature_type_coords:
-                    feature_type_coords[node.feature_type] = set()
-                abs_footprint = node.get_absolute_footprint()
-                for i, j in abs_footprint:
-                    if 0 <= i < self.map_width and 0 <= j < self.map_height:
-                        feature_type_coords[node.feature_type].add((i, j))
+                # Store by feature type
+                if node.feature_type not in feature_coords:
+                    feature_coords[node.feature_type] = set()
+                feature_coords[node.feature_type].update(p for p in node.get_absolute_footprint() if
+                                                         0 <= p[0] < self.map_width and 0 <= p[1] < self.map_height)
+                # Store by nature
+                for nature in node.natures:
+                    if nature not in feature_coords:
+                        feature_coords[nature] = set()
+                    feature_coords[nature].update(p for p in node.get_absolute_footprint() if
+                                                  0 <= p[0] < self.map_width and 0 <= p[1] < self.map_height)
+
             for rule in modifiers:
-                target_type = rule.get('type')
+                target_key = rule.get('type')  # Can be feature_type or nature
                 influence = rule.get('influence', 1.0)
                 decay = rule.get('decay', 0.1)
-                if not target_type or influence == 1.0: continue
+                if not target_key or influence == 1.0: continue
+
                 source_map = np.ones((self.map_height, self.map_width), dtype=bool)
-                if target_coords := feature_type_coords.get(target_type):
+                if target_coords := feature_coords.get(target_key):
                     if not target_coords: continue
                     rows, cols = zip(*target_coords)
                     source_map[list(cols), list(rows)] = False
+
                 distance_grid = distance_transform_edt(source_map)
                 influence_grid = 1 + (influence - 1) * np.exp(-decay * distance_grid)
                 modifier_grid *= influence_grid
             modifier_grid = gaussian_filter(modifier_grid, sigma=1.5)
-        turbulence = path_feature_def.get('turbulence', 0.0)
+
+        feature_def = config.features.get(path_node.feature_type, {})
+        turbulence = feature_def.get('turbulence', 0.0)
         if turbulence > 0.0:
             noise = tcod.noise.Noise(dimensions=2, algorithm=tcod.noise.Algorithm.PERLIN,
                                      implementation=tcod.noise.Implementation.TURBULENCE, hurst=1.0,
                                      lacunarity=min(max(0.0, turbulence), 10.0), octaves=2, seed=None)
-            scale = path_feature_def.get('turbulence_scale', 0.1)
+            scale = feature_def.get('turbulence_scale', 0.1)
             grid_y, grid_x = np.ogrid[0:self.map_height, 0:self.map_width]
             samples = noise.sample_ogrid([grid_x * scale, grid_y * scale])
             turbulence_modifier = 1.0 + (samples.T * turbulence)
@@ -191,13 +205,15 @@ class Pathing:
         return gaussian_filter(modifier_grid, sigma=0.5)
 
     def find_path_with_clearance(self, start_coords: Tuple[int, int], end_coords: Tuple[int, int], clearance: int,
-                                 all_branches: List[FeatureNode], path_feature_def: dict) -> Optional[
+                                 all_branches: List[FeatureNode], path_node: FeatureNode) -> Optional[
         List[Tuple[int, int]]]:
-        clearance_mask = self._create_clearance_mask(clearance, all_branches, path_feature_def)
+
+        combined_rules = get_combined_feature_rules(path_node)
+        clearance_mask = self._create_clearance_mask(clearance, all_branches, combined_rules)
         terrain_grid = self._get_temp_grid(all_branches)
 
         cost = np.full((self.map_height, self.map_width), 1.0, dtype=np.float32)
-        for rule in path_feature_def.get('intersects_ok', []):
+        for rule in combined_rules.get('intersects_ok', []):
             intersect_type_name = rule.get('type')
             cost_mod = rule.get('cost_mod', 1.0)
             if intersect_type_name in config.tile_type_map:
@@ -205,7 +221,7 @@ class Pathing:
                 base_cost = config.tile_types.get(intersect_type_name, {}).get('movement_cost', 1.0)
                 cost[terrain_grid == intersect_type_index] = base_cost * cost_mod
 
-        organic_modifiers = self._build_organic_modifiers(all_branches, path_feature_def)
+        organic_modifiers = self._build_organic_modifiers(all_branches, path_node)
         cost *= organic_modifiers
         cost[clearance_mask] = np.inf
 
@@ -214,12 +230,12 @@ class Pathing:
         return path_xy if path_xy else None
 
     def _create_clearance_mask(self, clearance: int, all_branches: List[FeatureNode],
-                               path_feature_def: Optional[Dict] = None) -> np.ndarray:
+                               rules: Optional[Dict] = None) -> np.ndarray:
         terrain_grid = self._get_temp_grid(all_branches)
 
-        if path_feature_def:
+        if rules:
             allowed_indices = {self.void_space_index}
-            for rule in path_feature_def.get('intersects_ok', []):
+            for rule in rules.get('intersects_ok', []):
                 if intersect_type_name := rule.get('type'):
                     if intersect_type_name in config.tile_type_map:
                         allowed_indices.add(config.tile_type_map[intersect_type_name])
@@ -261,19 +277,22 @@ class Pathing:
 
             if not node_a or not node_b or not coords or len(coords) < 2: continue
 
-            node_a_def = config.features.get(node_a.feature_type, {})
-            node_b_def = config.features.get(node_b.feature_type, {})
+            feature_def_a = config.features.get(node_a.feature_type, {})
+            feature_def_b = config.features.get(node_b.feature_type, {})
 
-            if any(d.get('feature_type') == 'BARRIER' for d in [node_a_def, node_b_def]): continue
+            door_tile_a = feature_def_a.get('door_tile_type')
+            door_tile_b = feature_def_b.get('door_tile_type')
 
-            is_a_portal = node_a_def.get('feature_type') == 'PORTAL'
-            is_b_portal = node_b_def.get('feature_type') == 'PORTAL'
+            if any(d.get('feature_type') == 'BARRIER' for d in [feature_def_a, feature_def_b]): continue
+
+            is_a_portal = feature_def_a.get('feature_type') == 'PORTAL'
+            is_b_portal = feature_def_b.get('feature_type') == 'PORTAL'
 
             if not is_a_portal and not is_b_portal:
-                if door_tile := node_a_def.get('door_tile_type'): door_placements.append(
-                    {'pos': coords[0], 'type': door_tile})
-                if door_tile := node_b_def.get('door_tile_type'): door_placements.append(
-                    {'pos': coords[1], 'type': door_tile})
+                if door_tile_a: door_placements.append(
+                    {'pos': coords[0], 'type': door_tile_a})
+                if door_tile_b: door_placements.append(
+                    {'pos': coords[1], 'type': door_tile_b})
 
         return internal_connections, door_placements, hallways
 

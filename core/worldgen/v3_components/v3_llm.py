@@ -38,6 +38,14 @@ class V3_LLM:
                 menu_items.append(f"- **{key}:** {display_name}")
         return "\n".join(menu_items)
 
+    def _get_nature_menu_str(self) -> str:
+        """Generates a markdown list of available natures."""
+        menu_items = []
+        for key, data in config.natures.items():
+            description = data.get('description', 'No description.')
+            menu_items.append(f"- **{key}:** {description}")
+        return "\n".join(menu_items)
+
     def _generate_dynamic_example(self, allowed_strategies: List[str], num_examples: int, output_format: str,
                                   available_size_tiers: Optional[List[str]] = None) -> str:
         """Creates a dynamic, valid JSON example for few-shot prompting."""
@@ -46,7 +54,9 @@ class V3_LLM:
             if data.get('placement_strategy') in allowed_strategies and key != 'CHARACTER'
         }
         size_tiers = available_size_tiers or ['small', 'medium', 'large']
-        if not size_tiers: size_tiers = ['small']  # Fallback
+        if not size_tiers: size_tiers = ['small']
+
+        valid_natures = list(config.natures.keys())
 
         if not valid_features:
             if output_format == 'list':
@@ -55,7 +65,7 @@ class V3_LLM:
                 return json.dumps(fallback_obj, indent=2)
             else:
                 fallback_obj = {"name": "Example Object", "description": "An object of some importance.",
-                                "type": "BUILT_ROOM", "dimensions": "medium"}
+                                "type": "BUILT_ROOM", "dimensions": "medium", "natures": ["BUILT"]}
                 return json.dumps(fallback_obj, indent=2)
 
         if output_format == 'list':
@@ -69,6 +79,7 @@ class V3_LLM:
                     name_prefix = key.replace("_", " ").title()
                     example = {"name": f"The {name_prefix}", "type": key,
                                "size_tier": random.choice(size_tiers),
+                               "natures": random.sample(valid_natures, k=min(2, len(valid_natures))),
                                "description_sentence": f"A {random.choice(size_tiers)} {name_prefix.lower()} is here."}
                     examples.append(example)
             if path_features and len(examples) < num_examples:
@@ -76,6 +87,7 @@ class V3_LLM:
                 path_prefix = path_key.replace("_", " ").title()
                 path_example = {"name": f"The {path_prefix}", "type": path_key,
                                 "size_tier": random.choice(size_tiers),
+                                "natures": random.sample(valid_natures, k=min(2, len(valid_natures))),
                                 "description_sentence": f"A winding {path_prefix.lower()} crosses the area."}
                 possible_endpoints = [e['name'] for e in examples] + ["NORTH_BORDER", "SOUTH_BORDER", "EAST_BORDER",
                                                                       "WEST_BORDER"]
@@ -93,6 +105,7 @@ class V3_LLM:
                 name_prefix = key.replace("_", " ").title()
                 example = {"name": f"The {name_prefix}", "type": key,
                            "size_tier": random.choice(size_tiers),
+                           "natures": random.sample(valid_natures, k=min(2, len(valid_natures))),
                            "description_sentence": f"A {random.choice(size_tiers)} {name_prefix.lower()} is here."}
                 examples.append(example)
                 del non_path_features[key]
@@ -106,6 +119,7 @@ class V3_LLM:
                 example = {"name": f"The {name_prefix}", "type": key}
                 example["description"] = f"A simple {name_prefix.lower()}."
                 example["dimensions"] = random.choice(size_tiers)
+                example["natures"] = random.sample(valid_natures, k=min(2, len(valid_natures)))
                 example_data.append(example)
             return json.dumps(example_data[0], indent=2)
 
@@ -114,14 +128,15 @@ class V3_LLM:
         """Takes a narrative sentence and converts it into a structured feature dictionary."""
         allowed_strategies = ['BRANCHING', 'CONNECTOR', 'INTERIOR', 'PATHING']
         type_list_str = self._get_feature_menu_by_strategy(allowed_strategies)
+        nature_menu_str = self._get_nature_menu_str()
 
         tiers_to_use = available_size_tiers or ['large', 'medium', 'small']
         example_response = self._generate_dynamic_example(allowed_strategies, 1, 'single', tiers_to_use)
 
         size_tier_examples = {
-            'large': "large (e.g., 'large', '80ft by 60ft', '25m across')",
-            'medium': "medium (e.g., 'medium x small', '40ft by 40ft', '12 meters long')",
-            'small': "small (e.g., 'small', '15 feet', '5mx8m')"
+            'large': "large (e.g., 'a vast cavern', '80ft wide', '25m across')",
+            'medium': "medium (e.g., 'a medium-sized room', '40ft by 40ft', '12 meters long')",
+            'small': "small (e.g., 'a small alcove', '15 feet', '5m')"
         }
         size_tier_list_str = "\n- ".join([desc for tier, desc in size_tier_examples.items() if tier in tiers_to_use])
         if size_tier_list_str:
@@ -131,6 +146,7 @@ class V3_LLM:
             "world_scene_context": self._get_world_scene_context_str(),
             "sentence": sentence,
             "type_list_str": type_list_str,
+            "nature_menu_str": nature_menu_str,
             "example_response": example_response,
             "size_tier_list_str": size_tier_list_str
         }
@@ -172,6 +188,14 @@ class V3_LLM:
         if feature_data and all(k in feature_data for k in ['description', 'type', 'size_tier']):
             feature_data['name'] = area_name
             feature_data['description_sentence'] = sentence
+
+            # Stepwise nature generation
+            nature_menu_str = self._get_nature_menu_str()
+            natures_raw = execute_task(self.engine, self.level_generator, 'PEG_V2_GET_NATURES', [],
+                                       task_prompt_kwargs={"area_description": feature_data['description'],
+                                                           "nature_menu_str": nature_menu_str})
+            feature_data['natures'] = [n.strip() for n in natures_raw.split(';') if n.strip()]
+
             return feature_data
 
         return None
@@ -198,6 +222,12 @@ class V3_LLM:
             if feature_data and all(k in feature_data for k in ['description', 'type', 'size_tier']):
                 feature_data['name'] = name
                 feature_data['description_sentence'] = self.get_narrative_seed(name) or f"This is the {name}."
+
+                nature_menu_str = self._get_nature_menu_str()
+                natures_raw = execute_task(self.engine, self.level_generator, 'PEG_V2_GET_NATURES', [],
+                                           task_prompt_kwargs={"area_description": feature_data['description'],
+                                                               "nature_menu_str": nature_menu_str})
+                feature_data['natures'] = [n.strip() for n in natures_raw.split(';') if n.strip()]
                 defined_features.append(feature_data)
         return defined_features
 
@@ -205,10 +235,12 @@ class V3_LLM:
         """Uses a single-shot JSON prompt to get all initial features, with a stepwise fallback."""
         allowed_strategies = ['BRANCHING', 'PATHING']
         type_list_str = self._get_feature_menu_by_strategy(allowed_strategies)
+        nature_menu_str = self._get_nature_menu_str()
         example_response = self._generate_dynamic_example(allowed_strategies, 3, 'list')
         kwargs = {
             "world_scene_context": self._get_world_scene_context_str(),
             "type_list_str": type_list_str,
+            "nature_menu_str": nature_menu_str,
             "example_response": example_response
         }
         raw_response = execute_task(self.engine, self.level_generator, 'PEG_V3_GET_INITIAL_FEATURES_JSON', [],

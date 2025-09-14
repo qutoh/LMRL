@@ -9,7 +9,7 @@ from core.components import position_manager
 from core.components import roster_manager
 from core.components.memory_manager import MemoryManager
 from core.worldgen.procgen_manager import ProcGenManager
-from core.worldgen.v3_components.v3_llm import V3_LLM
+from core.worldgen.v3_components import nature_effects
 from ..ui.ui_messages import AddEventLogMessage
 
 
@@ -101,6 +101,10 @@ class SetupManager:
 
     def _cache_newly_generated_level(self, scene_prompt, generation_state):
         if not self.engine.config.settings.get("PREGENERATE_LEVELS_ON_FIRST_RUN"): return
+
+        # Bake nature modifications into the state before saving
+        nature_effects.bake_nature_modifications_into_state(generation_state)
+
         world_name = self.engine.world_name
         levels_path = file_io.join_path(self.engine.config.data_dir, 'worlds', world_name, 'levels.json')
         levels_cache = file_io.read_json(levels_path, default={})
@@ -217,7 +221,7 @@ class SetupManager:
 
         narrative_intro = generation_state.narrative_log if generation_state and generation_state.narrative_log else ""
         enhanced_prompt = f"{narrative_intro}\n\n{scene_prompt}".strip()
-        self.engine.dialogue_log.append({"speaker": "", "content": enhanced_prompt})
+        self.engine.dialogue_log.append({"speaker": "Scene Setter", "content": enhanced_prompt})
         file_io.save_active_character_files(self.engine)
         self.engine.render_queue.put(AddEventLogMessage('Setup complete. The story begins...'))
         return True

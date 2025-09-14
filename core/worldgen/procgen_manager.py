@@ -15,7 +15,7 @@ from ..ui.ui_messages import AddEventLogMessage
 from .v3_components.v3_llm import V3_LLM
 from .v3_components.pathing import Pathing
 from .v3_components.placement import Placement
-from .v3_components.map_ops import MapOps, JITTER_SCALING_FACTOR, EROSION_SCALING_FACTOR, ORGANIC_OP_SCALING_FACTOR
+from .v3_components.map_ops import MapOps
 from .v3_components.interior import Interior
 from .v3_components.converter import Converter
 from .semantic_search import SemanticSearch
@@ -92,13 +92,30 @@ class ProcGenManager:
 
     def _assign_op_budgets(self, node: FeatureNode):
         """
-        Assigns the initial operation budgets to a new feature node based on its
-        footprint size and global scaling factors.
+        Assigns cumulative operation budgets to a node based on its instance-level natures.
         """
         footprint_size = len(node.footprint)
-        node.jitter_budget = int(footprint_size * JITTER_SCALING_FACTOR)
-        node.erosion_budget = int(footprint_size * EROSION_SCALING_FACTOR)
-        node.organic_op_budget = int(footprint_size * ORGANIC_OP_SCALING_FACTOR)
+
+        # Reset budgets to 0 before accumulation
+        node.jitter_budget = 0
+        node.erosion_budget = 0
+        node.organic_op_budget = 0
+
+        for nature_name in node.natures:
+            nature_def = config.natures.get(nature_name)
+            if not nature_def:
+                continue
+
+            for op_name, op_data in nature_def.get('operations', {}).items():
+                scaling_factor = op_data.get('budget_scaling_factor', 0.0)
+                budget_increase = int(footprint_size * scaling_factor)
+
+                if op_name == 'jitter':
+                    node.jitter_budget += budget_increase
+                elif op_name == 'erosion':
+                    node.erosion_budget += budget_increase
+                elif op_name == 'organic_reshaping':
+                    node.organic_op_budget += budget_increase
 
     def _grow_subfeature_coroutine(self, node: FeatureNode, draw_callback: Callable):
         final_footprint = node.footprint.copy()

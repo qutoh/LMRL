@@ -6,7 +6,7 @@ from typing import List, Set, Tuple, Any, Optional, Callable, Generator
 
 import numpy as np
 
-from ..common import utils
+from ..common import utils, config_loader
 from ..common.localization import loc_raw
 from .v3_components.feature_node import FeatureNode
 from .v3_components.geometry_probes import find_potential_connection_points
@@ -151,3 +151,27 @@ def resolve_parent_node(chosen_parent_name: str, valid_parent_nodes: List[Featur
     if resolved: return resolved
     best_match = semantic_search.find_best_match(chosen_parent_name, [n.name for n in valid_parent_nodes])
     return next((n for n in valid_parent_nodes if n.name == best_match), None) if best_match else None
+
+
+def get_combined_feature_rules(node: FeatureNode) -> dict:
+    """
+    Merges pathfinding and intersection rules from a feature's base definition
+    and all of its natures.
+    """
+    combined_rules = {
+        'pathfinding_modifiers': [],
+        'intersects_ok': []
+    }
+
+    # First, get rules from the base feature definition
+    feature_def = config_loader.config.features.get(node.feature_type, {})
+    combined_rules['pathfinding_modifiers'].extend(feature_def.get('pathfinding_modifiers', []))
+    combined_rules['intersects_ok'].extend(feature_def.get('intersects_ok', []))
+
+    # Then, accumulate rules from each nature
+    for nature_name in node.natures:
+        nature_def = config_loader.config.natures.get(nature_name, {})
+        combined_rules['pathfinding_modifiers'].extend(nature_def.get('pathfinding_modifiers', []))
+        combined_rules['intersects_ok'].extend(nature_def.get('intersects_ok', []))
+
+    return combined_rules

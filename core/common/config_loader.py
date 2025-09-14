@@ -25,6 +25,7 @@ class Config:
         self.tile_types = self._load_json('tile_types.json', default={})
         self.travel = self._load_json('travel.json', default={})
         self.materials = self._load_json('materials.json', default={})
+        self.natures = self._load_json('natures.json', default={})
 
         # --- Programmatically ensure core definitions exist ---
         self._ensure_core_definitions()

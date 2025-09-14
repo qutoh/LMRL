@@ -26,6 +26,7 @@ class Converter:
             feature_dict = {
                 "name": node.name,
                 "type": node.feature_type,
+                "natures": node.natures,
                 "bounding_box": node.get_rect(),
                 "footprint": [list(p) for p in node.get_absolute_footprint()],
                 "interior_footprint": [list(p) for p in node.get_absolute_interior_footprint()],

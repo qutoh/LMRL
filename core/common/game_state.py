@@ -3,6 +3,7 @@
 import numpy as np
 import random
 from .config_loader import config
+from typing import Optional, Dict, List, Set, Tuple
 
 
 class LayoutGraph:
@@ -79,19 +80,76 @@ class MapArtist:
 
     def __init__(self):
         self._color_cache = {}
+        self._material_tile_cache = {}
 
-    def _get_color_for_feature(self, feature_name: str) -> tuple[int, int, int]:
-        if feature_name in self._color_cache:
-            return self._color_cache[feature_name]
+    def _find_material_override_tile(self, target_material: str, move_capability: str) -> Optional[str]:
+        """Finds a suitable tile type that matches a material and movement capability."""
+        cache_key = (target_material, move_capability)
+        if cache_key in self._material_tile_cache:
+            return self._material_tile_cache[cache_key]
 
-        seed = hash(feature_name)
-        r = (seed & 0xFF0000) >> 16
-        g = (seed & 0x00FF00) >> 8
-        b = seed & 0x0000FF
-        r, g, b = max(128, r), max(128, g), max(128, b)
-        color = (r, g, b)
-        self._color_cache[feature_name] = color
-        return color
+        for tile_name, tile_def in config.tile_types.items():
+            if target_material in tile_def.get('materials', []) and move_capability in tile_def.get('pass_methods', []):
+                self._material_tile_cache[cache_key] = tile_name
+                return tile_name
+
+        self._material_tile_cache[cache_key] = None
+        return None
+
+    def _get_nature_modified_tile_type(self, default_tile_name: str, nature_names: List[str],
+                                       used_natures: Set[str]) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Determines the final tile type for a feature part (floor/border) based on its natures,
+        applying conflict resolution policies.
+        """
+        if not nature_names or not default_tile_name:
+            return default_tile_name, None
+
+        candidates = []
+        default_tile_def = config.tile_types.get(default_tile_name, {})
+        default_materials = default_tile_def.get('materials', [])
+        default_pass_methods = default_tile_def.get('pass_methods', [])
+
+        for nature_name in nature_names:
+            nature_def = config.natures.get(nature_name, {})
+            modifiers = nature_def.get('tile_modifiers', {})
+
+            # 1. Check for direct overrides
+            if direct_override := modifiers.get('direct_overrides', {}).get(default_tile_name):
+                candidates.append({'nature': nature_name, 'tile': direct_override})
+                continue
+
+            # 2. Check for material overrides
+            for rule in modifiers.get('material_overrides', []):
+                source_material = rule.get('source_material')
+                if source_material in default_materials:
+                    move_match = rule.get('movement_capability_match')
+                    if move_match in default_pass_methods:
+                        target_tile = self._find_material_override_tile(rule.get('target_material'), move_match)
+                        if target_tile:
+                            candidates.append({'nature': nature_name, 'tile': target_tile})
+
+        if not candidates:
+            return default_tile_name, None
+
+        if len(candidates) == 1:
+            return candidates[0]['tile'], candidates[0]['nature']
+
+        # Conflict Resolution
+        policy = config.natures.get(candidates[0]['nature'], {}).get('conflict_resolution_policy', 'GREEDY')
+
+        if policy == 'RANDOM':
+            chosen = random.choice(candidates)
+            return chosen['tile'], chosen['nature']
+
+        if policy == 'BALANCED':
+            # Prioritize a nature that hasn't been used yet for this feature
+            for candidate in candidates:
+                if candidate['nature'] not in used_natures:
+                    return candidate['tile'], candidate['nature']
+
+        # Default to GREEDY (first one found)
+        return candidates[0]['tile'], candidates[0]['nature']
 
     def _get_tile_data_from_type(self, tile_type_key: str) -> tuple | None:
         tile_def = config.tile_types.get(tile_type_key)
@@ -126,14 +184,33 @@ class MapArtist:
             if not feature_type_key or feature_type_key not in features_definitions: continue
             feature_def = features_definitions[feature_type_key]
 
+            # Use baked tile types if they exist, otherwise use feature defaults modified by nature
+            if 'modified_tile_type' in feature_data:
+                final_floor_name = feature_data['modified_tile_type']
+                final_border_name = feature_data.get('modified_border_tile_type', feature_def.get('border_tile_type'))
+            else:
+                nature_names = feature_data.get('natures', [])
+                used_natures_for_feature = set()
+
+                default_floor_name = feature_def.get('tile_type')
+                default_border_name = feature_def.get('border_tile_type')
+
+                final_floor_name, used_nature_floor = self._get_nature_modified_tile_type(default_floor_name,
+                                                                                          nature_names,
+                                                                                          used_natures_for_feature)
+                if used_nature_floor: used_natures_for_feature.add(used_nature_floor)
+
+                final_border_name, _ = self._get_nature_modified_tile_type(default_border_name, nature_names,
+                                                                           used_natures_for_feature)
+
             footprint = set(map(tuple, feature_data.get('footprint', [])))
             interior_footprint = set(map(tuple, feature_data.get('interior_footprint', [])))
             border_footprint = footprint - interior_footprint
 
             if not footprint: continue
 
-            if border_footprint:
-                if border_tile_data := self._get_tile_data_from_type(feature_def.get('border_tile_type')):
+            if border_footprint and final_border_name:
+                if border_tile_data := self._get_tile_data_from_type(final_border_name):
                     border_coords = np.array(list(border_footprint))
                     if border_coords.size > 0:
                         valid_mask = (border_coords[:, 0] >= 0) & (border_coords[:, 0] < game_map.width) & \
@@ -142,8 +219,8 @@ class MapArtist:
                         if valid_coords.size > 0:
                             game_map.tiles[valid_coords[:, 0], valid_coords[:, 1]] = border_tile_data
 
-            if interior_footprint:
-                if floor_tile_data := self._get_tile_data_from_type(feature_def.get('tile_type', 'VOID_SPACE')):
+            if interior_footprint and final_floor_name:
+                if floor_tile_data := self._get_tile_data_from_type(final_floor_name):
                     floor_coords = np.array(list(interior_footprint))
                     if floor_coords.size > 0:
                         valid_mask = (floor_coords[:, 0] >= 0) & (floor_coords[:, 0] < game_map.width) & \

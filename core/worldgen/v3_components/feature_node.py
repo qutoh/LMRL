@@ -10,6 +10,7 @@ class FeatureNode:
                  parent: Optional['FeatureNode'] = None):
         self.name = name
         self.feature_type = feature_type
+        self.natures: List[str] = []
 
         self.current_x = x
         self.current_y = y

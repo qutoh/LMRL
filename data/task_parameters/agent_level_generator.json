@@ -12,6 +12,10 @@
     "source_agent": "LEVEL_GENERATOR",
     "default_adjustment": 0.1
   },
+   "PEG_V2_GET_NATURES": {
+    "task_prompt_key": "task_prompt_peg_v2_get_natures",
+    "source_agent": "LEVEL_GENERATOR"
+  },
   "PEG_V2_GET_NEXT_SUBFEATURE": {
     "task_prompt_key": "task_prompt_peg_v2_get_next_subfeature",
     "source_agent": "LEVEL_GENERATOR"

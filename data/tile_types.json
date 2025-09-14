@@ -158,6 +158,28 @@
       "·"
     ]
   },
+  "STONE_FLOOR": {
+    "description": "A stone floor.",
+    "movement_cost": 1.0,
+    "is_transparent": true,
+    "materials": [
+      "ROCK"
+    ],
+    "pass_methods": [
+      "GROUND",
+      "FLYING"
+    ],
+    "colors": [
+      [
+        166,
+        145,
+        166
+      ]
+    ],
+    "characters": [
+      "·"
+    ]
+  },
   "PATH_DIRT": {
     "description": "A dirt path.",
     "movement_cost": 1.1,
@@ -181,6 +203,72 @@
     ],
     "characters": [
       "·"
+    ]
+  },
+  "WOOD_FLOOR": {
+    "description": "Planks of wood",
+    "movement_cost": 1.1,
+    "is_transparent": true,
+    "materials": [
+      "WOOD"
+    ],
+    "pass_methods": [
+      "GROUND",
+      "FLYING"
+    ],
+    "colors": [
+      [
+        43,
+        38,
+        25
+      ]
+    ],
+    "characters": [
+      "═"
+    ]
+  },
+    "STONE_WALL": {
+    "description": "An impassable barrier made of stone.",
+    "movement_cost": 1.0,
+    "is_transparent": true,
+    "materials": [
+      "ROCK"
+    ],
+    "pass_methods": [
+      "PASS_WALL",
+      "PHASING"
+    ],
+    "colors": [
+      [
+        170,
+        170,
+        180
+      ]
+    ],
+    "characters": [
+      "#"
+    ]
+  },
+    "WOOD_WALL": {
+    "description": "An impassable barrier made of wood.",
+    "movement_cost": 1.0,
+    "is_transparent": true,
+    "materials": [
+      "ROCK"
+    ],
+    "pass_methods": [
+      "PASS_WALL",
+      "PHASING"
+    ],
+    "colors": [
+      [
+        43,
+        38,
+        25
+      ]
+    ],
+    "characters": [
+      "#"
     ]
   },
   "DEFAULT_WALL": {

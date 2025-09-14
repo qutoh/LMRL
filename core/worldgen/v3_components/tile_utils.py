@@ -5,9 +5,11 @@ import numpy as np
 
 from .feature_node import FeatureNode
 from ...common.config_loader import config
+from ..procgen_utils import get_combined_feature_rules
 
 
-def calculate_and_apply_tile_overrides(all_branches: List[FeatureNode], get_temp_grid_func: Callable[[List[FeatureNode]], np.ndarray]):
+def calculate_and_apply_tile_overrides(all_branches: List[FeatureNode],
+                                       get_temp_grid_func: Callable[[List[FeatureNode]], np.ndarray]):
     """
     Iterates through all pathing features after final placement and calculates necessary tile replacements
     based on the 'intersects_ok' rules. This should be called after all geometric operations (like jitter) are complete.
@@ -17,18 +19,27 @@ def calculate_and_apply_tile_overrides(all_branches: List[FeatureNode], get_temp
         get_temp_grid_func: A function that can generate a grid representing the current state of the map.
     """
     all_nodes = [node for branch in all_branches for node in branch.get_all_nodes_in_branch()]
-    path_nodes = [node for node in all_nodes if config.features.get(node.feature_type, {}).get('placement_strategy') == 'PATHING']
+    path_nodes = [node for node in all_nodes if
+                  config.features.get(node.feature_type, {}).get('placement_strategy') == 'PATHING']
 
     if not path_nodes:
         return
 
     # Create a single grid representing the final state of all non-path features
-    non_path_branches = [branch for branch in all_branches if branch not in path_nodes]
-    base_grid = get_temp_grid_func(non_path_branches)
+    non_path_nodes = [node for node in all_nodes if node not in path_nodes]
+
+    # Create a temporary list of branches for grid generation
+    temp_branches = []
+    for node in non_path_nodes:
+        root = node.get_root()
+        if root not in temp_branches:
+            temp_branches.append(root)
+
+    base_grid = get_temp_grid_func(temp_branches)
     reverse_tile_map = config.tile_type_map_reverse
 
     for node in path_nodes:
-        feature_def = config.features.get(node.feature_type, {})
+        combined_rules = get_combined_feature_rules(node)
         if not node.path_coords:
             continue
 
@@ -42,7 +53,7 @@ def calculate_and_apply_tile_overrides(all_branches: List[FeatureNode], get_temp
             if not existing_tile_name or existing_tile_name == "VOID_SPACE":
                 continue
 
-            for rule in feature_def.get('intersects_ok', []):
+            for rule in combined_rules.get('intersects_ok', []):
                 if rule.get('type') == existing_tile_name and 'replaces_with_floor' in rule:
                     tile_overrides[(x, y)] = rule['replaces_with_floor']
                     break  # First matching rule wins
