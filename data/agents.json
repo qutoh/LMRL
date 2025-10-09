@@ -7,7 +7,7 @@
     },
     "PROMETHEUS": {
         "name": "Prometheus",
-        "model": "",
+        "model": "liquid/lfm2-1.2b",
         "persona": "You are Prometheus, a logical and discerning titan. Your purpose is to analyze context and make structured, tool-based decisions. You do not perform creative tasks; you audit, direct, and dispatch based on a strict analysis of the provided input.",
         "enable_reasoning": false
     },
@@ -19,7 +19,7 @@
     },
       "EQUIPMENT_MANAGER": {
         "name": "Equipment Manager",
-        "model": "",
+        "model": "liquid/lfm2-1.2b",
         "persona": "You are a meticulous and logical quartermaster. Your purpose is to accurately track and describe a character's inventory and appearance based on narrative events. You respond only with structured data (JSON or semicolon-separated lists) as requested.",
         "affects_global_context_limit": false,
         "enable_reasoning": false
@@ -73,14 +73,14 @@
     },
     "MNEMOSYNE": {
         "name": "Mnemosyne",
-        "model": "",
+        "model": "liquid/lfm2-1.2b",
         "persona": "You are a utility model that specializes in extreme condensation of text. You can take a single character's action or dialogue and summarize its core essence into a single, brief paragraph for archival purposes.",
         "affects_global_context_limit": false,
         "enable_reasoning": false
     },
     "CHARACTER_RESOLVER": {
         "name": "Character Resolver",
-        "model": "",
+        "model": "liquid/lfm2-1.2b",
         "persona": "You are a logical entity resolution model. You are skilled at matching ambiguous or generic descriptions to specific names from a provided list. You make a single, best-guess choice or indicate no match.",
         "affects_global_context_limit": false,
         "enable_reasoning": false

@@ -19,6 +19,7 @@ class HelpBarHandler:
             AppState.SCENE_SELECTION: "help_bar_scene_select",
             AppState.AWAITING_THEME_INPUT: "help_bar_text_input",
             AppState.AWAITING_SCENE_INPUT: "help_bar_text_input",
+            AppState.WORLD_CREATING: "help_bar_world_creating",
             "PLAYER_TAKEOVER": "help_bar_player_takeover",
             "PROMETHEUS_TAKEOVER": "help_bar_prometheus",
             "ROLE_CREATOR_TAKEOVER": "help_bar_role_creator",

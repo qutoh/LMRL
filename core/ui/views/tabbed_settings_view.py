@@ -205,7 +205,8 @@ class ModelSettingsPage(SettingsTabPage):
 class PEGSettingsPage(SettingsTabPage):
     def __init__(self, x, y, width, height, parent_view):
         keys = ["PEG_RECONCILIATION_METHOD", "MAX_PROCGEN_FEATURES", "PREGENERATE_LEVELS_ON_FIRST_RUN",
-                "PEG_V3_JITTER_SCALE_BIAS", "PEG_V3_JITTER_DENSITY_FACTOR"]
+                "PEG_V3_JITTER_SCALE_BIAS", "PEG_V3_JITTER_DENSITY_FACTOR", "PEG_V3_MAX_DEPTH", "PEG_V3_MAX_TIME",
+                "PEG_V3_MAX_NARRATIVE_LENGTH"]
         super().__init__(x, y, width, height, keys, parent_view)
         self.keyword_options = {"PEG_RECONCILIATION_METHOD": ["CONVERSATIONAL", "PARTITIONING", "ITERATIVE_PLACEMENT"]}
 

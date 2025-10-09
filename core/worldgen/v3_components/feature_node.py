@@ -1,5 +1,3 @@
-# /core/worldgen/v3_components/feature_node.py
-
 from typing import Optional, List, Tuple, Set, Dict
 from . import shape_utils
 from ...common.config_loader import config
@@ -55,12 +53,14 @@ class FeatureNode:
         self.relocation_history: set = set()
 
         self.path_coords: Optional[List[Tuple[int, int]]] = None
+        self.centerline_coords: Optional[List[Tuple[int, int]]] = None
         self.tile_overrides: Optional[Dict[Tuple[int, int], str]] = None
 
         self.jitter_budget: int = 0
         self.erosion_budget: int = 0
         self.organic_op_budget: int = 0
         self.is_blocked: bool = False
+        self.is_interior: bool = False
 
     def get_root(self) -> 'FeatureNode':
         """Traverses up the parent chain to find the root node of this branch."""

@@ -1,5 +1,3 @@
-# /core/common/game_state.py
-
 import numpy as np
 import random
 from .config_loader import config
@@ -32,6 +30,7 @@ class GenerationState:
         self.game_map = game_map
         self.placed_features = {}
         self.character_creation_queue = []
+        self.interior_feature_queue = []
         self.door_locations = []
         self.blended_hallways = []
         self.exterior_tile_type = "DEFAULT_FLOOR"  # Default fallback
@@ -154,7 +153,8 @@ class MapArtist:
     def _get_tile_data_from_type(self, tile_type_key: str) -> tuple | None:
         tile_def = config.tile_types.get(tile_type_key)
         if not tile_def:
-            return None
+            # Fallback to a visually distinct error tile to avoid crashing
+            tile_def = config.tile_types.get("DEFAULT_WALL")
 
         color = tile_def.get("colors", [[255, 0, 255]])[0]
         char = tile_def.get("characters", ["?"])[0]
@@ -162,7 +162,7 @@ class MapArtist:
         walkable = "GROUND" in pass_methods
         transparent = tile_def.get("is_transparent", True)
         movement_cost = tile_def.get("movement_cost", 1.0)
-        terrain_type_index = config.tile_type_map.get(tile_type_key, -1)
+        terrain_type_index = config.tile_type_map.get(tile_type_key, config.tile_type_map.get("DEFAULT_WALL", -1))
 
         return (
             walkable, transparent,
@@ -171,71 +171,78 @@ class MapArtist:
             terrain_type_index
         )
 
+    def _draw_single_feature(self, game_map, feature_data, features_definitions, generation_state):
+        feature_type_key = feature_data.get('type')
+        if not feature_type_key or feature_type_key not in features_definitions: return
+        feature_def = features_definitions[feature_type_key]
+
+        if 'modified_tile_type' in feature_data:
+            final_floor_name = feature_data['modified_tile_type']
+            final_border_name = feature_data.get('modified_border_tile_type', feature_def.get('border_tile_type'))
+        else:
+            nature_names = feature_data.get('natures', [])
+            used_natures_for_feature = set()
+            default_floor_name = feature_def.get('tile_type')
+            default_border_name = feature_def.get('border_tile_type')
+            final_floor_name, used_nature_floor = self._get_nature_modified_tile_type(default_floor_name, nature_names,
+                                                                                      used_natures_for_feature)
+            if used_nature_floor: used_natures_for_feature.add(used_nature_floor)
+            final_border_name, _ = self._get_nature_modified_tile_type(default_border_name, nature_names,
+                                                                       used_natures_for_feature)
+
+        # Handle SPEC_REPLACEMENT fallback
+        if final_floor_name and config.tile_types.get(final_floor_name, {}).get("is_special_replacement", False):
+            final_floor_name = generation_state.exterior_tile_type
+        if final_border_name and config.tile_types.get(final_border_name, {}).get("is_special_replacement", False):
+            final_border_name = generation_state.exterior_tile_type
+
+        footprint = set(map(tuple, feature_data.get('footprint', [])))
+        interior_footprint = set(map(tuple, feature_data.get('interior_footprint', [])))
+        border_footprint = footprint - interior_footprint
+
+        if not footprint: return
+
+        if border_footprint and final_border_name:
+            if border_tile_data := self._get_tile_data_from_type(final_border_name):
+                border_coords = np.array(list(border_footprint))
+                if border_coords.size > 0:
+                    valid_mask = (border_coords[:, 0] >= 0) & (border_coords[:, 0] < game_map.width) & (
+                                border_coords[:, 1] >= 0) & (border_coords[:, 1] < game_map.height)
+                    valid_coords = border_coords[valid_mask]
+                    if valid_coords.size > 0:
+                        game_map.tiles[valid_coords[:, 0], valid_coords[:, 1]] = border_tile_data
+
+        if interior_footprint and final_floor_name:
+            if floor_tile_data := self._get_tile_data_from_type(final_floor_name):
+                floor_coords = np.array(list(interior_footprint))
+                if floor_coords.size > 0:
+                    valid_mask = (floor_coords[:, 0] >= 0) & (floor_coords[:, 0] < game_map.width) & (
+                                floor_coords[:, 1] >= 0) & (floor_coords[:, 1] < game_map.height)
+                    valid_coords = floor_coords[valid_mask]
+                    if valid_coords.size > 0:
+                        game_map.tiles[valid_coords[:, 0], valid_coords[:, 1]] = floor_tile_data
+
+        if tile_overrides_str := feature_data.get('tile_overrides'):
+            tile_overrides = {tuple(map(int, k.split(','))): v for k, v in tile_overrides_str.items()}
+            for (x, y), tile_name in tile_overrides.items():
+                if override_tile_data := self._get_tile_data_from_type(tile_name):
+                    if game_map.is_in_bounds(x, y):
+                        game_map.tiles[x, y] = override_tile_data
+
     def draw_map(self, game_map: 'GameMap', generation_state: 'GenerationState', features_definitions: dict):
         if not generation_state or not features_definitions: return
+
         void_space_data = self._get_tile_data_from_type("VOID_SPACE")
         if not void_space_data:
             print("FATAL ERROR: 'VOID_SPACE' not found")
             exit()
         game_map.tiles[...] = void_space_data
 
-        for feature_tag, feature_data in generation_state.placed_features.items():
-            feature_type_key = feature_data.get('type')
-            if not feature_type_key or feature_type_key not in features_definitions: continue
-            feature_def = features_definitions[feature_type_key]
+        # Draw all features
+        for tag, feature_data in generation_state.placed_features.items():
+            self._draw_single_feature(game_map, feature_data, features_definitions, generation_state)
 
-            # Use baked tile types if they exist, otherwise use feature defaults modified by nature
-            if 'modified_tile_type' in feature_data:
-                final_floor_name = feature_data['modified_tile_type']
-                final_border_name = feature_data.get('modified_border_tile_type', feature_def.get('border_tile_type'))
-            else:
-                nature_names = feature_data.get('natures', [])
-                used_natures_for_feature = set()
-
-                default_floor_name = feature_def.get('tile_type')
-                default_border_name = feature_def.get('border_tile_type')
-
-                final_floor_name, used_nature_floor = self._get_nature_modified_tile_type(default_floor_name,
-                                                                                          nature_names,
-                                                                                          used_natures_for_feature)
-                if used_nature_floor: used_natures_for_feature.add(used_nature_floor)
-
-                final_border_name, _ = self._get_nature_modified_tile_type(default_border_name, nature_names,
-                                                                           used_natures_for_feature)
-
-            footprint = set(map(tuple, feature_data.get('footprint', [])))
-            interior_footprint = set(map(tuple, feature_data.get('interior_footprint', [])))
-            border_footprint = footprint - interior_footprint
-
-            if not footprint: continue
-
-            if border_footprint and final_border_name:
-                if border_tile_data := self._get_tile_data_from_type(final_border_name):
-                    border_coords = np.array(list(border_footprint))
-                    if border_coords.size > 0:
-                        valid_mask = (border_coords[:, 0] >= 0) & (border_coords[:, 0] < game_map.width) & \
-                                     (border_coords[:, 1] >= 0) & (border_coords[:, 1] < game_map.height)
-                        valid_coords = border_coords[valid_mask]
-                        if valid_coords.size > 0:
-                            game_map.tiles[valid_coords[:, 0], valid_coords[:, 1]] = border_tile_data
-
-            if interior_footprint and final_floor_name:
-                if floor_tile_data := self._get_tile_data_from_type(final_floor_name):
-                    floor_coords = np.array(list(interior_footprint))
-                    if floor_coords.size > 0:
-                        valid_mask = (floor_coords[:, 0] >= 0) & (floor_coords[:, 0] < game_map.width) & \
-                                     (floor_coords[:, 1] >= 0) & (floor_coords[:, 1] < game_map.height)
-                        valid_coords = floor_coords[valid_mask]
-                        if valid_coords.size > 0:
-                            game_map.tiles[valid_coords[:, 0], valid_coords[:, 1]] = floor_tile_data
-
-            if tile_overrides_str := feature_data.get('tile_overrides'):
-                tile_overrides = {tuple(map(int, k.split(','))): v for k, v in tile_overrides_str.items()}
-                for (x, y), tile_name in tile_overrides.items():
-                    if override_tile_data := self._get_tile_data_from_type(tile_name):
-                        if game_map.is_in_bounds(x, y):
-                            game_map.tiles[x, y] = override_tile_data
-
+        # Draw hallways and doors
         if generation_state.blended_hallways:
             for hallway in generation_state.blended_hallways:
                 type_a = hallway['type_a']
@@ -246,9 +253,12 @@ class MapArtist:
                 floor_tile = self._get_tile_data_from_type(tile_a_def.get('tile_type', 'DEFAULT_FLOOR'))
                 wall_tile = self._get_tile_data_from_type(tile_b_def.get('border_tile_type', 'DEFAULT_WALL'))
 
+                # This check prevents a crash if a feature in a connection has no valid tile type
+                if not floor_tile or not wall_tile:
+                    continue
+
                 for x, y in hallway['tiles']:
                     if game_map.is_in_bounds(x, y):
-                        # Simple blend: floor tile for hallway, surrounded by border
                         game_map.tiles[x, y] = floor_tile
                         for dx, dy in [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]:
                             nx, ny = x + dx, y + dy
@@ -263,6 +273,7 @@ class MapArtist:
                     if door_tile_data := self._get_tile_data_from_type(tile_type):
                         game_map.tiles[pos[0], pos[1]] = door_tile_data
 
+        # Fill any remaining void space with the exterior tile
         exterior_tile_name = getattr(generation_state, 'exterior_tile_type', 'DEFAULT_FLOOR')
         if exterior_tile_data := self._get_tile_data_from_type(exterior_tile_name):
             void_mask = game_map.tiles["terrain_type"] == config.tile_type_map.get("VOID_SPACE", -1)

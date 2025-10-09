@@ -1,5 +1,3 @@
-# /core/worldgen/v3_components/map_ops.py
-
 import random
 from typing import Callable, List, Dict, Tuple, Set, Optional, Generator
 from collections import deque
@@ -53,40 +51,6 @@ class MapOps:
                 if len(component) > len(max_component):
                     max_component = component
         return max_component
-
-    def _is_proposal_valid(self, node: FeatureNode, proposal_x: int, proposal_y: int,
-                           proposal_footprint: Set[Tuple[int, int]], all_branches: List[FeatureNode]) -> bool:
-        """Validates a single proposed transformation for a single node."""
-        if not proposal_footprint:
-            return False
-
-        temp_grid_others = self.pathing._get_temp_grid(all_branches, exclude_nodes={node})
-        absolute_proposal_footprint = {(rx + proposal_x, ry + proposal_y) for rx, ry in proposal_footprint}
-
-        for px, py in absolute_proposal_footprint:
-            if not (0 <= px < self.map_width and 0 <= py < self.map_height) or \
-                    temp_grid_others[py, px] != self.pathing.void_space_index:
-                return False
-
-        original_x, original_y, original_footprint = node.current_x, node.current_y, node.footprint
-        node.current_x, node.current_y, node.footprint = proposal_x, proposal_y, proposal_footprint
-
-        if node.parent:
-            if not self.pathing.reconcile_connection(node.parent, node, all_branches,
-                                                     {node: node.get_absolute_footprint(),
-                                                      node.parent: node.parent.get_absolute_footprint()}):
-                node.current_x, node.current_y, node.footprint = original_x, original_y, original_footprint
-                return False
-
-        for child in node.subfeatures:
-            if not self.pathing.reconcile_connection(node, child, all_branches,
-                                                     {node: node.get_absolute_footprint(),
-                                                      child: child.get_absolute_footprint()}):
-                node.current_x, node.current_y, node.footprint = original_x, original_y, original_footprint
-                return False
-
-        node.current_x, node.current_y, node.footprint = original_x, original_y, original_footprint
-        return True
 
     def _propose_and_reconcile_branch_move(self, node: FeatureNode, dx: int, dy: int,
                                            branch_nodes: Set[FeatureNode], all_branches: List[FeatureNode],
@@ -214,8 +178,8 @@ class MapOps:
 
         final_footprint = self._find_main_component(eroded_footprint)
 
-        if self._is_proposal_valid(node_to_erode, node_to_erode.current_x, node_to_erode.current_y,
-                                   final_footprint, all_branches):
+        if self.placement._is_proposal_valid(node_to_erode, node_to_erode.current_x, node_to_erode.current_y,
+                                             final_footprint, all_branches):
             node_to_erode.footprint = final_footprint
             node_to_erode.interior_footprint = {
                 (x, y) for x, y in node_to_erode.footprint
@@ -290,17 +254,20 @@ class MapOps:
 
         # 5. Commit the change
         final_footprint = self._find_main_component(new_footprint)
-        node.footprint = final_footprint
-        node.interior_footprint = {
-            (x, y) for x, y in node.footprint
-            if (x + 1, y) in node.footprint and
-               (x - 1, y) in node.footprint and
-               (x, y + 1,) in node.footprint and
-               (x, y - 1) in node.footprint
-        }
-        node.update_bounding_box_from_footprint()
-        node.organic_op_budget -= 1
-        return True
+        if self.placement._is_proposal_valid(node, node.current_x, node.current_y, final_footprint, all_branches):
+            node.footprint = final_footprint
+            node.interior_footprint = {
+                (x, y) for x, y in node.footprint
+                if (x + 1, y) in node.footprint and
+                   (x - 1, y) in node.footprint and
+                   (x, y + 1,) in node.footprint and
+                   (x, y - 1) in node.footprint
+            }
+            node.update_bounding_box_from_footprint()
+            node.organic_op_budget -= 1
+            return True
+
+        return False
 
     def run_refinement_phase(self, all_branches: List[FeatureNode], on_iteration_end: Callable) -> Generator:
         """Runs the final jitter and erosion passes, spending all remaining budgets."""

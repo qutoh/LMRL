@@ -1,5 +1,3 @@
-# /core/worldgen/v3_components/v3_llm.py
-
 import json
 import random
 import re
@@ -29,11 +27,16 @@ class V3_LLM:
         """Helper to build the standardized world/scene context string."""
         return loc('prompt_substring_world_scene_context', world_theme=self.world_theme, scene_prompt=self.scene_prompt)
 
-    def _get_feature_menu_by_strategy(self, allowed_strategies: List[str]) -> str:
+    def _get_feature_menu_by_strategy(self, allowed_strategies: List[str],
+                                      exclude_strategies: Optional[List[str]] = None) -> str:
         """Generates a markdown list of feature types filtered by placement strategy."""
+        if exclude_strategies is None:
+            exclude_strategies = []
+
         menu_items = []
         for key, data in self.engine.config.features.items():
-            if data.get('placement_strategy') in allowed_strategies:
+            strategy = data.get('placement_strategy')
+            if strategy in allowed_strategies and strategy not in exclude_strategies:
                 display_name = data.get('display_name', key)
                 menu_items.append(f"- **{key}:** {display_name}")
         return "\n".join(menu_items)
@@ -123,11 +126,47 @@ class V3_LLM:
                 example_data.append(example)
             return json.dumps(example_data[0], indent=2)
 
-    def define_feature_from_sentence(self, sentence: str,
-                                     available_size_tiers: Optional[List[str]] = None) -> Dict | None:
-        """Takes a narrative sentence and converts it into a structured feature dictionary."""
-        allowed_strategies = ['BRANCHING', 'CONNECTOR', 'INTERIOR', 'PATHING']
+    def _define_feature_stepwise(self, sentence: str, allowed_strategies: List[str]) -> Dict | None:
+        """A reusable stepwise fallback for defining a feature from a sentence."""
+        utils.log_message('debug', "[PEGv3] JSON feature definition failed. Falling back to stepwise generation.")
+        name_match = re.search(r'is a (.+?) here\.', sentence, re.IGNORECASE)
+        if not name_match:
+            utils.log_message('debug',
+                              f"[PEGv3 Stepwise FAIL] Could not parse a feature name from sentence: '{sentence}'")
+            return None
+        area_name = name_match.group(1).strip()
+
         type_list_str = self._get_feature_menu_by_strategy(allowed_strategies)
+        raw_response = execute_task(self.engine, self.level_generator, 'PEG_V2_DEFINE_AREA_DATA', [],
+                                    task_prompt_kwargs={"world_scene_context": self._get_world_scene_context_str(),
+                                                        "area_name": area_name,
+                                                        "type_list_str": type_list_str})
+        feature_data = command_parser.parse_structured_command(
+            self.engine, raw_response, 'LEVEL_GENERATOR', 'CH_FIX_PEG_V2_JSON',
+            {'type_list_str': type_list_str})
+
+        if feature_data and all(k in feature_data for k in ['description', 'type', 'size_tier']):
+            feature_data['name'] = area_name
+            feature_data['description_sentence'] = sentence
+
+            nature_menu_str = self._get_nature_menu_str()
+            natures_raw = execute_task(self.engine, self.level_generator, 'PEG_V2_GET_NATURES', [],
+                                       task_prompt_kwargs={"area_description": feature_data['description'],
+                                                           "nature_menu_str": nature_menu_str})
+            feature_data['natures'] = [n.strip() for n in natures_raw.split(';') if n.strip()]
+
+            feature_def = self.engine.config.features.get(feature_data['type'], {})
+            feature_data['placement_strategy'] = feature_def.get('placement_strategy')
+            return feature_data
+
+        return None
+
+    def define_feature_from_sentence(self, sentence: str,
+                                     available_size_tiers: Optional[List[str]] = None,
+                                     exclude_strategies: Optional[List[str]] = None) -> Dict | None:
+        """Takes a narrative sentence and converts it into a structured feature dictionary."""
+        allowed_strategies = ['BRANCHING', 'CONNECTOR', 'INTERIOR', 'PATHING', 'REGION']
+        type_list_str = self._get_feature_menu_by_strategy(allowed_strategies, exclude_strategies)
         nature_menu_str = self._get_nature_menu_str()
 
         tiers_to_use = available_size_tiers or ['large', 'medium', 'small']
@@ -173,32 +212,62 @@ class V3_LLM:
                     data['size_tier'] = forced_tier
                 return data
 
-        utils.log_message('debug', "[PEGv3] JSON feature definition failed. Falling back to stepwise generation.")
-        name_match = re.search(r'is a (.+?) here\.', sentence, re.IGNORECASE)
-        area_name = name_match.group(1).strip() if name_match else "Unnamed Area"
+        return self._define_feature_stepwise(sentence, allowed_strategies)
 
-        raw_response = execute_task(self.engine, self.level_generator, 'PEG_V2_DEFINE_AREA_DATA', [],
-                                    task_prompt_kwargs={"world_scene_context": self._get_world_scene_context_str(),
-                                                        "area_name": area_name,
-                                                        "type_list_str": type_list_str})
-        feature_data = command_parser.parse_structured_command(
-            self.engine, raw_response, 'LEVEL_GENERATOR', 'CH_FIX_PEG_V2_JSON',
-            {'type_list_str': type_list_str})
+    def define_interior_feature_from_sentence(self, sentence: str) -> Dict | None:
+        """
+        A constrained version of define_feature_from_sentence that only allows INTERIOR features or CHARACTERs.
+        """
+        allowed_strategies = ['INTERIOR']  # Only allow interior features
+        type_list_str = self._get_feature_menu_by_strategy(allowed_strategies)
+        nature_menu_str = self._get_nature_menu_str()
 
-        if feature_data and all(k in feature_data for k in ['description', 'type', 'size_tier']):
-            feature_data['name'] = area_name
-            feature_data['description_sentence'] = sentence
+        tiers_to_use = ['medium', 'small']
+        example_response = self._generate_dynamic_example(allowed_strategies, 1, 'single', tiers_to_use)
 
-            # Stepwise nature generation
-            nature_menu_str = self._get_nature_menu_str()
-            natures_raw = execute_task(self.engine, self.level_generator, 'PEG_V2_GET_NATURES', [],
-                                       task_prompt_kwargs={"area_description": feature_data['description'],
-                                                           "nature_menu_str": nature_menu_str})
-            feature_data['natures'] = [n.strip() for n in natures_raw.split(';') if n.strip()]
+        size_tier_examples = {
+            'medium': "medium (e.g., 'a medium-sized table', 'a large rug')",
+            'small': "small (e.g., 'a small chest', 'a single chair', 'a discarded book')"
+        }
+        size_tier_list_str = "\n- ".join([desc for tier, desc in size_tier_examples.items() if tier in tiers_to_use])
+        if size_tier_list_str:
+            size_tier_list_str = "- " + size_tier_list_str
 
-            return feature_data
+        kwargs = {
+            "world_scene_context": self._get_world_scene_context_str(),
+            "sentence": sentence,
+            "type_list_str": type_list_str,
+            "nature_menu_str": nature_menu_str,
+            "example_response": example_response,
+            "size_tier_list_str": size_tier_list_str
+        }
+        raw_response = execute_task(self.engine, self.level_generator, 'PEG_CREATE_FEATURE_JSON', [],
+                                    task_prompt_kwargs=kwargs)
 
-        return None
+        command = command_parser.parse_structured_command(
+            self.engine, raw_response, 'LEVEL_GENERATOR',
+            fallback_task_key='CH_FIX_PEG_JSON',
+            fallback_prompt_kwargs={'type_list_str': type_list_str}
+        )
+
+        if command and command.get('type'):
+            if command['type'] == 'CHARACTER':
+                return {'type': 'CHARACTER', 'name': command.get('name', 'Unnamed Character'),
+                        'source_sentence': sentence}
+
+            feature_def = self.engine.config.features.get(command['type'], {})
+            if feature_def.get('placement_strategy') == 'INTERIOR':
+                required_keys = ['name', 'description', 'type', 'dimensions']
+                if all(k in command for k in required_keys):
+                    data = command.copy()
+                    data['placement_strategy'] = 'INTERIOR'
+                    parsed_dims = parse_dimensions_from_text(data['dimensions'])
+                    data['size_tier'] = parsed_dims[2] if parsed_dims else 'small'
+                    if forced_tier := feature_def.get('force_size_tier'):
+                        data['size_tier'] = forced_tier
+                    return data
+
+        return self._define_feature_stepwise(sentence, allowed_strategies)
 
     def _get_initial_features_stepwise(self) -> List[Dict]:
         """Fallback method to generate initial features one step at a time."""
@@ -233,7 +302,7 @@ class V3_LLM:
 
     def get_initial_features(self) -> List[Dict]:
         """Uses a single-shot JSON prompt to get all initial features, with a stepwise fallback."""
-        allowed_strategies = ['BRANCHING', 'PATHING']
+        allowed_strategies = ['BRANCHING', 'PATHING', 'REGION']
         type_list_str = self._get_feature_menu_by_strategy(allowed_strategies)
         nature_menu_str = self._get_nature_menu_str()
         example_response = self._generate_dynamic_example(allowed_strategies, 3, 'list')
@@ -420,9 +489,28 @@ class V3_LLM:
         return execute_task(self.engine, self.level_generator, 'PEG_V3_CREATE_NEARBY_FEATURE_SENTENCE', [],
                             task_prompt_kwargs=kwargs)
 
+    def add_feature_to_empty_region(self, region_name: str, region_description: str) -> str:
+        """Generates the first descriptive sentence for a feature inside an empty region."""
+        kwargs = {
+            "world_scene_context": self._get_world_scene_context_str(),
+            "region_name": region_name,
+            "region_description": region_description
+        }
+        return execute_task(self.engine, self.level_generator, 'PEG_V3_ADD_FEATURE_TO_EMPTY_REGION', [],
+                            task_prompt_kwargs=kwargs)
+
     def choose_exterior_tile(self, scene_prompt: str, tile_options_str: str) -> str:
         """Asks the LLM to choose a base tile for the map's exterior."""
-        kwargs = {"scene_prompt": scene_prompt, "tile_options_str": tile_options_str}
+        # Filter out special replacement tiles from the options presented to the LLM
+        filtered_tiles = {
+            name: data for name, data in self.engine.config.tile_types.items()
+            if name != "VOID_SPACE" and not data.get("is_special_replacement", False)
+        }
+        filtered_options_str = "\n".join(
+            f"- `{name}`: {data.get('description', 'No description.')}" for name, data in filtered_tiles.items()
+        )
+
+        kwargs = {"scene_prompt": scene_prompt, "tile_options_str": filtered_options_str}
         return execute_task(self.engine, self.level_generator, 'PEG_V3_CHOOSE_EXTERIOR_TILE', [],
                             task_prompt_kwargs=kwargs)
 
@@ -438,12 +526,13 @@ class V3_LLM:
         return execute_task(self.engine, self.level_generator, 'PEG_V3_DECIDE_CONNECTOR_STRATEGY', [],
                             task_prompt_kwargs=kwargs)
 
-    def create_connector_child(self, grandparent_node: 'FeatureNode', connector_node: 'FeatureNode') -> dict | None:
+    def create_connector_child(self, grandparent_node: 'FeatureNode', connector_data: dict) -> dict | None:
         """Generates the definition for a new feature at the end of a seeded connector."""
         context_kwargs = {
             "world_scene_context": self._get_world_scene_context_str(),
             "starting_area_description": grandparent_node.narrative_log,
-            "passage_description": connector_node.narrative_log
+            "connector_name": connector_data.get('name', 'passage'),
+            "connector_description": connector_data.get('description', 'an undescribed passage')
         }
         result = execute_task(self.engine, self.level_generator, 'PEG_V3_CREATE_CONNECTOR_CHILD', [],
                               task_prompt_kwargs=context_kwargs)
@@ -456,3 +545,78 @@ class V3_LLM:
         except (json.JSONDecodeError, TypeError):
             pass
         return self.define_feature_from_sentence(result)
+
+    def choose_placement_keyword(self, narrative_log: str, new_feature_sentence: str, can_be_region: bool) -> str:
+        """Asks the LLM to choose a simple placement strategy keyword."""
+        region_option_text = "- **REGION**: Groups the current area with other separate areas into a large geographical region." if can_be_region else ""
+        kwargs = {
+            "world_scene_context": self._get_world_scene_context_str(),
+            "narrative_log": narrative_log,
+            "new_feature_sentence": new_feature_sentence,
+            "region_option_text": region_option_text
+        }
+        raw_response = execute_task(self.engine, self.level_generator, 'PEG_CHOOSE_PLACEMENT_KEYWORD', [],
+                                    task_prompt_kwargs=kwargs)
+        return raw_response.strip().upper()
+
+    def choose_branches_for_region(self, new_region_name: str, narrative_branch_name: str,
+                                   available_branches: List[str]) -> List[str]:
+        """Asks the LLM to choose which branches to group into a new region."""
+        kwargs = {
+            "world_scene_context": self._get_world_scene_context_str(),
+            "new_region_name": new_region_name,
+            "narrative_branch_name": narrative_branch_name,
+            "available_branches_list": "\n".join(f"- {name}" for name in available_branches)
+        }
+        raw_response = execute_task(self.engine, self.level_generator, 'PEG_CHOOSE_BRANCHES_FOR_REGION', [],
+                                    task_prompt_kwargs=kwargs)
+        if "none" in raw_response.lower():
+            return []
+
+        return [name.strip() for name in raw_response.split(';') if name.strip()]
+
+    def assign_features_to_regions(self, region_specs: List[Dict], feature_specs: List[Dict]) -> Dict:
+        """Asks the LLM to assign features to the most logical region."""
+        if not region_specs or not feature_specs:
+            return {}
+
+        regions_list_str = "\n".join(f"- {r['name']}: {r['description_sentence']}" for r in region_specs)
+        features_list_str = "\n".join(f"- {f['name']}: {f['description_sentence']}" for f in feature_specs)
+
+        kwargs = {
+            "world_scene_context": self._get_world_scene_context_str(),
+            "regions_list_str": regions_list_str,
+            "features_list_str": features_list_str
+        }
+
+        raw_response = execute_task(self.engine, self.level_generator, 'PEG_ASSIGN_FEATURES_TO_REGIONS', [],
+                                    task_prompt_kwargs=kwargs)
+
+        command = command_parser.parse_structured_command(
+            self.engine, raw_response, 'LEVEL_GENERATOR',
+            fallback_task_key='CH_FIX_PROCGEN'
+        )
+
+        if command and isinstance(command, dict):
+            # Validate that the response makes sense
+            valid_region_names = {r['name'] for r in region_specs}
+            valid_feature_names = {f['name'] for f in feature_specs}
+            validated_assignments = {
+                f_name: r_name for f_name, r_name in command.items()
+                if f_name in valid_feature_names and r_name in valid_region_names
+            }
+            return validated_assignments
+
+        return {}
+
+    def choose_interior_location(self, feature_data: Dict, container_options: List[str]) -> str:
+        """Asks the LLM to choose a parent container for an interior feature."""
+        kwargs = {
+            "world_scene_context": self._get_world_scene_context_str(),
+            "feature_name": feature_data.get('name', 'this item'),
+            "feature_description": feature_data.get('description', 'this item'),
+            "container_list": "\n".join(f"- {name}" for name in container_options)
+        }
+        raw_response = execute_task(self.engine, self.level_generator, 'PEG_CHOOSE_INTERIOR_LOCATION', [],
+                                    task_prompt_kwargs=kwargs)
+        return raw_response.strip()

@@ -1,5 +1,3 @@
-# /core/common/utils.py
-
 import re
 from datetime import datetime, timedelta
 
@@ -31,8 +29,10 @@ def format_text_with_paragraph_breaks(text: str, sentences_per_paragraph: int = 
 class _Logger:
     def __init__(self):
         self.render_queue = None
+
     def configure(self, render_queue=None):
         self.render_queue = render_queue
+
     def log(self, level, message, **kwargs):
         log_level_setting = config.settings.get('LOG_LEVEL', 'debug')
         setting_val = LOG_HIERARCHY.get(log_level_setting, 2)
@@ -102,8 +102,10 @@ def serialize_character_for_prompt(character: dict) -> str:
 
 def format_timedelta_natural_language(delta: timedelta) -> str:
     seconds = int(delta.total_seconds())
+
     def _plural(n, unit):
         return f"{n} {unit}{'s' if n > 1 else ''}"
+
     if seconds < 1: return "just now"
     if seconds < 60: return f"{_plural(seconds, 'second')} ago"
     minutes = seconds // 60
@@ -217,6 +219,7 @@ class PromptBuilder:
         messages = self.build()
         return persona, messages
 
+
 def count_tokens(text):
     encoding = tiktoken.get_encoding("cl100k_base")
     return len(encoding.encode(text))
@@ -282,7 +285,6 @@ def print_ascii_cost_grid(title: str, cost_grid_yx: np.ndarray, start_xy: tuple,
         A formatted, multi-line string representing the cost grid.
     """
 
-
     header = f"--- {title} ---"
     lines = [header]
     height, width = cost_grid_yx.shape
@@ -301,6 +303,26 @@ def print_ascii_cost_grid(title: str, cost_grid_yx: np.ndarray, start_xy: tuple,
         lines.append(line)
     lines.append("-" * len(header))
     return "\n".join(lines)
+
+
+def point_in_poly(x: int, y: int, poly: list[tuple[int, int]]) -> bool:
+    """
+    Determines if a point is inside a given polygon using the ray casting algorithm.
+    """
+    n = len(poly)
+    inside = False
+    p1x, p1y = poly[0]
+    for i in range(n + 1):
+        p2x, p2y = poly[i % n]
+        if y > min(p1y, p2y):
+            if y <= max(p1y, p2y):
+                if x <= max(p1x, p2x):
+                    if p1y != p2y:
+                        xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                    if p1x == p2x or x <= xinters:
+                        inside = not inside
+        p1x, p1y = p2x, p2y
+    return inside
 
 
 def get_chosen_name_from_response(response_text):

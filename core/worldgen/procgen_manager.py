@@ -1,9 +1,8 @@
-# /core/worldgen/procgen_manager.py
-
 import re
 import numpy as np
 from collections import deque
 import random
+import queue
 
 from core.common.config_loader import config
 from core.common.game_state import GenerationState
@@ -66,10 +65,12 @@ class ProcGenManager:
             nodes_to_draw = all_nodes_in_map
 
         for node in nodes_to_draw:
+            feature_def = config.features.get(node.feature_type, {})
+
             footprint = node.get_absolute_footprint()
             interior_footprint = node.get_absolute_interior_footprint()
             if not footprint: continue
-            feature_def = config.features.get(node.feature_type, {})
+
             if border_tile_type := feature_def.get('border_tile_type'):
                 if config.tile_type_map.get(border_tile_type):
                     border_coords = np.array(list(footprint - interior_footprint))
@@ -293,11 +294,19 @@ class ProcGenManager:
                                           scene_prompt)
             state = architect_v2.generate_layout(callback)
         elif algorithm == "ITERATIVE_PLACEMENT":
-            architect_v3 = MapArchitectV3(self, game_map, getattr(self.engine, 'world_theme', 'fantasy'),
+            architect_v3 = MapArchitectV3(self, game_map, self.engine.game_state,
+                                          getattr(self.engine, 'world_theme', 'fantasy'),
                                           scene_prompt)
             gen = architect_v3.generate_layout_in_steps(callback)
             for _, final_state_obj in gen:
                 state = final_state_obj
+                try:
+                    message = self.engine.input_queue.get_nowait()
+                    if message == '__INTERRUPT_GENERATION__':
+                        utils.log_message('debug', "[ProcGen] Manual interrupt received. Finalizing level generation.")
+                        architect_v3.manual_stop_generation = True
+                except queue.Empty:
+                    pass
         else:
             architect = MapArchitect(self.engine, game_map, getattr(self.engine, 'world_theme', 'fantasy'),
                                      scene_prompt)

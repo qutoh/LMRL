@@ -56,6 +56,34 @@
     "enable_reasoning": false,
     "description": "Asks the LLM to choose a starting point for a new, independent path feature from a list of options."
   },
+  "PEG_V3_ADD_FEATURE_TO_EMPTY_REGION": {
+    "task_prompt_key": "task_prompt_peg_v3_add_feature_to_empty_region",
+    "source_agent": "LEVEL_GENERATOR",
+    "description": "Creates the first seed feature inside an otherwise empty region."
+  },
+  "PEG_ASSIGN_FEATURES_TO_REGIONS": {
+    "task_prompt_key": "task_prompt_peg_assign_features_to_regions",
+    "source_agent": "LEVEL_GENERATOR",
+    "description": "Assigns initial features to appropriate container regions."
+  },
+  "PEG_CHOOSE_PLACEMENT_KEYWORD": {
+    "task_prompt_key": "task_prompt_peg_choose_placement_keyword",
+    "source_agent": "LEVEL_GENERATOR",
+    "enable_reasoning": false,
+    "description": "Asks the LLM to choose a placement strategy (INSIDE, OUTSIDE, NEARBY) for a new feature."
+  },
+  "PEG_CHOOSE_BRANCHES_FOR_REGION": {
+    "task_prompt_key": "task_prompt_peg_choose_branches_for_region",
+    "source_agent": "LEVEL_GENERATOR",
+    "enable_reasoning": false,
+    "description": "Asks the LLM to select which branches to group into a new region."
+  },
+  "PEG_CHOOSE_INTERIOR_LOCATION": {
+    "task_prompt_key": "task_prompt_peg_choose_interior_location",
+    "source_agent": "LEVEL_GENERATOR",
+    "enable_reasoning": false,
+    "description": "Asks the LLM to choose a parent feature to place a deferred interior item inside."
+  },
   "PEG_V3_CREATE_NEARBY_FEATURE_SENTENCE": {
     "task_prompt_key": "task_prompt_peg_v3_create_nearby_feature_sentence",
     "source_agent": "LEVEL_GENERATOR",

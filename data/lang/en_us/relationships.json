@@ -5,6 +5,7 @@
   "relationships_data": {
     "hierarchical": [
       "INSIDE",
+      "OUTSIDE",
       "NEARBY",
       "REGION"
     ],

@@ -209,6 +209,11 @@ class UIManager:
                 return
 
             if isinstance(converted_event, tcod.event.KeyDown):
+                if self.app.app_state == AppState.WORLD_CREATING and self.input_queue:
+                    if converted_event.sym == tcod.event.KeySym.F6:
+                        self.input_queue.put('__INTERRUPT_GENERATION__')
+                        self.event_log.add_message("Generation stop requested...", (255, 200, 100))
+                        continue
                 if self.app.app_state == AppState.GAME_RUNNING and self.input_queue:
                     key = converted_event.sym
                     if key == tcod.event.KeySym.F7:

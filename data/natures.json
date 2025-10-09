@@ -11,6 +11,10 @@
     },
     "tile_modifiers": {
        "direct_overrides": {
+		"REGION_TILE": "PATH_DIRT",
+		 "REGION_BORDER_TILE": "STONE_WALL",
+		 "REGION_LIQUID_TILE": "WATER",
+		 "REGION_BORDER_LIQUID_TILE": "WATER_SHALLOW",
         "PATH_FLOOR": "PATH_DIRT"
       }
     },
@@ -36,7 +40,14 @@
         "budget_scaling_factor": 0.6
       }
     },
-    "tile_modifiers": {}
+    "tile_modifiers": {
+       "direct_overrides": {
+		"REGION_TILE": "PATH_DIRT",
+		 "REGION_BORDER_TILE": "STONE_WALL",
+		 "REGION_LIQUID_TILE": "WATER",
+		 "REGION_BORDER_LIQUID_TILE": "WATER_SHALLOW"
+	   }
+    }
   },
   "ARTIFICIAL": {
     "description": "Represents features that are constructed with refined or advanced techniques.",
@@ -48,6 +59,10 @@
 	
     "tile_modifiers": {
 	  "direct_overrides": {
+			"REGION_TILE": "PATH_FLOOR",
+			"REGION_BORDER_TILE": "STONE_WALL",
+		 	"REGION_LIQUID_TILE": "WATER_TREATED",
+		 	"REGION_BORDER_LIQUID_TILE": "WATER_TREATED_SHALLOW",
             "PATH_DIRT": "PATH_FLOOR"
         }
 	},
@@ -73,6 +88,10 @@
     "operations": {},
     "tile_modifiers": {
       "direct_overrides": {
+		"REGION_TILE": "STONE_FLOOR",
+		"REGION_BORDER_TILE": "STONE_WALL",
+		 "REGION_LIQUID_TILE": "WATER",
+		 "REGION_BORDER_LIQUID_TILE": "WATER_SHALLOW",
         "DEFAULT_FLOOR": "STONE_FLOOR",
         "DEFAULT_BRIGHT_FLOOR": "STONE_FLOOR",
         "DEFAULT_WALL": "STONE_WALL"
@@ -86,6 +105,10 @@
     "operations": {},
     "tile_modifiers": {
       "direct_overrides": {
+		"REGION_TILE": "WOOD_FLOOR",
+		"REGION_BORDER_TILE": "WOOD_WALL",
+		 "REGION_LIQUID_TILE": "WATER",
+		 "REGION_BORDER_LIQUID_TILE": "WATER_SHALLOW",
         "DEFAULT_FLOOR": "WOOD_FLOOR",
         "DEFAULT_BRIGHT_FLOOR": "WOOD_FLOOR",
         "DEFAULT_WALL": "WOOD_WALL"
@@ -98,6 +121,10 @@
     "operations": {},
     "tile_modifiers": {
       "direct_overrides": {
+		"REGION_TILE": "GRASS_UNDERGROWTH",
+		"REGION_BORDER_TILE": "LEAVES",
+		 "REGION_LIQUID_TILE": "WATER",
+		 "REGION_BORDER_LIQUID_TILE": "WATER_SHALLOW",
         "DEFAULT_WALL": "LEAVES",
         "DEFAULT_FLOOR": "GRASS_UNDERGROWTH"
       }
@@ -112,7 +139,11 @@
 	},
     "tile_modifiers": {
       "direct_overrides": {
-        "DEFAULT_LIQUID_FILLER": "RIVER_WATER"
+		"REGION_TILE": "WATER_RAPIDS",
+		"REGION_BORDER_TILE": "WATER_SHALLOW",
+		 "REGION_LIQUID_TILE": "WATER_RAPIDS",
+		 "REGION_BORDER_LIQUID_TILE": "WATER_SHALLOW",
+        "WATER": "WATER_RAPIDS"
       }
     },
     "pathfinding_modifiers": [
@@ -133,7 +164,11 @@
     "operations": {},
     "tile_modifiers": {
       "direct_overrides": {
-        "DEFAULT_LIQUID_FILLER": "TREATED_WATER"
+		"REGION_TILE": "WATER_TREATED",
+		"REGION_BORDER_TILE": "WATER_TREATED_SHALLOW",
+		 "REGION_LIQUID_TILE": "WATER_TREATED",
+		 "REGION_BORDER_LIQUID_TILE": "WATER_TREATED_SHALLOW",
+        "WATER": "WATER_TREATED"
       }
     }
   },
@@ -146,7 +181,10 @@
 	},
     "tile_modifiers": {
       "direct_overrides": {
-        "DEFAULT_LIQUID_FILLER": "NATURAL_WATER"
+		"REGION_TILE": "WATER",
+		"REGION_BORDER_TILE": "WATER_SHALLOW",
+		 "REGION_LIQUID_TILE": "WATER",
+		 "REGION_BORDER_LIQUID_TILE": "WATER_SHALLOW"
       }
     }
   },
@@ -155,7 +193,11 @@
     "operations": {},
     "tile_modifiers": {
       "direct_overrides": {
-        "DEFAULT_LIQUID_FILLER": "SHALLOW_WATER"
+		"REGION_TILE": "WATER_SHALLOW",
+		"REGION_BORDER_TILE": "WATER_SHALLOW",
+		 "REGION_LIQUID_TILE": "WATER_SHALLOW",
+		 "REGION_BORDER_LIQUID_TILE": "WATER_SHALLOW",
+        "WATER": "WATER_SHALLOW"
       }
     }
   }

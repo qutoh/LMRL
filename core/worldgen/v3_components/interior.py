@@ -1,5 +1,3 @@
-# /core/worldgen/v3_components/interior.py
-
 import random
 from typing import Generator, Tuple, Callable
 
@@ -48,13 +46,13 @@ class Interior:
                 w = max(w, MIN_FEATURE_SIZE)
                 h = max(h, MIN_FEATURE_SIZE)
 
-            if placement := self._find_placement((w, h), parent, feature_def):
+            if placement := self._find_placement((w, h), parent, feature_def, all_branches):
                 x, y = placement
                 feature_data['bounding_box'] = (x, y, x + w, y + h)
                 parent.placed_interior_features.append(feature_data)
                 return
 
-    def _find_placement(self, size: Tuple[int, int], parent: FeatureNode, feature_def: dict) -> Tuple[int, int] | None:
+    def _find_placement(self, size: Tuple[int, int], parent: FeatureNode, feature_def: dict, all_branches: list[FeatureNode]) -> Tuple[int, int] | None:
         w, h = size
         px, py, pw, ph = parent.get_rect()
 

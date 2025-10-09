@@ -1,7 +1,101 @@
 {
+  "REGION_BORDER_LIQUID_TILE": {
+    "description": "A tile for visualizing the border of a generated liquid region.",
+    "movement_cost": 1,
+	"is_special_replacement": true,
+    "is_transparent": true,
+    "materials": [
+      "NONE"
+    ],
+    "pass_methods": [
+	  "SWIM",
+      "FLYING"
+    ],
+    "colors": [
+      [
+        50,
+        50,
+        150
+      ]
+    ],
+    "characters": [
+      "X"
+    ]
+  },
+  "REGION_LIQUID_TILE": {
+    "description": "A tile for visualizing the extent of a generated region.",
+    "movement_cost": 1,
+	"is_special_replacement": true,
+    "is_transparent": true,
+    "materials": [
+      "DIRT"
+    ],
+    "pass_methods": [
+	  "SWIM",
+      "GROUND",
+      "FLYING"
+    ],
+    "colors": [
+      [
+        50,
+        50,
+        150
+      ]
+    ],
+    "characters": [
+      "."
+    ]
+  },
+  "REGION_BORDER_TILE": {
+    "description": "A tile for visualizing the border of a generated region.",
+    "movement_cost": 1,
+	"is_special_replacement": true,
+    "is_transparent": true,
+    "materials": [
+      "NONE"
+    ],
+    "pass_methods": [
+	  "PASS_WALL",
+	  "PHASING",
+      "FLYING"
+    ],
+    "colors": [
+      [
+        50,
+        50,
+        50
+      ]
+    ],
+    "characters": [
+      "X"
+    ]
+  },
+  "REGION_TILE": {
+    "description": "A tile for visualizing the extent of a generated region.",
+    "movement_cost": 1,
+	"is_special_replacement": true,
+    "is_transparent": true,
+    "materials": [
+      "DIRT"
+    ],
+    "pass_methods": [
+      "SWIM",
+      "FLYING"
+    ],
+    "colors": [
+      [
+        150,
+        50,
+        50
+      ]
+    ],
+    "characters": [
+      "."
+    ]
+  },
   "DEFAULT_FLOOR": {
     "description": "A basic, walkable floor surface.",
-    "movement_cost": 1.0,
+    "movement_cost": 1,
     "is_transparent": true,
     "materials": [
       "ROCK"
@@ -45,7 +139,7 @@
   },
   "WOOD": {
     "description": "An impassable section of wood.",
-    "movement_cost": 1.0,
+    "movement_cost": 1,
     "is_transparent": true,
     "materials": [
       "WOOD"
@@ -67,14 +161,14 @@
   },
   "FENCE": {
     "description": "A section of fencing, passable with effort.",
-    "movement_cost": 4.0,
+    "movement_cost": 4,
     "is_transparent": true,
     "materials": [
       "WOOD"
     ],
     "pass_methods": [
       "PASS_WALL",
-	  "GROUND",
+      "GROUND",
       "PHASING"
     ],
     "colors": [
@@ -90,14 +184,14 @@
   },
   "FENCE_GATE": {
     "description": "A wooden gate for a fence.",
-    "movement_cost": 1.0,
+    "movement_cost": 1,
     "is_transparent": true,
     "materials": [
       "WOOD"
     ],
     "pass_methods": [
       "PASS_WALL",
-	  "GROUND",
+      "GROUND",
       "PHASING"
     ],
     "colors": [
@@ -113,7 +207,7 @@
   },
   "DEFAULT_BRIGHT_FLOOR": {
     "description": "A walkable floor surface.",
-    "movement_cost": 1.0,
+    "movement_cost": 1,
     "is_transparent": true,
     "materials": [
       "ROCK"
@@ -135,7 +229,7 @@
   },
   "PATH_FLOOR": {
     "description": "A worn path.",
-    "movement_cost": 1.0,
+    "movement_cost": 1,
     "is_transparent": true,
     "materials": [
       "DIRT",
@@ -160,7 +254,7 @@
   },
   "STONE_FLOOR": {
     "description": "A stone floor.",
-    "movement_cost": 1.0,
+    "movement_cost": 1,
     "is_transparent": true,
     "materials": [
       "ROCK"
@@ -227,9 +321,9 @@
       "═"
     ]
   },
-    "STONE_WALL": {
+  "STONE_WALL": {
     "description": "An impassable barrier made of stone.",
-    "movement_cost": 1.0,
+    "movement_cost": 1,
     "is_transparent": true,
     "materials": [
       "ROCK"
@@ -249,9 +343,9 @@
       "#"
     ]
   },
-    "WOOD_WALL": {
+  "WOOD_WALL": {
     "description": "An impassable barrier made of wood.",
-    "movement_cost": 1.0,
+    "movement_cost": 1,
     "is_transparent": true,
     "materials": [
       "ROCK"
@@ -273,7 +367,7 @@
   },
   "DEFAULT_WALL": {
     "description": "An impassable barrier.",
-    "movement_cost": 1.0,
+    "movement_cost": 1,
     "is_transparent": true,
     "materials": [
       "ROCK"
@@ -295,7 +389,7 @@
   },
   "DEFAULT_DOOR": {
     "description": "A standard door or portal.",
-    "movement_cost": 1.0,
+    "movement_cost": 1,
     "is_transparent": true,
     "materials": [
       "WOOD",
@@ -319,7 +413,7 @@
   },
   "WATER": {
     "description": "Shimmering water, difficult to traverse.",
-    "movement_cost": 2.0,
+    "movement_cost": 2,
     "is_transparent": true,
     "materials": [
       "WATER_UNSAFE"
@@ -342,7 +436,7 @@
   },
   "WATER_RAPIDS": {
     "description": "Rapidly flowing water, difficult to traverse.",
-    "movement_cost": 3.0,
+    "movement_cost": 3,
     "is_transparent": true,
     "materials": [
       "WATER_UNSAFE"
@@ -389,7 +483,7 @@
   },
   "WATER_TREATED": {
     "description": "Clean, drinkable, difficult to traverse.",
-    "movement_cost": 2.0,
+    "movement_cost": 2,
     "is_transparent": true,
     "materials": [
       "WATER_SAFE"
@@ -412,7 +506,7 @@
   },
   "WATER_TREATED_SHALLOW": {
     "description": "Clean, drinkable, shallow enough to walk through.",
-    "movement_cost": 2.0,
+    "movement_cost": 2,
     "is_transparent": true,
     "materials": [
       "WATER_SAFE"
@@ -435,7 +529,7 @@
   },
   "STEPPING_STONES": {
     "description": "A series of flat rocks allowing passage over an obstacle.",
-    "movement_cost": 1.0,
+    "movement_cost": 1,
     "is_transparent": true,
     "materials": [
       "ROCK"
@@ -457,7 +551,7 @@
   },
   "MARKER_STONE": {
     "description": "A carved stone marking a threshold or boundary.",
-    "movement_cost": 1.0,
+    "movement_cost": 1,
     "is_transparent": true,
     "materials": [
       "ROCK"

@@ -1,5 +1,3 @@
-# /core/common/config_loader.py
-
 from . import file_io
 from .localization import loc
 
@@ -29,6 +27,7 @@ class Config:
 
         # --- Programmatically ensure core definitions exist ---
         self._ensure_core_definitions()
+        self._validate_feature_definitions()
 
         self.tile_type_map = {name: i for i, name in enumerate(self.tile_types.keys())}
         self.tile_type_map_reverse = {i: name for name, i in self.tile_type_map.items()}
@@ -61,6 +60,14 @@ class Config:
                 "characters": [" "]
             }
 
+        if "DEFAULT_WALL" not in self.tile_types:
+            self.tile_types["DEFAULT_WALL"] = {
+                "description": "An impassable barrier.",
+                "movement_cost": 1.0, "is_transparent": True, "materials": ["ROCK"],
+                "pass_methods": ["PASS_WALL", "PHASING"],
+                "colors": [[150, 150, 150]], "characters": ["#"]
+            }
+
         if "CHARACTER" not in self.features:
             self.features["CHARACTER"] = {
                 "display_name": "A character or creature.",
@@ -68,6 +75,16 @@ class Config:
                 "placement_strategy": "SPECIAL_FUNC",
                 "border_thickness": 0
             }
+
+    def _validate_feature_definitions(self):
+        """Checks for common errors in feature definitions at startup."""
+        for name, feature_def in self.features.items():
+            if tt := feature_def.get('tile_type'):
+                if tt not in self.tile_types:
+                    print(f"WARNING: Feature '{name}' uses non-existent tile_type '{tt}'.")
+            if btt := feature_def.get('border_tile_type'):
+                if btt not in self.tile_types:
+                    print(f"WARNING: Feature '{name}' uses non-existent border_tile_type '{btt}'.")
 
     def _load_task_parameters(self) -> dict:
         """Loads and merges all task parameter JSON files from the dedicated directory."""

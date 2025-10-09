@@ -1,4 +1,48 @@
 {
+  "GENERIC_REGION": {
+    "display_name": "A large, named geographical area that contains other features. MUST be given at least one nature.",
+    "feature_type": "REGION",
+    "placement_strategy": "REGION",
+    "is_shrinkable": false,
+    "tile_type": "REGION_TILE",
+    "border_tile_type": "REGION_TILE",
+    "shape": "rectangle",
+    "border_thickness": 1,
+    "state": "default"
+  },
+    "GENERIC_SOLID_REGION": {
+    "display_name": "A large, named geographical area that contains other features and that is impassible by normal means except through them, such as an underground or indoors area. MUST be given at least one nature.",
+    "feature_type": "REGION",
+    "placement_strategy": "REGION",
+    "is_shrinkable": false,
+    "tile_type": "REGION_BORDER_TILE",
+    "border_tile_type": "REGION_BORDER_TILE",
+    "shape": "rectangle",
+    "border_thickness": 1,
+    "state": "default"
+  },
+  "GENERIC_LIQUID_REGION": {
+    "display_name": "A large, named geographical area that contains other features and that is impassible by normal means except through them or by swimming, such as a large lake or ocean boundary. MUST be given at least one nature.",
+    "feature_type": "REGION",
+    "placement_strategy": "REGION",
+    "is_shrinkable": false,
+    "tile_type": "REGION_LIQUID_TILE",
+    "border_tile_type": "REGION_BORDER_LIQUID_TILE",
+    "shape": "rectangle",
+    "border_thickness": 1,
+    "state": "default"
+  },
+    "GENERIC_WALLED_REGION": {
+    "display_name": "A large, named geographical area that contains other features and that is walkable except for its perimeter, such as a city wall. MUST be given at least one nature.",
+    "feature_type": "REGION",
+    "placement_strategy": "REGION",
+    "is_shrinkable": false,
+    "tile_type": "REGION_TILE",
+    "border_tile_type": "REGION_BORDER_TILE",
+    "shape": "rectangle",
+    "border_thickness": 1,
+    "state": "default"
+  },
   "GENERIC_RECTANGLE_CONTAINER": {
     "display_name": "A generic rectangular enclosed area. Can be modified by natures (e.g., STONE to be a room, FOLIAGE for a hedge maze).",
     "feature_type": "CONTAINER",
@@ -8,7 +52,10 @@
     "tile_type": "DEFAULT_BRIGHT_FLOOR",
     "border_tile_type": "DEFAULT_WALL",
     "shape": "rectangle",
-    "allowed_rotations": [0, 90],
+    "allowed_rotations": [
+      0,
+      90
+    ],
     "border_thickness": 1,
     "state": "default",
     "description_on_block": "The {name} is impassable."
@@ -22,7 +69,10 @@
     "tile_type": "DEFAULT_BRIGHT_FLOOR",
     "border_tile_type": "DEFAULT_WALL",
     "shape": "ellipse",
-    "allowed_rotations": [0, 90],
+    "allowed_rotations": [
+      0,
+      90
+    ],
     "border_thickness": 1,
     "state": "default",
     "description_on_block": "The {name} is impassable."
@@ -35,7 +85,10 @@
     "tile_type": "DEFAULT_BRIGHT_FLOOR",
     "border_tile_type": "DEFAULT_WALL",
     "shape": "rectangle",
-    "allowed_rotations": [0, 90],
+    "allowed_rotations": [
+      0,
+      90
+    ],
     "border_thickness": 1,
     "state": "default",
     "description_on_block": "The {name} is impassable."
@@ -48,7 +101,10 @@
     "tile_type": "DEFAULT_WALL",
     "border_tile_type": "DEFAULT_WALL",
     "shape": "rectangle",
-    "allowed_rotations": [0, 90],
+    "allowed_rotations": [
+      0,
+      90
+    ],
     "border_thickness": 1,
     "state": "default",
     "description_on_block": "You cannot pass the {name}."
@@ -61,7 +117,10 @@
     "tile_type": "DEFAULT_WALL",
     "border_tile_type": "DEFAULT_WALL",
     "shape": "ellipse",
-    "allowed_rotations": [0, 90],
+    "allowed_rotations": [
+      0,
+      90
+    ],
     "border_thickness": 1,
     "state": "default",
     "description_on_block": "You cannot pass the {name}."
@@ -74,8 +133,10 @@
     "tile_type": "DEFAULT_WALL",
     "border_tile_type": "DEFAULT_WALL",
     "shape": "path",
-    "allowed_rotations": [0],
-    "turbulence": 0.10,
+    "allowed_rotations": [
+      0
+    ],
+    "turbulence": 0.1,
     "turbulence_scale": 0.75,
     "intersects_ok": []
   },
@@ -88,18 +149,34 @@
     "tile_type": "PATH_DIRT",
     "border_tile_type": "GRASS",
     "shape": "path",
-    "allowed_rotations": [0],
+    "allowed_rotations": [
+      0
+    ],
     "border_thickness": 1,
-    "turbulence": 1.0,
+    "turbulence": 1,
     "turbulence_scale": 0.25,
     "pathfinding_modifiers": [],
     "intersects_ok": [
-      { "type": "GRASS", "cost_mod": 1.1, "replaces_with_floor": "PATH_DIRT", "replaces_with_border": "GRASS" },
-	  { "type": "FENCE", "cost_mod":  10.0, "replaces_with_border": "FENCE_GATE"},
-      { "type": "WATER", "cost_mod": 2.0, "replaces_with_floor": "STEPPING_STONES", "replaces_with_border": "WATER" }
+      {
+        "type": "GRASS",
+        "cost_mod": 1.1,
+        "replaces_with_floor": "PATH_DIRT",
+        "replaces_with_border": "GRASS"
+      },
+      {
+        "type": "FENCE",
+        "cost_mod": 10,
+        "replaces_with_border": "FENCE_GATE"
+      },
+      {
+        "type": "WATER",
+        "cost_mod": 2,
+        "replaces_with_floor": "STEPPING_STONES",
+        "replaces_with_border": "WATER"
+      }
     ]
   },
-    "GENERIC_PATH_PORTAL": {
+  "GENERIC_PATH_PORTAL": {
     "display_name": "A wide, open-ended passage. Can be modified by natures (e.g., NATURAL for a wind-swept canyon, ARTIFICIAL for a grand archway).",
     "feature_type": "PORTAL",
     "placement_strategy": "PATHING",
@@ -107,8 +184,10 @@
     "tile_type": "DEFAULT_FLOOR",
     "border_tile_type": "DEFAULT_WALL",
     "shape": "path",
-    "allowed_rotations": [0],
-    "turbulence": 0.10,
+    "allowed_rotations": [
+      0
+    ],
+    "turbulence": 0.1,
     "turbulence_scale": 0.75,
     "border_thickness": 1
   },
@@ -117,10 +196,12 @@
     "feature_type": "PATH",
     "placement_strategy": "PATHING",
     "is_shrinkable": true,
-    "tile_type": "DEFAULT_LIQUID_FILLER",
-    "border_tile_type": "DEFAULT_LIQUID_FILLER",
+    "tile_type": "WATER",
+    "border_tile_type": "WATER",
     "shape": "path",
-    "allowed_rotations": [0],
+    "allowed_rotations": [
+      0
+    ],
     "border_thickness": 1,
     "turbulence": 0.3,
     "turbulence_scale": 0.4,
@@ -132,10 +213,13 @@
     "feature_type": "CONTAINER",
     "placement_strategy": "BRANCHING",
     "is_shrinkable": true,
-    "tile_type": "DEFAULT_LIQUID_FILLER",
+    "tile_type": "WATER",
     "border_tile_type": "DEFAULT_WALL",
     "shape": "ellipse",
-    "allowed_rotations": [0, 90],
+    "allowed_rotations": [
+      0,
+      90
+    ],
     "border_thickness": 1,
     "intersects_ok": []
   },
@@ -148,8 +232,12 @@
     "tile_type": "DEFAULT_FLOOR",
     "border_tile_type": "DEFAULT_WALL",
     "shape": "path",
-    "allowed_rotations": [0],
-    "border_thickness": 1
+    "allowed_rotations": [
+      0
+    ],
+    "border_thickness": 1,
+    "min_length": 2,
+    "max_length": 15
   },
   "GENERIC_CONNECTOR_PORTAL": {
     "display_name": "An open connector like an archway or passage. Can be modified by natures.",
@@ -159,8 +247,13 @@
     "tile_type": "DEFAULT_BRIGHT_FLOOR",
     "border_tile_type": "DEFAULT_WALL",
     "shape": "rectangle",
-    "allowed_rotations": [0, 90],
-    "border_thickness": 1
+    "allowed_rotations": [
+      0,
+      90
+    ],
+    "border_thickness": 1,
+    "min_length": 1,
+    "max_length": 5
   },
   "GENERIC_INTERACTABLE": {
     "display_name": "An object of interest, like a chest, altar, or switch.",
@@ -170,7 +263,9 @@
     "tile_type": "DEFAULT_WALL",
     "border_tile_type": "DEFAULT_WALL",
     "shape": "rectangle",
-    "allowed_rotations": [0],
+    "allowed_rotations": [
+      0
+    ],
     "border_thickness": 0
   }
 }

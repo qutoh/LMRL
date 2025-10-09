@@ -1,5 +1,3 @@
-# /core/worldgen/v3_components/pathing.py
-
 import math
 import random
 from typing import List, Dict, Tuple, Optional, Set, Callable
@@ -261,10 +259,13 @@ class Pathing:
     def create_all_connections(self, initial_feature_branches: List[FeatureNode]) -> Tuple[
         List[Dict], List[Dict], List[Dict]]:
         internal_connections = self._connect_internal_branch_doors(initial_feature_branches)
+        sibling_connections = self._connect_sibling_doors(initial_feature_branches)
+
+        all_connections = internal_connections + sibling_connections
         door_placements = []
         hallways = []
 
-        for conn in internal_connections:
+        for conn in all_connections:
             node_a, node_b = conn.get('node_a'), conn.get('node_b')
             coords = conn.get('door_coords')
 
@@ -294,21 +295,21 @@ class Pathing:
                 if door_tile_b: door_placements.append(
                     {'pos': coords[1], 'type': door_tile_b})
 
-        return internal_connections, door_placements, hallways
+        return all_connections, door_placements, hallways
 
     def _connect_internal_branch_doors(self, initial_feature_branches: List[FeatureNode]) -> List[Dict]:
         connections = []
         all_nodes = [node for branch in initial_feature_branches for node in branch.get_all_nodes_in_branch()]
         for parent in all_nodes:
             for child in parent.subfeatures:
+                if child.is_interior: continue  # Skip interior features for parent-child connections
+
                 reconciliation = self.reconcile_connection(parent, child, all_nodes, {
                     parent: parent.get_absolute_footprint(),
                     child: child.get_absolute_footprint()
                 })
                 if reconciliation:
-                    # Find closest points for door placement even if hallway was made
-                    parent_points = list(
-                        geometry_probes.find_potential_connection_points(parent.footprint).keys())
+                    parent_points = list(geometry_probes.find_potential_connection_points(parent.footprint).keys())
                     child_points = list(geometry_probes.find_potential_connection_points(child.footprint).keys())
                     if not parent_points or not child_points: continue
 
@@ -329,6 +330,53 @@ class Pathing:
                         if 'hallway' in reconciliation:
                             conn_data['hallway'] = reconciliation['hallway']
                         connections.append(conn_data)
+        return connections
+
+    def _connect_sibling_doors(self, initial_feature_branches: List[FeatureNode]) -> List[Dict]:
+        connections = []
+        all_nodes = [node for branch in initial_feature_branches for node in branch.get_all_nodes_in_branch()]
+        for node in all_nodes:
+            if not node.subfeatures: continue
+
+            interior_children = [c for c in node.subfeatures if c.is_interior]
+            if len(interior_children) < 2: continue
+
+            for i in range(len(interior_children)):
+                for j in range(i + 1, len(interior_children)):
+                    child_a = interior_children[i]
+                    child_b = interior_children[j]
+
+                    # Check for adjacency between these two siblings
+                    if not child_a.get_absolute_footprint().isdisjoint(
+                            {(x + dx, y + dy) for x, y in child_b.get_absolute_footprint() for dx, dy in
+                             [(0, 1), (0, -1), (1, 0), (-1, 0)]}
+                    ):
+                        reconciliation = self.reconcile_connection(child_a, child_b, all_nodes, {
+                            child_a: child_a.get_absolute_footprint(),
+                            child_b: child_b.get_absolute_footprint()
+                        })
+
+                        if reconciliation:
+                            # Find closest points for door placement
+                            a_points = list(geometry_probes.find_potential_connection_points(child_a.footprint).keys())
+                            b_points = list(geometry_probes.find_potential_connection_points(child_b.footprint).keys())
+                            if not a_points or not b_points: continue
+
+                            min_dist = float('inf')
+                            best_pair = (None, None)
+                            for pax, pay in a_points:
+                                for pbx, pby in b_points:
+                                    pa_abs, pb_abs = (pax + child_a.current_x, pay + child_a.current_y), (
+                                        pbx + child_b.current_x, pby + child_b.current_y)
+                                    dist = math.hypot(pa_abs[0] - pb_abs[0], pa_abs[1] - pb_abs[1])
+                                    if dist < min_dist:
+                                        min_dist = dist
+                                        best_pair = (pa_abs, pb_abs)
+
+                            if best_pair[0]:
+                                conn_data = {'node_a': child_a, 'node_b': child_b, 'position': best_pair[0],
+                                             'door_coords': best_pair}
+                                connections.append(conn_data)
         return connections
 
     def _get_node_exterior_perimeter(self, node: FeatureNode) -> set:
